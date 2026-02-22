@@ -1,0 +1,14 @@
+apiVersion: v2
+name: gasboat
+description: Gasboat — K8s agent controller, coopmux, pgbeads and nats events
+version: 0.1.0
+appVersion: "0.1.0"
+type: application
+keywords:
+  - gasboat
+  - beads
+  - agents
+  - coopmux
+maintainers:
+  - name: Gasboat
+    email: devops@gasboat.dev

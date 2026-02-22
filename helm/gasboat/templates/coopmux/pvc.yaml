@@ -1,0 +1,18 @@
+{{- if and .Values.coopmux.enabled .Values.coopmux.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "gasboat.coopmux.fullname" . }}-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.coopmux.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.coopmux.persistence.storageClass }}
+  storageClassName: {{ .Values.coopmux.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.coopmux.persistence.size }}
+{{- end }}

@@ -1,0 +1,386 @@
+# Gasboat Helm Chart Configuration
+# Components: Beads Daemon, Agent Controller, Coopmux, and optionally PostgreSQL and NATS.
+
+imagePullSecrets: []
+
+# =============================================================================
+# Registry Pull Secrets (ExternalSecrets for private container registries)
+# =============================================================================
+registrySecrets:
+  enabled: false
+  secretStoreName: "secretstore"
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: "1h"
+  registries: {}
+  # registries:
+  #   ghcr-registry:
+  #     enabled: true
+  #     remoteRef: "shared-devops-ghcr.io-credentials"
+  #     hosts: ["ghcr.io"]
+
+# =============================================================================
+# External Secrets (creates K8s Secrets from external secret stores)
+# =============================================================================
+externalSecrets:
+  enabled: false
+  secretStoreName: "secretstore"
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: "1h"
+  # PostgreSQL password
+  postgresPassword:
+    remoteRef: ""
+    property: ""
+  # Beads daemon auth token
+  beadsToken:
+    remoteRef: ""
+    property: ""
+
+# =============================================================================
+# Agent Controller (manages agent pods for beads automation)
+# =============================================================================
+agents:
+  enabled: false
+
+  # --- Controller deployment ---
+
+  image:
+    repository: ghcr.io/alfredjeanlab/gasboat/controller
+    tag: "latest"
+    pullPolicy: Always
+
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+  replicaCount: 1
+
+  # Log level for the controller: debug, info, warn, error
+  logLevel: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # --- Agent pods ---
+
+  # Image used for agent pods spawned by the controller
+  agentImage:
+    repository: ghcr.io/alfredjeanlab/gasboat/agent
+    tag: "latest"
+
+  # ServiceAccount for spawned agent pods (not the controller itself).
+  # When create=true, the chart provisions a SA + namespace-admin Role + RoleBinding.
+  # The SA name is passed to the agents controller via COOP_SERVICE_ACCOUNT env var.
+  agentServiceAccount:
+    create: true
+    name: ""        # defaults to "<release>-agent"
+    annotations: {}
+
+  # Max agent pods that can exist simultaneously (0 = unlimited)
+  coopMaxPods: 0
+
+  # Max pods to create in a single reconciliation pass (prevents memory pressure)
+  coopBurstLimit: 3
+
+  # Periodic reconciliation interval (e.g. "60s", "5m")
+  coopSyncInterval: ""
+
+  # --- Secrets & credentials ---
+
+  # K8s secret with Claude OAuth credentials for agent pods (Max/Corp accounts)
+  # Mount as ~/.claude/.credentials.json. See scripts/sync-claude-credentials.sh
+  claudeOAuthSecret: ""
+
+  # Git credentials for agent pods (username/token keys).
+  gitCredentials:
+    secret: ""           # K8s secret name (created manually or by externalSecret below)
+    externalSecret:      # Creates the K8s secret from a secret store
+      enabled: false
+      secretStoreName: "secretstore"
+      secretStoreKind: ClusterSecretStore
+      refreshInterval: "15m"
+      remoteRef: ""
+      usernameProperty: "username"
+      tokenProperty: "token"
+
+  # K8s secret with GitHub token for gh CLI in agent pods (releases, GHCR push)
+  githubTokenSecret: ""
+
+  # --- NATS event bus ---
+
+  # NATS server URL for event bus integration (e.g., "nats://nats-svc:4222")
+  natsURL: ""
+
+  # K8s secret with NATS auth token for agent pods
+  natsTokenSecret: ""
+
+  # --- Coopmux ---
+
+  # Coopmux URL override (auto-wired when coopmux is enabled in this chart)
+  coopmuxURL: ""
+
+  # --- Slack notifications ---
+
+  # Slack notifications for decision beads
+  slack:
+    # NOTE: env var is SLACK_BOAT_TOKEN (not SLACK_BOT_TOKEN) — deliberate "gasboat" pun.
+    botToken: ""
+    signingSecret: ""
+    channel: ""
+    listenAddr: ""
+
+  # --- Infrastructure ---
+
+  # Pod disruption budget for safe rolling deploys (only useful with replicaCount > 1)
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Coopmux — centralized credential manager + terminal multiplexer
+# Manages credential refresh, distributes tokens, and multiplexes terminal
+# views for all agent pods.
+# =============================================================================
+coopmux:
+  enabled: false
+
+  image:
+    repository: ghcr.io/alfredjeanlab/coop
+    tag: "coopmux"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Auth token for coopmux API (agent pods use this to register/authenticate)
+  # If empty, uses the daemon token secret
+  coopmuxTokenSecret: ""
+
+  # K8s secret containing the Claude API key for coopmux
+  claudeApiKeySecret: ""
+
+  # NATS connection (must be explicitly set — no auto-wiring)
+  natsURL: ""
+
+  # Persistence: previously used for OAuth credentials.json, now
+  # deprecated after switch to static API keys.
+  persistence:
+    enabled: false
+    size: 100Mi
+    storageClass: ""
+    path: "/var/lib/coop/credentials/credentials.json"
+
+  # OAuth credential configuration
+  credentials:
+    accountName: "claude-max"
+    provider: "claude"
+    clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+    tokenUrl: "https://platform.claude.com/v1/oauth/token"
+    deviceAuthUrl: "https://console.anthropic.com/v1/oauth/device/code"
+    refreshMarginSecs: 300
+    # Set to false to treat credentials as static (no OAuth refresh).
+    reauth: true
+  # Additional accounts (list of {name, provider, clientId, tokenUrl, deviceAuthUrl, refreshMarginSecs})
+  extraAccounts: []
+
+  # ExternalSecret for OAuth refresh token
+  externalSecret:
+    enabled: false
+    secretStoreName: "secretstore"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "15m"
+    remoteRef: ""
+    refreshTokenProperty: "refresh_token"
+
+  # Ingress (Traefik IngressRoute for coopmux dashboard)
+  ingress:
+    enabled: false
+    host: ""
+    # Expose full API at / (default: mux-only at /mux, /ws/mux, /api/v1/sessions)
+    exposeAPI: false
+    # Bearer token injected into requests so coopmux auth is satisfied.
+    bearerToken: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""
+    rateLimit:
+      enabled: false
+      average: 100
+      burst: 200
+
+  # Coopmux settings
+  mux:
+    port: 9800
+    screenPollMs: 500
+    statusPollMs: 2000
+    healthCheckMs: 10000
+    maxHealthFailures: 3
+
+  # Service
+  service:
+    type: ClusterIP
+    port: 9800
+
+  # Resources
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Pod Disruption Budget (active when replicaCount > 1).
+  pdb:
+    enabled: false
+    maxUnavailable: 1
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# PostgreSQL (in-chart database for beads)
+# =============================================================================
+postgres:
+  enabled: false
+
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+
+  # Database name created on init
+  database: beads
+
+  # Password secret — created by externalSecrets or manually.
+  # If empty, uses the auto-generated secret name from helpers.
+  passwordSecret: ""
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Beads Daemon (bd serve — gRPC + HTTP API backed by PostgreSQL)
+# =============================================================================
+beads:
+  image:
+    repository: ghcr.io/alfredjeanlab/beads/bd
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Explicit database URL override (bypasses auto-wiring from postgres.enabled)
+  databaseURL: ""
+
+  # Explicit NATS URL override (bypasses auto-wiring from nats.enabled)
+  natsURL: ""
+
+  # Name of K8s secret containing the daemon auth token (key: "token")
+  tokenSecret: bd-beads-token
+
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    rateLimit:
+      enabled: false
+      average: 100
+      burst: 200
+
+  service:
+    type: ClusterIP
+    grpcPort: 9090
+    httpPort: 8080
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# NATS (JetStream event bus for beads + agents + coopmux)
+# =============================================================================
+nats:
+  enabled: false
+
+  replicas: 1
+
+  image:
+    registry: docker.io
+    repository: nats
+    tag: "2.10-alpine"
+    pullPolicy: IfNotPresent
+
+  auth:
+    enabled: false
+    token: ""
+
+  jetstream:
+    maxMemory: "256M"
+
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+
+  cluster:
+    port: 6222
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  pdb:
+    enabled: false
+    maxUnavailable: 1
+
+  # Pod scheduling
+  affinity: {}
+  nodeSelector: {}
+  tolerations: []

@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gasboat.beads.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.beads.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.beads.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "gasboat.beads.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "gasboat.beads.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: beads
+          image: "{{ .Values.beads.image.repository }}:{{ .Values.beads.image.tag }}"
+          imagePullPolicy: {{ .Values.beads.image.pullPolicy }}
+          command: ["bd", "serve"]
+          ports:
+            - name: grpc
+              containerPort: 9090
+              protocol: TCP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            {{- if .Values.postgres.enabled }}
+            - name: BEADS_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.passwordSecret | default (include "gasboat.postgres.passwordSecretName" .) }}
+                  key: password
+            {{- end }}
+            - name: BEADS_DATABASE_URL
+              value: {{ include "gasboat.beads.databaseURL" . }}
+            - name: BEADS_GRPC_ADDR
+              value: ":9090"
+            - name: BEADS_HTTP_ADDR
+              value: ":8080"
+            {{- $natsURL := .Values.beads.natsURL | default (include "gasboat.natsURL" .) }}
+            {{- if $natsURL }}
+            - name: BEADS_NATS_URL
+              value: {{ $natsURL }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.beads.resources | nindent 12 }}
+      {{- with .Values.beads.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.beads.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.beads.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

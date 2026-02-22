@@ -1,0 +1,161 @@
+{{- if .Values.coopmux.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gasboat.coopmux.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.coopmux.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.coopmux.replicaCount }}
+  {{- if gt (int .Values.coopmux.replicaCount) 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  {{- else }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "gasboat.coopmux.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "gasboat.coopmux.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/coopmux/configmap.yaml") . | sha256sum }}
+        rollout.kubernetes.io/restartedAt: {{ now | date "2006-01-02T15:04:05Z07:00" | quote }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.coopmux.persistence.enabled }}
+      securityContext:
+        fsGroup: 1000
+      {{- end }}
+      containers:
+        - name: coopmux
+          image: "{{ .Values.coopmux.image.repository }}:{{ .Values.coopmux.image.tag }}"
+          imagePullPolicy: {{ .Values.coopmux.image.pullPolicy }}
+          command: ["coopmux"]
+          args:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "{{ .Values.coopmux.mux.port }}"
+            - "--credential-config"
+            - "/etc/coopmux/config.json"
+            - "--screen-poll-ms"
+            - "{{ .Values.coopmux.mux.screenPollMs }}"
+            - "--status-poll-ms"
+            - "{{ .Values.coopmux.mux.statusPollMs }}"
+            - "--health-check-ms"
+            - "{{ .Values.coopmux.mux.healthCheckMs }}"
+            - "--max-health-failures"
+            - "{{ .Values.coopmux.mux.maxHealthFailures }}"
+            {{- $natsURL := include "gasboat.coopmux.natsURL" . }}
+            {{- if $natsURL }}
+            - "--nats-url"
+            - "$(COOP_MUX_NATS_URL)"
+            - "--nats-token"
+            - "$(COOP_MUX_NATS_TOKEN)"
+            {{- end }}
+            {{- if .Values.coopmux.apiKeySecret }}
+            - "--api-key-file"
+            - "/etc/coop-api-key/api-key"
+            {{- end }}
+          env:
+            - name: COOP_MUX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gasboat.coopmux.authTokenSecretName" . }}
+                  key: token
+            - name: RUST_LOG
+              value: "info"
+            {{- if .Values.coopmux.persistence.enabled }}
+            - name: COOP_MUX_STATE_DIR
+              value: {{ dir .Values.coopmux.persistence.path }}
+            {{- end }}
+            {{- if $natsURL }}
+            - name: COOP_MUX_NATS_URL
+              value: {{ $natsURL }}
+            - name: COOP_MUX_NATS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gasboat.coopmux.authTokenSecretName" . }}
+                  key: token
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.coopmux.mux.port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: coopmux-config
+              mountPath: /etc/coopmux
+              readOnly: true
+            {{- if .Values.coopmux.persistence.enabled }}
+            - name: credentials-data
+              mountPath: {{ dir .Values.coopmux.persistence.path }}
+            {{- end }}
+            {{- if .Values.coopmux.apiKeySecret }}
+            - name: api-key
+              mountPath: /etc/coop-api-key
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.coopmux.resources | nindent 12 }}
+      volumes:
+        - name: coopmux-config
+          configMap:
+            name: {{ include "gasboat.coopmux.fullname" . }}-config
+        {{- if .Values.coopmux.persistence.enabled }}
+        - name: credentials-data
+          persistentVolumeClaim:
+            claimName: {{ include "gasboat.coopmux.fullname" . }}-credentials
+        {{- end }}
+        {{- if .Values.coopmux.apiKeySecret }}
+        - name: api-key
+          secret:
+            secretName: {{ .Values.coopmux.apiKeySecret }}
+        {{- end }}
+      {{- with .Values.coopmux.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coopmux.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coopmux.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

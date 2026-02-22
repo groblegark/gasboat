@@ -1,0 +1,14 @@
+{{- if and .Values.coopmux.enabled .Values.coopmux.pdb.enabled (gt (int .Values.coopmux.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gasboat.coopmux.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.coopmux.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.coopmux.pdb.maxUnavailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "gasboat.coopmux.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,223 @@
+// Package bridge registers bead types, views, and context configs that
+// gasboat requires in the beads daemon.  Call EnsureConfigs at startup to
+// upsert the canonical definitions; existing user overrides are left alone.
+package bridge
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+)
+
+// ConfigSetter can upsert a config key/value in the beads daemon.
+type ConfigSetter interface {
+	SetConfig(ctx context.Context, key string, value []byte) error
+}
+
+// TypeConfig mirrors model.TypeConfig for JSON serialization.
+type TypeConfig struct {
+	Kind   string     `json:"kind"`
+	Fields []FieldDef `json:"fields,omitempty"`
+}
+
+// FieldDef mirrors model.FieldDef.
+type FieldDef struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Required bool     `json:"required,omitempty"`
+	Values   []string `json:"values,omitempty"`
+}
+
+// ViewConfig is the saved-view schema consumed by `bd view`.
+type ViewConfig struct {
+	Filter  ViewFilter `json:"filter"`
+	Sort    string     `json:"sort,omitempty"`
+	Columns []string   `json:"columns,omitempty"`
+	Limit   int32      `json:"limit,omitempty"`
+}
+
+// ViewFilter matches the filter fields accepted by ListBeads.
+type ViewFilter struct {
+	Status   []string `json:"status,omitempty"`
+	Type     []string `json:"type,omitempty"`
+	Kind     []string `json:"kind,omitempty"`
+	Labels   []string `json:"labels,omitempty"`
+	Assignee string   `json:"assignee,omitempty"`
+	Search   string   `json:"search,omitempty"`
+}
+
+// ContextConfig is the saved-context schema consumed by `bd context`.
+type ContextConfig struct {
+	Sections []ContextSection `json:"sections"`
+}
+
+// ContextSection describes one block of a rendered context.
+type ContextSection struct {
+	Header string   `json:"header"`
+	View   string   `json:"view"`
+	Format string   `json:"format,omitempty"` // "table" (default), "list", "count"
+	Fields []string `json:"fields,omitempty"` // for "list" format
+}
+
+// configs returns every config entry gasboat needs in the daemon.
+func configs() map[string]any {
+	return map[string]any{
+		// --- types -----------------------------------------------------------
+		//
+		// Both are config-kind beads.  The agent type carries lifecycle state
+		// that the controller writes back; the project type holds repo metadata
+		// used to configure agent pods.
+
+		"type:agent": TypeConfig{
+			Kind: "config",
+			Fields: []FieldDef{
+				// Agent identity.
+				{Name: "project", Type: "string"},
+				{Name: "mode", Type: "string"},
+				{Name: "role", Type: "enum", Values: []string{"captain", "crew", "job"}},
+				{Name: "agent", Type: "string"},
+				// Work assignment — the bead this agent is working on (jobs
+				// are always created with hook_bead set; crew pick up work
+				// from their inbox or are assigned via mail).
+				{Name: "hook_bead", Type: "string"},
+				// Free-form instructions for the agent (replaces formulas).
+				{Name: "instructions", Type: "string"},
+				// Agent lifecycle state written back by the controller.
+				{Name: "agent_state", Type: "enum", Values: []string{"spawning", "working", "done", "failed"}},
+				// Pod lifecycle state written back by the controller.
+				{Name: "pod_phase", Type: "enum", Values: []string{"pending", "running", "succeeded", "failed"}},
+				{Name: "pod_name", Type: "string"},
+				{Name: "pod_namespace", Type: "string"},
+				{Name: "pod_ready", Type: "boolean"},
+				{Name: "coop_url", Type: "string"},
+				{Name: "coop_token", Type: "string"},
+			},
+		},
+		"type:mail": TypeConfig{
+			Kind: "data",
+		},
+		"type:decision": TypeConfig{
+			Kind: "data",
+			Fields: []FieldDef{
+				{Name: "question", Type: "string", Required: true},
+				{Name: "options", Type: "json", Required: true},
+				{Name: "chosen", Type: "string"},
+				{Name: "rationale", Type: "string"},
+				{Name: "session", Type: "string"},
+			},
+		},
+		"type:project": TypeConfig{
+			Kind: "config",
+			Fields: []FieldDef{
+				{Name: "prefix", Type: "string"},
+				{Name: "git_url", Type: "string"},
+				{Name: "default_branch", Type: "string"},
+				{Name: "image", Type: "string"},
+				{Name: "storage_class", Type: "string"},
+			},
+		},
+
+		// --- views -----------------------------------------------------------
+		//
+		// Core views used by the controller and by context templates.
+
+		"view:agents:active": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"agent"},
+			},
+			Sort:    "updated_at",
+			Columns: []string{"id", "title", "status", "assignee", "fields"},
+		},
+		"view:agents:jobs": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"agent"},
+				Labels: []string{"role:job"},
+			},
+			Sort:    "updated_at",
+			Columns: []string{"id", "title", "status", "fields"},
+		},
+		"view:agents:crew": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"agent"},
+				Labels: []string{"role:crew"},
+			},
+			Sort:    "updated_at",
+			Columns: []string{"id", "title", "status", "assignee", "fields"},
+		},
+		"view:decisions:pending": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"decision"},
+			},
+			Sort:    "updated_at",
+			Columns: []string{"id", "title", "status", "labels"},
+		},
+		"view:mail:inbox": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"mail"},
+			},
+			Sort:    "updated_at",
+			Columns: []string{"id", "title", "status", "assignee", "labels"},
+		},
+		"view:projects": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"project"},
+			},
+			Sort:    "title",
+			Columns: []string{"id", "title", "labels"},
+		},
+
+		// --- contexts --------------------------------------------------------
+		//
+		// Rendered by `bd context <name>`.  Each role gets a tailored
+		// dashboard that doubles as its session-start priming context.
+
+		"context:captain": ContextConfig{
+			Sections: []ContextSection{
+				{Header: "## Active Agents", View: "agents:active", Format: "table"},
+				{Header: "## Projects", View: "projects", Format: "table"},
+				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
+			},
+		},
+		"context:crew": ContextConfig{
+			Sections: []ContextSection{
+				{Header: "## Fleet", View: "agents:active", Format: "count"},
+				{Header: "## Active Jobs", View: "agents:jobs", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
+				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
+			},
+		},
+		"context:job": ContextConfig{
+			Sections: []ContextSection{
+				{Header: "## Fleet", View: "agents:active", Format: "count"},
+			},
+		},
+	}
+}
+
+// EnsureConfigs upserts all gasboat-managed type, view, and context configs
+// into the beads daemon.  It is safe to call on every startup; the daemon
+// treats SetConfig as an upsert.
+func EnsureConfigs(ctx context.Context, setter ConfigSetter, logger *slog.Logger) error {
+	for key, value := range configs() {
+		valueJSON, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("marshalling config %s: %w", key, err)
+		}
+
+		if err := setter.SetConfig(ctx, key, valueJSON); err != nil {
+			return fmt.Errorf("setting config %s: %w", key, err)
+		}
+
+		logger.Info("ensured beads config", "key", key)
+	}
+
+	return nil
+}

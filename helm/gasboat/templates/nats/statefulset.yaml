@@ -1,0 +1,215 @@
+{{- if .Values.nats.enabled }}
+{{- $replicas := .Values.nats.replicas | default 1 | int }}
+{{- $clusterEnabled := gt $replicas 1 }}
+{{- $fullname := include "gasboat.nats.fullname" . }}
+{{- $clusterPort := .Values.nats.cluster.port | default 6222 | int }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+data:
+  nats-server.conf: |
+    server_name: $SERVER_NAME
+    listen: 0.0.0.0:4222
+    http: 0.0.0.0:8222
+    {{- if .Values.nats.auth.enabled }}
+    authorization {
+      {{- if .Values.nats.auth.token }}
+      token: "{{ .Values.nats.auth.token }}"
+      {{- end }}
+    }
+    {{- end }}
+    jetstream {
+      store_dir: /data/jetstream
+      max_memory_store: {{ .Values.nats.jetstream.maxMemory | default "256M" }}
+      max_file_store: {{ .Values.nats.persistence.size | default "2Gi" }}
+    }
+    {{- if $clusterEnabled }}
+    cluster {
+      name: {{ $fullname }}
+      listen: 0.0.0.0:{{ $clusterPort }}
+      routes: [
+        {{- range $i := until $replicas }}
+        nats-route://{{ $fullname }}-{{ $i }}.{{ $fullname }}-headless:{{ $clusterPort }}
+        {{- end }}
+      ]
+    }
+    {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4222
+      targetPort: client
+      protocol: TCP
+      name: client
+    - port: 8222
+      targetPort: monitoring
+      protocol: TCP
+      name: monitoring
+  selector:
+    {{- include "gasboat.nats.selectorLabels" . | nindent 4 }}
+{{- if $clusterEnabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: 4222
+      targetPort: client
+      protocol: TCP
+      name: client
+    - port: {{ $clusterPort }}
+      targetPort: cluster
+      protocol: TCP
+      name: cluster
+    - port: 8222
+      targetPort: monitoring
+      protocol: TCP
+      name: monitoring
+  selector:
+    {{- include "gasboat.nats.selectorLabels" . | nindent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ if $clusterEnabled }}{{ $fullname }}-headless{{ else }}{{ $fullname }}{{ end }}
+  replicas: {{ $replicas }}
+  selector:
+    matchLabels:
+      {{- include "gasboat.nats.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "gasboat.nats.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nats.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nats.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nats.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: nats
+          image: "{{ .Values.nats.image.registry | default "docker.io" }}/{{ .Values.nats.image.repository | default "nats" }}:{{ .Values.nats.image.tag | default "2.10-alpine" }}"
+          imagePullPolicy: {{ .Values.nats.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - "--config"
+            - "/etc/nats/nats-server.conf"
+          env:
+            - name: SERVER_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+            - name: monitoring
+              containerPort: 8222
+              protocol: TCP
+            {{- if $clusterEnabled }}
+            - name: cluster
+              containerPort: {{ $clusterPort }}
+              protocol: TCP
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitoring
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.nats.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+              readOnly: true
+            {{- if .Values.nats.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullname }}
+  {{- if .Values.nats.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.nats.persistence.storageClass }}
+        storageClassName: {{ .Values.nats.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.nats.persistence.size | default "2Gi" }}
+  {{- end }}
+{{- if and $clusterEnabled .Values.nats.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.nats.pdb.maxUnavailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "gasboat.nats.selectorLabels" . | nindent 6 }}
+{{- end }}
+{{- end }}
