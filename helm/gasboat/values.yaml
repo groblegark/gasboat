@@ -285,11 +285,11 @@ postgres:
   affinity: {}
 
 # =============================================================================
-# Beads Daemon (bd serve — gRPC + HTTP API backed by PostgreSQL)
+# Beads Daemon (kd serve — gRPC + HTTP API backed by PostgreSQL)
 # =============================================================================
 beads:
   image:
-    repository: ghcr.io/alfredjeanlab/beads/bd
+    repository: ghcr.io/groblegark/kbeads/kd
     tag: "latest"
     pullPolicy: Always
 
@@ -302,7 +302,7 @@ beads:
   natsURL: ""
 
   # Name of K8s secret containing the daemon auth token (key: "token")
-  tokenSecret: bd-beads-token
+  tokenSecret: kd-beads-token
 
   ingress:
     enabled: false

@@ -77,7 +77,7 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 	if msg == "" {
 		t.Fatal("expected coop nudge for delivery:interrupt mail, got none")
 	}
-	if msg != "New mail from myproject/reviewer: Task complete — run 'bd show mail-1' to read" {
+	if msg != "New mail from myproject/reviewer: Task complete — run 'kd show mail-1' to read" {
 		t.Errorf("unexpected nudge message: %s", msg)
 	}
 }

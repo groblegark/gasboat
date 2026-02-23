@@ -178,7 +178,7 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		}
 	}
 
-	message := fmt.Sprintf("New mail from %s: %s — run 'bd show %s' to read", sender, bead.Title, bead.ID)
+	message := fmt.Sprintf("New mail from %s: %s — run 'kd show %s' to read", sender, bead.Title, bead.ID)
 
 	if err := nudgeCoop(ctx, coopURL, message); err != nil {
 		m.logger.Error("failed to nudge agent for mail",
