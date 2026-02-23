@@ -17,10 +17,9 @@ ROLE="${BOAT_ROLE:-crew}"
 BEAD_ID="${BOAT_AGENT_BEAD_ID:-}"
 
 # Render the role's context dashboard from the daemon.
-# Jobs have no context config — their entire context is the agent bead below.
-if [ "${ROLE}" != "job" ]; then
-    bd context "${ROLE}" 2>/dev/null || true
-fi
+# Includes role-appropriate views: agents, projects, decisions,
+# inbox, and advice (labels indicate targeting scope).
+bd context "${ROLE}" 2>/dev/null || true
 
 # Show this agent's own bead — title is the task, description holds
 # instructions, and dependencies are the assigned work beads.

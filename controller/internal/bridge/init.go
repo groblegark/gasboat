@@ -101,6 +101,29 @@ func configs() map[string]any {
 				{Name: "session", Type: "string"},
 			},
 		},
+		"type:advice": TypeConfig{
+			Kind: "config",
+			Fields: []FieldDef{
+				// Hook fields — optional executable advice that runs at
+				// lifecycle points (session-end, before-commit, etc.).
+				{Name: "hook_command", Type: "string"},
+				{Name: "hook_trigger", Type: "enum", Values: []string{
+					"session-end", "before-commit", "before-push",
+				}},
+				{Name: "hook_timeout", Type: "integer"},
+				{Name: "hook_on_failure", Type: "enum", Values: []string{
+					"block", "warn", "ignore",
+				}},
+			},
+			// Targeting uses standard bead labels:
+			//   global          — all agents
+			//   role:<role>     — agents with that role (captain, crew, job)
+			//   project:<name>  — agents in that project
+			//   agent:<name>    — specific agent
+			//
+			// Create:  bd create "Always run tests" --type advice -l role:crew
+			// Query:   bd list --type advice   (or bd view advice)
+		},
 		"type:project": TypeConfig{
 			Kind: "config",
 			Fields: []FieldDef{
@@ -142,6 +165,14 @@ func configs() map[string]any {
 			Sort:    "updated_at",
 			Columns: []string{"id", "title", "status", "assignee", "fields"},
 		},
+		"view:advice": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"advice"},
+			},
+			Sort:    "priority",
+			Columns: []string{"id", "title", "labels"},
+		},
 		"view:decisions:pending": ViewConfig{
 			Filter: ViewFilter{
 				Status: []string{"open", "in_progress", "blocked", "deferred"},
@@ -180,18 +211,24 @@ func configs() map[string]any {
 				{Header: "## Projects", View: "projects", Format: "table"},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
+				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
 			},
 		},
-		// Crew: persistent worker — inbox and blockers only.
-		// Hooked work (if any) is surfaced by prime.sh, not here.
+		// Crew: persistent worker — inbox, blockers, and advice.
 		"context:crew": ContextConfig{
 			Sections: []ContextSection{
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
 			},
 		},
-		// No context:job — a job's entire context is the agent bead
+		// Job: advice only — the assignment comes from the agent bead
 		// itself (title, description, dependencies), shown by prime.sh.
+		"context:job": ContextConfig{
+			Sections: []ContextSection{
+				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
+			},
+		},
 	}
 }
 

@@ -58,7 +58,7 @@ spec:
             - "--max-health-failures"
             - "{{ .Values.coopmux.mux.maxHealthFailures }}"
             {{- $natsURL := include "gasboat.coopmux.natsURL" . }}
-            {{- if $natsURL }}
+            {{- if and $natsURL (not (eq (default "" .Values.coopmux.natsURL) "disabled")) }}
             - "--nats-url"
             - "$(COOP_MUX_NATS_URL)"
             - "--nats-token"
@@ -80,7 +80,7 @@ spec:
             - name: COOP_MUX_STATE_DIR
               value: {{ dir .Values.coopmux.persistence.path }}
             {{- end }}
-            {{- if $natsURL }}
+            {{- if and $natsURL (not (eq (default "" .Values.coopmux.natsURL) "disabled")) }}
             - name: COOP_MUX_NATS_URL
               value: {{ $natsURL }}
             - name: COOP_MUX_NATS_TOKEN
