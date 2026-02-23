@@ -388,3 +388,50 @@ nats:
   affinity: {}
   nodeSelector: {}
   tolerations: []
+
+# =============================================================================
+# Slack Bridge — standalone beads→Slack notification bridge
+# Watches NATS for decision/mail lifecycle events and notifies Slack.
+# Runs independently from the agent controller (separate deployment).
+# =============================================================================
+slackBridge:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/gasboat/slack-bridge
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Log level: debug, info, warn, error
+  logLevel: ""
+
+  # NATS URL override (auto-wired when nats.enabled=true)
+  natsURL: ""
+
+  # Slack credentials
+  slack:
+    # Direct values (for dev/testing)
+    botToken: ""
+    signingSecret: ""
+    channel: ""
+    # K8s secret name with keys: bot-token, signing-secret (for production)
+    secretName: ""
+
+  service:
+    type: ClusterIP
+    port: 8090
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
