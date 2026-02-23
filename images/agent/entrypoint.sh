@@ -123,16 +123,38 @@ else
     echo "[entrypoint] Linked ${CLAUDE_DIR} → ${CLAUDE_STATE} (PVC-backed)"
 fi
 
-# Seed credentials from K8s secret mount if PVC doesn't have them yet.
-# IMPORTANT: Don't overwrite PVC credentials on restart — the refresh loop
-# rotates refresh tokens, so the PVC copy is newer than the K8s secret.
+# ── Claude credential provisioning ────────────────────────────────────
+# Priority: (1) PVC credentials (preserved from refresh), (2) K8s secret mount,
+# (3) CLAUDE_CODE_OAUTH_TOKEN env var (coop auto-writes .credentials.json),
+# (4) ANTHROPIC_API_KEY env var (API key mode — no credentials file needed),
+# (5) coopmux distribute endpoint (fetch from centralized credential manager).
 CREDS_STAGING="/tmp/claude-credentials/credentials.json"
 CREDS_PVC="${CLAUDE_STATE}/.credentials.json"
-if [ -f "${CREDS_STAGING}" ] && [ ! -f "${CREDS_PVC}" ]; then
+if [ -f "${CREDS_PVC}" ]; then
+    echo "[entrypoint] Using existing PVC credentials (preserved from refresh)"
+elif [ -f "${CREDS_STAGING}" ]; then
     cp "${CREDS_STAGING}" "${CREDS_PVC}"
     echo "[entrypoint] Seeded Claude credentials from K8s secret"
-elif [ -f "${CREDS_PVC}" ]; then
-    echo "[entrypoint] Using existing PVC credentials (preserved from refresh)"
+elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN set — coop will auto-write credentials"
+elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "[entrypoint] ANTHROPIC_API_KEY set — using API key mode"
+elif [ -n "${COOP_MUX_URL:-}" ]; then
+    # Attempt to fetch credentials from coopmux's distribute endpoint.
+    echo "[entrypoint] No credentials found, requesting from coopmux..."
+    mux_auth="${COOP_MUX_AUTH_TOKEN:-${COOP_BROKER_TOKEN:-}}"
+    mux_creds=$(curl -sf "${COOP_MUX_URL}/api/v1/credentials/distribute" \
+        ${mux_auth:+-H "Authorization: Bearer ${mux_auth}"} \
+        -H 'Content-Type: application/json' \
+        -d "{\"session_id\":\"${HOSTNAME:-$(hostname)}\"}" 2>/dev/null) || true
+    if [ -n "${mux_creds}" ] && echo "${mux_creds}" | jq -e '.claudeAiOauth.accessToken' >/dev/null 2>&1; then
+        echo "${mux_creds}" > "${CREDS_PVC}"
+        echo "[entrypoint] Seeded credentials from coopmux"
+    else
+        echo "[entrypoint] WARNING: No Claude credentials available — agent may not authenticate"
+    fi
+else
+    echo "[entrypoint] WARNING: No Claude credentials available — agent may not authenticate"
 fi
 
 # Set XDG_STATE_HOME so coop writes session artifacts to the PVC.
@@ -396,6 +418,11 @@ OAUTH_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CREDS_FILE="${CLAUDE_STATE}/.credentials.json"
 
 refresh_credentials() {
+    # Skip refresh entirely when using API key mode — no OAuth credentials to refresh.
+    if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ ! -f "${CREDS_FILE}" ]; then
+        echo "[entrypoint] API key mode — skipping OAuth refresh loop"
+        return 0
+    fi
     sleep 30  # Let Claude start first
     local consecutive_failures=0
     local max_failures=5

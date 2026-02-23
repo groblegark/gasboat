@@ -94,6 +94,14 @@ spec:
             - name: CLAUDE_OAUTH_SECRET
               value: {{ .Values.agents.claudeOAuthSecret }}
             {{- end }}
+            {{- if .Values.agents.claudeOAuthTokenSecret }}
+            - name: CLAUDE_OAUTH_TOKEN_SECRET
+              value: {{ .Values.agents.claudeOAuthTokenSecret }}
+            {{- end }}
+            {{- if .Values.agents.anthropicApiKeySecret }}
+            - name: ANTHROPIC_API_KEY_SECRET
+              value: {{ .Values.agents.anthropicApiKeySecret }}
+            {{- end }}
             - name: BEADS_TOKEN_SECRET
               value: {{ include "gasboat.beads.tokenSecretName" . }}
             {{- if .Values.agents.natsURL }}
