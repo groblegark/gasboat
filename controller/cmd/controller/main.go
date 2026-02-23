@@ -47,22 +47,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	consumerName := cfg.NatsConsumerName
-	if consumerName == "" {
-		consumerName = "controller-" + cfg.Namespace
-	}
-	// Read auth tokens from K8s secrets.
-	natsToken := readSecretKey(context.Background(), k8sClient, cfg.Namespace, cfg.NatsTokenSecret, "token", logger)
-	watcher := subscriber.NewNATSWatcher(subscriber.Config{
-		NatsURL:       cfg.NatsURL,
-		NatsToken:     natsToken,
-		ConsumerName:  consumerName,
+	watcher := subscriber.NewSSEWatcher(subscriber.SSEConfig{
+		BeadsHTTPAddr: cfg.BeadsHTTPAddr,
+		Topics:        "beads.bead.*",
 		Namespace:     cfg.Namespace,
 		CoopImage:     cfg.CoopImage,
 		BeadsGRPCAddr: cfg.BeadsGRPCAddr,
 	}, logger)
-	logger.Info("using JetStream transport for beads events",
-		"nats_url", cfg.NatsURL, "consumer", consumerName)
+	logger.Info("using SSE transport for beads events",
+		"beads_http", cfg.BeadsHTTPAddr)
 	pods := podmanager.New(k8sClient, logger)
 
 	// Daemon client for HTTP access (used by reconciler, status reporter, and bridge).
@@ -377,25 +370,6 @@ func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *beads
 		}
 	}
 	logger.Info("refreshed project cache", "count", len(rigs))
-}
-
-// readSecretKey reads a single key from a K8s Secret. Returns "" if the
-// secret name is empty, the secret doesn't exist, or the key is missing.
-func readSecretKey(ctx context.Context, client kubernetes.Interface, namespace, secretName, key string, logger *slog.Logger) string {
-	if secretName == "" {
-		return ""
-	}
-	secret, err := client.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
-	if err != nil {
-		logger.Warn("failed to read secret", "secret", secretName, "error", err)
-		return ""
-	}
-	val, ok := secret.Data[key]
-	if !ok {
-		logger.Warn("secret missing key", "secret", secretName, "key", key)
-		return ""
-	}
-	return string(val)
 }
 
 func setupLogger(level string) *slog.Logger {

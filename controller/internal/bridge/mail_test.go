@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go"
-
 	"gasboat/controller/internal/beadsapi"
 )
 
@@ -21,11 +19,11 @@ func TestMail_HandleCreated_NonMail_Ignored(t *testing.T) {
 	}
 
 	// Non-mail bead should be ignored (no panic, no action).
-	nonMail, _ := json.Marshal(BeadEvent{
+	nonMail := marshalSSEBeadPayload(BeadEvent{
 		ID:   "abc",
 		Type: "agent",
 	})
-	m.handleCreated(context.Background(), &nats.Msg{Data: nonMail})
+	m.handleCreated(context.Background(), nonMail)
 	// No panic = pass.
 }
 
@@ -59,7 +57,7 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 		logger: slog.Default(),
 	}
 
-	event, _ := json.Marshal(BeadEvent{
+	event := marshalSSEBeadPayload(BeadEvent{
 		ID:       "mail-1",
 		Type:     "mail",
 		Title:    "Task complete",
@@ -67,7 +65,7 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 		Labels:   []string{"from:myproject/reviewer", "delivery:interrupt"},
 		Priority: 2, // Normal priority, but delivery:interrupt overrides.
 	})
-	m.handleCreated(context.Background(), &nats.Msg{Data: event})
+	m.handleCreated(context.Background(), event)
 
 	time.Sleep(50 * time.Millisecond)
 	nudgeMu.Lock()
@@ -77,7 +75,7 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 	if msg == "" {
 		t.Fatal("expected coop nudge for delivery:interrupt mail, got none")
 	}
-	if msg != "New mail from myproject/reviewer: Task complete — run 'kd show mail-1' to read" {
+	if msg != "New mail from myproject/reviewer: Task complete \u2014 run 'kd show mail-1' to read" {
 		t.Errorf("unexpected nudge message: %s", msg)
 	}
 }
@@ -113,7 +111,7 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 	}
 
 	// Priority 1 (high) should nudge even without interrupt label.
-	event, _ := json.Marshal(BeadEvent{
+	event := marshalSSEBeadPayload(BeadEvent{
 		ID:       "mail-2",
 		Type:     "mail",
 		Title:    "Urgent task",
@@ -121,7 +119,7 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 		Labels:   []string{"from:myproject/lead", "delivery:queue"},
 		Priority: 1,
 	})
-	m.handleCreated(context.Background(), &nats.Msg{Data: event})
+	m.handleCreated(context.Background(), event)
 
 	time.Sleep(50 * time.Millisecond)
 	nudgeMu.Lock()
@@ -142,7 +140,7 @@ func TestMail_HandleCreated_QueueDelivery_NormalPriority_NoNudge(t *testing.T) {
 		logger: slog.Default(),
 	}
 
-	event, _ := json.Marshal(BeadEvent{
+	event := marshalSSEBeadPayload(BeadEvent{
 		ID:       "mail-3",
 		Type:     "mail",
 		Title:    "FYI update",
@@ -150,7 +148,7 @@ func TestMail_HandleCreated_QueueDelivery_NormalPriority_NoNudge(t *testing.T) {
 		Labels:   []string{"from:myproject/ops", "delivery:queue"},
 		Priority: 2, // Normal priority.
 	})
-	m.handleCreated(context.Background(), &nats.Msg{Data: event})
+	m.handleCreated(context.Background(), event)
 
 	if daemon.getGetCalls() != 0 {
 		t.Fatalf("expected no daemon GetBead calls for queue+normal priority, got %d", daemon.getGetCalls())
@@ -163,13 +161,13 @@ func TestMail_HandleCreated_NoAssignee_NoNudge(t *testing.T) {
 		logger: slog.Default(),
 	}
 
-	event, _ := json.Marshal(BeadEvent{
+	event := marshalSSEBeadPayload(BeadEvent{
 		ID:       "mail-4",
 		Type:     "mail",
 		Title:    "Orphaned mail",
 		Labels:   []string{"from:someone", "delivery:interrupt"},
 		Priority: 0, // Critical but no assignee.
 	})
-	m.handleCreated(context.Background(), &nats.Msg{Data: event})
+	m.handleCreated(context.Background(), event)
 	// No panic = pass.
 }

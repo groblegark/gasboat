@@ -1,6 +1,6 @@
 // Package bridge provides the decision lifecycle watcher.
 //
-// Decisions subscribes to plain NATS subjects for bead create/close events,
+// Decisions subscribes to kbeads SSE event stream for bead create/close events,
 // filters for type=decision beads, and:
 //   - On create: notifies an optional Notifier (e.g., Slack).
 //   - On close: reads the agent field, looks up the agent's coop_url,
@@ -14,10 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
-
-	"github.com/nats-io/nats.go"
 
 	"gasboat/controller/internal/beadsapi"
 )
@@ -48,113 +45,42 @@ type Notifier interface {
 	UpdateDecision(ctx context.Context, beadID, chosen string) error
 }
 
-// Decisions watches NATS for decision bead lifecycle events.
+// Decisions watches the kbeads SSE event stream for decision bead lifecycle events.
 type Decisions struct {
-	natsURL  string
-	natsOpts []nats.Option
 	daemon   BeadClient
 	notifier Notifier // nil = no notifications
 	logger   *slog.Logger
-
-	mu   sync.Mutex
-	conn *nats.Conn
 }
 
 // DecisionsConfig holds configuration for the Decisions watcher.
 type DecisionsConfig struct {
-	NatsURL   string
-	NatsToken string
-	Daemon    BeadClient
-	Notifier  Notifier
-	Logger    *slog.Logger
+	Daemon   BeadClient
+	Notifier Notifier
+	Logger   *slog.Logger
 }
 
 // NewDecisions creates a new decision lifecycle watcher.
 func NewDecisions(cfg DecisionsConfig) *Decisions {
-	opts := []nats.Option{nats.Name("gasboat-decisions")}
-	if cfg.NatsToken != "" {
-		opts = append(opts, nats.Token(cfg.NatsToken))
-	}
 	return &Decisions{
-		natsURL:  cfg.NatsURL,
-		natsOpts: opts,
 		daemon:   cfg.Daemon,
 		notifier: cfg.Notifier,
 		logger:   cfg.Logger,
 	}
 }
 
-// Start connects to NATS and subscribes to decision bead events.
-// Blocks until ctx is canceled. Reconnects on error.
-func (d *Decisions) Start(ctx context.Context) error {
-	backoff := time.Second
-	maxBackoff := 30 * time.Second
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		err := d.run(ctx)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		d.logger.Warn("decisions NATS subscription error, reconnecting",
-			"error", err, "backoff", backoff)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-		backoff *= 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
-	}
+// RegisterHandlers registers SSE event handlers on the given stream for
+// decision bead created and closed events.
+func (d *Decisions) RegisterHandlers(stream *SSEStream) {
+	stream.On("beads.bead.created", d.handleCreated)
+	stream.On("beads.bead.closed", d.handleClosed)
+	d.logger.Info("decisions watcher registered SSE handlers",
+		"topics", []string{"beads.bead.created", "beads.bead.closed"})
 }
 
-func (d *Decisions) run(ctx context.Context) error {
-	nc, err := nats.Connect(d.natsURL, d.natsOpts...)
-	if err != nil {
-		return fmt.Errorf("NATS connect: %w", err)
-	}
-	defer nc.Close()
-
-	d.mu.Lock()
-	d.conn = nc
-	d.mu.Unlock()
-
-	// Subscribe to bead lifecycle subjects (plain NATS, not JetStream).
-	created, err := nc.Subscribe("beads.bead.created", func(msg *nats.Msg) {
-		d.handleCreated(ctx, msg)
-	})
-	if err != nil {
-		return fmt.Errorf("subscribe beads.bead.created: %w", err)
-	}
-	defer func() { _ = created.Unsubscribe() }()
-
-	closed, err := nc.Subscribe("beads.bead.closed", func(msg *nats.Msg) {
-		d.handleClosed(ctx, msg)
-	})
-	if err != nil {
-		return fmt.Errorf("subscribe beads.bead.closed: %w", err)
-	}
-	defer func() { _ = closed.Unsubscribe() }()
-
-	d.logger.Info("decisions watcher subscribed to NATS",
-		"url", d.natsURL,
-		"subjects", []string{"beads.bead.created", "beads.bead.closed"})
-
-	<-ctx.Done()
-	return ctx.Err()
-}
-
-func (d *Decisions) handleCreated(ctx context.Context, msg *nats.Msg) {
-	var bead BeadEvent
-	if err := json.Unmarshal(msg.Data, &bead); err != nil {
-		d.logger.Debug("skipping malformed bead created event", "error", err)
+func (d *Decisions) handleCreated(ctx context.Context, data []byte) {
+	bead := ParseBeadEvent(data)
+	if bead == nil {
+		d.logger.Debug("skipping malformed bead created event")
 		return
 	}
 	if bead.Type != "decision" {
@@ -167,16 +93,16 @@ func (d *Decisions) handleCreated(ctx context.Context, msg *nats.Msg) {
 		"assignee", bead.Assignee)
 
 	if d.notifier != nil {
-		if err := d.notifier.NotifyDecision(ctx, bead); err != nil {
+		if err := d.notifier.NotifyDecision(ctx, *bead); err != nil {
 			d.logger.Error("failed to notify decision", "id", bead.ID, "error", err)
 		}
 	}
 }
 
-func (d *Decisions) handleClosed(ctx context.Context, msg *nats.Msg) {
-	var bead BeadEvent
-	if err := json.Unmarshal(msg.Data, &bead); err != nil {
-		d.logger.Debug("skipping malformed bead closed event", "error", err)
+func (d *Decisions) handleClosed(ctx context.Context, data []byte) {
+	bead := ParseBeadEvent(data)
+	if bead == nil {
+		d.logger.Debug("skipping malformed bead closed event")
 		return
 	}
 	if bead.Type != "decision" {
@@ -197,7 +123,7 @@ func (d *Decisions) handleClosed(ctx context.Context, msg *nats.Msg) {
 	}
 
 	// Nudge the agent via coop so it wakes up and reads the decision result.
-	d.nudgeAgent(ctx, bead)
+	d.nudgeAgent(ctx, *bead)
 }
 
 // nudgeAgent looks up the agent's coop_url from the agent bead and POSTs a nudge.

@@ -11,8 +11,6 @@ import (
 
 	"log/slog"
 
-	"github.com/nats-io/nats.go"
-
 	"gasboat/controller/internal/beadsapi"
 )
 
@@ -102,6 +100,14 @@ func (m *mockNotifier) getUpdated() []updateCall {
 	return append([]updateCall{}, m.updated...)
 }
 
+// marshalSSEBeadPayload wraps a BeadEvent in the kbeads SSE event format
+// ({"bead": {...}}) for testing handleCreated/handleClosed which now accept
+// raw SSE JSON data.
+func marshalSSEBeadPayload(bead BeadEvent) []byte {
+	data, _ := json.Marshal(map[string]any{"bead": bead})
+	return data
+}
+
 func TestDecisions_HandleCreated(t *testing.T) {
 	d := &Decisions{
 		notifier: &mockNotifier{},
@@ -109,11 +115,11 @@ func TestDecisions_HandleCreated(t *testing.T) {
 	}
 
 	// Non-decision bead should be ignored.
-	nonDecision, _ := json.Marshal(BeadEvent{
+	nonDecision := marshalSSEBeadPayload(BeadEvent{
 		ID:   "abc",
 		Type: "agent",
 	})
-	d.handleCreated(context.Background(), &nats.Msg{Data: nonDecision})
+	d.handleCreated(context.Background(), nonDecision)
 
 	mn := d.notifier.(*mockNotifier)
 	if len(mn.getCreated()) != 0 {
@@ -121,7 +127,7 @@ func TestDecisions_HandleCreated(t *testing.T) {
 	}
 
 	// Decision bead should trigger notification.
-	decision, _ := json.Marshal(BeadEvent{
+	decision := marshalSSEBeadPayload(BeadEvent{
 		ID:       "dec-1",
 		Type:     "decision",
 		Title:    "Pick a color",
@@ -131,7 +137,7 @@ func TestDecisions_HandleCreated(t *testing.T) {
 			"options":  `["red","blue"]`,
 		},
 	})
-	d.handleCreated(context.Background(), &nats.Msg{Data: decision})
+	d.handleCreated(context.Background(), decision)
 
 	created := mn.getCreated()
 	if len(created) != 1 {
@@ -179,7 +185,7 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 		logger:   slog.Default(),
 	}
 
-	closedEvent, _ := json.Marshal(BeadEvent{
+	closedEvent := marshalSSEBeadPayload(BeadEvent{
 		ID:       "dec-1",
 		Type:     "decision",
 		Assignee: "crew-town-crew-hq",
@@ -188,7 +194,7 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 			"rationale": "it's calming",
 		},
 	})
-	d.handleClosed(context.Background(), &nats.Msg{Data: closedEvent})
+	d.handleClosed(context.Background(), closedEvent)
 
 	// Verify nudge was sent to coop.
 	time.Sleep(50 * time.Millisecond) // give async processing a moment
@@ -199,7 +205,7 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 	if msg == "" {
 		t.Fatal("expected coop nudge, got none")
 	}
-	if msg != "Decision resolved: blue — it's calming" {
+	if msg != "Decision resolved: blue \u2014 it's calming" {
 		t.Errorf("unexpected nudge message: %s", msg)
 	}
 
@@ -220,13 +226,13 @@ func TestDecisions_HandleClosed_NoAssignee(t *testing.T) {
 	}
 
 	// Decision closed without assignee — should log warning but not panic.
-	closedEvent, _ := json.Marshal(BeadEvent{
+	closedEvent := marshalSSEBeadPayload(BeadEvent{
 		ID:   "dec-2",
 		Type: "decision",
 		Fields: map[string]string{
 			"chosen": "yes",
 		},
 	})
-	d.handleClosed(context.Background(), &nats.Msg{Data: closedEvent})
+	d.handleClosed(context.Background(), closedEvent)
 	// No panic = pass.
 }
