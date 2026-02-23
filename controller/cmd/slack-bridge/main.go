@@ -37,13 +37,13 @@ func main() {
 	logger.Info("starting slack-bridge",
 		"version", version,
 		"commit", commit,
-		"beads_grpc", cfg.beadsGRPCAddr,
+		"beads_http", cfg.beadsHTTPAddr,
 		"nats_url", cfg.natsURL,
 		"slack_channel", cfg.slackChannel,
 		"listen_addr", cfg.listenAddr)
 
-	// Create beads daemon gRPC client.
-	daemon, err := beadsapi.New(beadsapi.Config{GRPCAddr: cfg.beadsGRPCAddr})
+	// Create beads daemon HTTP client.
+	daemon, err := beadsapi.New(beadsapi.Config{HTTPAddr: cfg.beadsHTTPAddr})
 	if err != nil {
 		logger.Error("failed to create beads daemon client", "error", err)
 		os.Exit(1)
@@ -145,7 +145,7 @@ func main() {
 
 // config holds parsed environment configuration for the slack-bridge service.
 type config struct {
-	beadsGRPCAddr      string
+	beadsHTTPAddr      string
 	natsURL            string
 	natsToken          string
 	slackBotToken      string
@@ -157,7 +157,7 @@ type config struct {
 
 func parseConfig() *config {
 	return &config{
-		beadsGRPCAddr:      envOrDefault("BEADS_GRPC_ADDR", "localhost:9090"),
+		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
 		natsURL:            envOrDefault("NATS_URL", "nats://localhost:4222"),
 		natsToken:          os.Getenv("NATS_TOKEN"),
 		slackBotToken:      os.Getenv("SLACK_BOAT_TOKEN"),

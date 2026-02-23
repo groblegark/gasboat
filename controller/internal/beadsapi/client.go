@@ -1,15 +1,16 @@
-// Package beadsapi queries the beads daemon for bead state via gRPC.
+// Package beadsapi queries the beads daemon for bead state via HTTP/JSON.
 package beadsapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
-
-	beadsv1 "github.com/alfredjeanlab/beads/gen/beads/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"time"
 )
 
 // AgentBead represents an active agent bead from the daemon.
@@ -38,35 +39,41 @@ type BeadLister interface {
 	ListAgentBeads(ctx context.Context) ([]AgentBead, error)
 }
 
-// Config for the daemon gRPC client.
+// Config for the daemon HTTP client.
 type Config struct {
-	// GRPCAddr is the daemon gRPC address (e.g., "daemon:9090").
-	GRPCAddr string
+	// HTTPAddr is the daemon HTTP address (e.g., "http://daemon:8080").
+	// If the value does not start with "http", it is prefixed with "http://".
+	HTTPAddr string
 }
 
-// Client queries the beads daemon via gRPC.
+// Client queries the beads daemon via HTTP/JSON.
 type Client struct {
-	conn  *grpc.ClientConn
-	beads beadsv1.BeadsServiceClient
+	baseURL    string
+	httpClient *http.Client
 }
 
-// New creates a gRPC client for querying the beads daemon.
+// New creates an HTTP client for querying the beads daemon.
 func New(cfg Config) (*Client, error) {
-	conn, err := grpc.NewClient(cfg.GRPCAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("dialing beads daemon at %s: %w", cfg.GRPCAddr, err)
+	addr := cfg.HTTPAddr
+	if addr == "" {
+		return nil, fmt.Errorf("HTTPAddr is required")
 	}
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
+	}
+	addr = strings.TrimRight(addr, "/")
+
 	return &Client{
-		conn:  conn,
-		beads: beadsv1.NewBeadsServiceClient(conn),
+		baseURL: addr,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 	}, nil
 }
 
-// Close releases the gRPC connection.
+// Close is a no-op for the HTTP client (satisfies the old interface contract).
 func (c *Client) Close() error {
-	return c.conn.Close()
+	return nil
 }
 
 // activeStatuses is the set of statuses that represent non-closed beads.
@@ -74,17 +81,14 @@ var activeStatuses = []string{"open", "in_progress", "blocked", "deferred"}
 
 // ListAgentBeads queries the daemon for active agent beads (type=agent).
 func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
-	resp, err := c.beads.ListBeads(ctx, &beadsv1.ListBeadsRequest{
-		Type:   []string{"agent"},
-		Status: activeStatuses,
-	})
+	resp, err := c.listBeads(ctx, []string{"agent"}, activeStatuses)
 	if err != nil {
 		return nil, fmt.Errorf("listing agent beads: %w", err)
 	}
 
 	var beads []AgentBead
-	for _, b := range resp.GetBeads() {
-		fields := parseFieldsJSON(b.GetFields())
+	for _, b := range resp.Beads {
+		fields := b.fieldsMap()
 		project := fields["project"]
 		mode := fields["mode"]
 		role := fields["role"]
@@ -96,12 +100,12 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 			continue
 		}
 		beads = append(beads, AgentBead{
-			ID:        b.GetId(),
+			ID:        b.ID,
 			Project:   project,
 			Mode:      mode,
 			Role:      role,
 			AgentName: name,
-			Metadata:  parseNotes(b.GetNotes()),
+			Metadata:  parseNotes(b.Notes),
 		})
 	}
 
@@ -119,22 +123,19 @@ type ProjectInfo struct {
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
-// project metadata from fields. Returns a map of project name → ProjectInfo.
+// project metadata from fields. Returns a map of project name -> ProjectInfo.
 func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, error) {
-	resp, err := c.beads.ListBeads(ctx, &beadsv1.ListBeadsRequest{
-		Type:   []string{"project"},
-		Status: activeStatuses,
-	})
+	resp, err := c.listBeads(ctx, []string{"project"}, activeStatuses)
 	if err != nil {
 		return nil, fmt.Errorf("listing project beads: %w", err)
 	}
 
 	rigs := make(map[string]ProjectInfo)
-	for _, b := range resp.GetBeads() {
-		// Strip "Project: " prefix from title — legacy project beads may have titles
+	for _, b := range resp.Beads {
+		// Strip "Project: " prefix from title -- legacy project beads may have titles
 		// like "Project: beads" instead of just "beads".
-		name := strings.TrimPrefix(b.GetTitle(), "Project: ")
-		fields := parseFieldsJSON(b.GetFields())
+		name := strings.TrimPrefix(b.Title, "Project: ")
+		fields := b.fieldsMap()
 		info := ProjectInfo{
 			Name:          name,
 			Prefix:        fields["prefix"],
@@ -162,53 +163,42 @@ type BeadDetail struct {
 	Fields map[string]string `json:"fields"`
 }
 
-// beadToDetail converts a proto Bead to a BeadDetail.
-func beadToDetail(b *beadsv1.Bead) *BeadDetail {
-	return &BeadDetail{
-		ID:     b.GetId(),
-		Title:  b.GetTitle(),
-		Type:   b.GetType(),
-		Status: b.GetStatus(),
-		Labels: b.GetLabels(),
-		Notes:  b.GetNotes(),
-		Fields: parseFieldsJSON(b.GetFields()),
-	}
-}
-
 // GetBead fetches a single bead by ID from the daemon.
 func (c *Client) GetBead(ctx context.Context, beadID string) (*BeadDetail, error) {
-	resp, err := c.beads.GetBead(ctx, &beadsv1.GetBeadRequest{Id: beadID})
-	if err != nil {
+	var bead beadJSON
+	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/beads/"+url.PathEscape(beadID), nil, &bead); err != nil {
 		return nil, fmt.Errorf("getting bead %s: %w", beadID, err)
 	}
-	return beadToDetail(resp.GetBead()), nil
+	return bead.toDetail(), nil
 }
 
 // UpdateBeadFields updates typed fields on a bead via a read-modify-write cycle.
 // The daemon replaces the full fields JSON, so we must merge with existing fields.
 func (c *Client) UpdateBeadFields(ctx context.Context, beadID string, fields map[string]string) error {
 	// Read current fields.
-	resp, err := c.beads.GetBead(ctx, &beadsv1.GetBeadRequest{Id: beadID})
+	detail, err := c.GetBead(ctx, beadID)
 	if err != nil {
 		return fmt.Errorf("reading bead %s for field update: %w", beadID, err)
 	}
 
 	// Merge new fields into existing.
-	existing := parseFieldsJSON(resp.GetBead().GetFields())
+	existing := detail.Fields
+	if existing == nil {
+		existing = make(map[string]string)
+	}
 	for k, v := range fields {
 		existing[k] = v
 	}
 
-	merged, err := marshalFields(existing)
+	merged, err := json.Marshal(existing)
 	if err != nil {
 		return fmt.Errorf("marshalling merged fields for %s: %w", beadID, err)
 	}
 
-	_, err = c.beads.UpdateBead(ctx, &beadsv1.UpdateBeadRequest{
-		Id:     beadID,
-		Fields: merged,
-	})
-	if err != nil {
+	body := map[string]json.RawMessage{
+		"fields": merged,
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
 		return fmt.Errorf("updating fields on bead %s: %w", beadID, err)
 	}
 	return nil
@@ -216,11 +206,10 @@ func (c *Client) UpdateBeadFields(ctx context.Context, beadID string, fields map
 
 // UpdateBeadNotes updates the notes field of a bead.
 func (c *Client) UpdateBeadNotes(ctx context.Context, beadID, notes string) error {
-	_, err := c.beads.UpdateBead(ctx, &beadsv1.UpdateBeadRequest{
-		Id:    beadID,
-		Notes: &notes,
-	})
-	if err != nil {
+	body := map[string]any{
+		"notes": notes,
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
 		return fmt.Errorf("updating notes on bead %s: %w", beadID, err)
 	}
 	return nil
@@ -239,11 +228,10 @@ func (c *Client) CloseBead(ctx context.Context, beadID string, fields map[string
 		}
 	}
 
-	_, err := c.beads.CloseBead(ctx, &beadsv1.CloseBeadRequest{
-		Id:       beadID,
-		ClosedBy: "gasboat",
-	})
-	if err != nil {
+	body := map[string]string{
+		"closed_by": "gasboat",
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/beads/"+url.PathEscape(beadID)+"/close", body, nil); err != nil {
 		return fmt.Errorf("closing bead %s: %w", beadID, err)
 	}
 	return nil
@@ -251,32 +239,144 @@ func (c *Client) CloseBead(ctx context.Context, beadID string, fields map[string
 
 // SetConfig upserts a config key/value in the daemon.
 func (c *Client) SetConfig(ctx context.Context, key string, value []byte) error {
-	_, err := c.beads.SetConfig(ctx, &beadsv1.SetConfigRequest{
-		Key:   key,
-		Value: value,
-	})
-	if err != nil {
+	body := map[string]json.RawMessage{
+		"value": value,
+	}
+	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/config/"+url.PathEscape(key), body, nil); err != nil {
 		return fmt.Errorf("setting config %s: %w", key, err)
 	}
 	return nil
 }
 
-// parseFieldsJSON decodes the proto fields []byte (JSON object) into a string map.
-// Returns an empty map on nil/empty input or decode error.
-func parseFieldsJSON(data []byte) map[string]string {
-	if len(data) == 0 {
+// --- internal types and helpers ---
+
+// beadJSON is the JSON representation of a bead from the HTTP API.
+type beadJSON struct {
+	ID     string          `json:"id"`
+	Title  string          `json:"title"`
+	Type   string          `json:"type"`
+	Status string          `json:"status"`
+	Labels []string        `json:"labels"`
+	Notes  string          `json:"notes"`
+	Fields json.RawMessage `json:"fields"`
+}
+
+// fieldsMap decodes the JSON fields into a string map.
+func (b *beadJSON) fieldsMap() map[string]string {
+	if len(b.Fields) == 0 {
 		return make(map[string]string)
 	}
 	m := make(map[string]string)
-	if err := json.Unmarshal(data, &m); err != nil {
+	if err := json.Unmarshal(b.Fields, &m); err != nil {
 		return make(map[string]string)
 	}
 	return m
 }
 
-// marshalFields encodes a string map to JSON bytes for the proto fields []byte.
-func marshalFields(m map[string]string) ([]byte, error) {
-	return json.Marshal(m)
+// toDetail converts a beadJSON to a BeadDetail.
+func (b *beadJSON) toDetail() *BeadDetail {
+	return &BeadDetail{
+		ID:     b.ID,
+		Title:  b.Title,
+		Type:   b.Type,
+		Status: b.Status,
+		Labels: b.Labels,
+		Notes:  b.Notes,
+		Fields: b.fieldsMap(),
+	}
+}
+
+// listBeadsResponse is the JSON response from GET /api/v1/beads.
+type listBeadsResponse struct {
+	Beads []beadJSON `json:"beads"`
+	Total int        `json:"total"`
+}
+
+// listBeads queries the daemon for beads matching the given type and status filters.
+func (c *Client) listBeads(ctx context.Context, types, statuses []string) (*listBeadsResponse, error) {
+	q := url.Values{}
+	if len(types) > 0 {
+		q.Set("type", strings.Join(types, ","))
+	}
+	if len(statuses) > 0 {
+		q.Set("status", strings.Join(statuses, ","))
+	}
+
+	path := "/api/v1/beads"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+
+	var resp listBeadsResponse
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// APIError represents an error response from the daemon HTTP API.
+type APIError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Message)
+}
+
+// doJSON performs an HTTP request with optional JSON body and decodes the JSON response.
+// If result is nil, the response body is discarded (for responses where we don't need the body).
+func (c *Client) doJSON(ctx context.Context, method, path string, body any, result any) error {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return fmt.Errorf("marshaling request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("performing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 204 No Content -- success with no body.
+	if resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
+			return &APIError{StatusCode: resp.StatusCode, Message: errResp.Error}
+		}
+		return &APIError{StatusCode: resp.StatusCode, Message: string(respBody)}
+	}
+
+	if result != nil {
+		if err := json.Unmarshal(respBody, result); err != nil {
+			return fmt.Errorf("decoding response: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // parseNotes parses "key: value" lines from a bead's notes field into a map.
