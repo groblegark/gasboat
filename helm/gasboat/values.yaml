@@ -294,7 +294,7 @@ postgres:
 # =============================================================================
 beads:
   image:
-    repository: ghcr.io/groblegark/kbeads/kd
+    repository: ghcr.io/groblegark/kbeads
     tag: "latest"
     pullPolicy: Always
 
