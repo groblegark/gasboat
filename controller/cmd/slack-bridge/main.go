@@ -196,18 +196,3 @@ func init() {
 	}
 }
 
-// printUsage prints a summary of environment variables.
-func printUsage() {
-	fmt.Fprintf(os.Stderr, `slack-bridge — Beads lifecycle → Slack notification bridge
-
-Environment Variables:
-  BEADS_GRPC_ADDR       Beads daemon gRPC address (default: localhost:9090)
-  NATS_URL              NATS server URL (default: nats://localhost:4222)
-  NATS_TOKEN            NATS auth token
-  SLACK_BOAT_TOKEN      Slack bot OAuth token
-  SLACK_SIGNING_SECRET  Slack request signing secret
-  SLACK_CHANNEL         Slack channel ID for notifications
-  SLACK_LISTEN_ADDR     HTTP listen address for Slack webhooks (default: :8090)
-  LOG_LEVEL             Log level: debug, info, warn, error (default: info)
-`)
-}
