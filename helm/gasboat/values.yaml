@@ -355,6 +355,15 @@ nats:
   jetstream:
     maxMemory: "256M"
 
+    # JetStream streams created automatically on install/upgrade.
+    streams:
+      - name: MUTATION_EVENTS
+        subjects: "beads.>"
+        maxAge: "72h"
+      - name: COOP_EVENTS
+        subjects: "coop.events.>"
+        maxAge: "72h"
+
   persistence:
     enabled: true
     size: 2Gi

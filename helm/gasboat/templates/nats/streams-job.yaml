@@ -1,0 +1,65 @@
+{{- if .Values.nats.enabled }}
+{{- $fullname := include "gasboat.nats.fullname" . }}
+{{- $natsURL := include "gasboat.natsURL" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-streams
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.nats.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "gasboat.nats.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-streams
+          image: natsio/nats-box:0.14.5
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              SERVER="{{ $natsURL }}"
+              echo "Waiting for NATS JetStream..."
+              for i in $(seq 1 60); do
+                if nats --server "$SERVER" account info >/dev/null 2>&1; then
+                  echo "NATS is ready."
+                  break
+                fi
+                echo "  attempt $i — not ready yet"
+                sleep 2
+              done
+              {{- range .Values.nats.jetstream.streams }}
+              if nats --server "$SERVER" stream info {{ .name }} >/dev/null 2>&1; then
+                echo "Stream {{ .name }} already exists, updating..."
+                nats --server "$SERVER" stream edit {{ .name }} \
+                  --subjects {{ .subjects | quote }} \
+                  --max-age {{ .maxAge | default "72h" }} \
+                  --force
+              else
+                echo "Creating stream {{ .name }}..."
+                nats --server "$SERVER" stream add {{ .name }} \
+                  --subjects {{ .subjects | quote }} \
+                  --retention {{ .retention | default "limits" }} \
+                  --max-age {{ .maxAge | default "72h" }} \
+                  --storage {{ .storage | default "file" }} \
+                  --replicas {{ .replicas | default 1 }} \
+                  --discard {{ .discard | default "old" }} \
+                  --max-msgs {{ .maxMsgs | default -1 }} \
+                  --max-bytes {{ .maxBytes | default -1 }} \
+                  --max-msg-size {{ .maxMsgSize | default -1 }} \
+                  --dupe-window {{ .dupeWindow | default "2m" }} \
+                  --defaults
+              fi
+              {{- end }}
+              echo "Stream setup complete."
+              nats --server "$SERVER" stream ls
+{{- end }}
