@@ -25,8 +25,9 @@ gasboat/
 │   ├── Chart.yaml
 │   └── values.yaml
 │
-├── deploy/agent/
-│   └── entrypoint.sh        # Agent pod startup script
+├── images/
+│   ├── agent/               # Agent pod image + entrypoint
+│   └── slack-bridge/        # Slack bridge Dockerfile
 │
 ├── Makefile                  # Top-level build
 └── README.md
