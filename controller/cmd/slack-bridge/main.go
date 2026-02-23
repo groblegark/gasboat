@@ -2,8 +2,8 @@
 // events to Slack notifications and handles Slack interaction webhooks.
 //
 // It runs three subsystems:
-//   - Decisions watcher: NATS subscription for decision beads → Slack notifications
-//   - Mail watcher: NATS subscription for mail beads → agent nudges
+//   - Decisions watcher: SSE subscription for decision beads → Slack notifications
+//   - Mail watcher: SSE subscription for mail beads → agent nudges
 //   - HTTP server: Slack interaction webhook handler (/slack/interactions)
 //
 // This service has ZERO K8s dependencies and can run as a lightweight sidecar
@@ -38,7 +38,6 @@ func main() {
 		"version", version,
 		"commit", commit,
 		"beads_http", cfg.beadsHTTPAddr,
-		"nats_url", cfg.natsURL,
 		"slack_channel", cfg.slackChannel,
 		"listen_addr", cfg.listenAddr)
 
@@ -102,30 +101,32 @@ func main() {
 		}
 	}()
 
-	// Start decisions watcher.
-	decisions := bridge.NewDecisions(bridge.DecisionsConfig{
-		NatsURL:   cfg.natsURL,
-		NatsToken: cfg.natsToken,
-		Daemon:    daemon,
-		Notifier:  notifier,
-		Logger:    logger,
+	// Create SSE event stream for decisions and mail watchers.
+	sseStream := bridge.NewSSEStream(bridge.SSEStreamConfig{
+		BeadsHTTPAddr: cfg.beadsHTTPAddr,
+		Topics:        []string{"beads.bead.created", "beads.bead.closed"},
+		Logger:        logger,
 	})
-	go func() {
-		if err := decisions.Start(ctx); err != nil && ctx.Err() == nil {
-			logger.Error("decisions watcher stopped", "error", err)
-		}
-	}()
 
-	// Start mail watcher.
-	mail := bridge.NewMail(bridge.MailConfig{
-		NatsURL:   cfg.natsURL,
-		NatsToken: cfg.natsToken,
-		Daemon:    daemon,
-		Logger:    logger,
+	// Register decisions handler on the SSE stream.
+	decisions := bridge.NewDecisions(bridge.DecisionsConfig{
+		Daemon:   daemon,
+		Notifier: notifier,
+		Logger:   logger,
 	})
+	decisions.RegisterHandlers(sseStream)
+
+	// Register mail handler on the SSE stream.
+	mail := bridge.NewMail(bridge.MailConfig{
+		Daemon: daemon,
+		Logger: logger,
+	})
+	mail.RegisterHandlers(sseStream)
+
+	// Start the shared SSE stream (delivers events to both watchers).
 	go func() {
-		if err := mail.Start(ctx); err != nil && ctx.Err() == nil {
-			logger.Error("mail watcher stopped", "error", err)
+		if err := sseStream.Start(ctx); err != nil && ctx.Err() == nil {
+			logger.Error("SSE event stream stopped", "error", err)
 		}
 	}()
 
@@ -146,8 +147,6 @@ func main() {
 // config holds parsed environment configuration for the slack-bridge service.
 type config struct {
 	beadsHTTPAddr      string
-	natsURL            string
-	natsToken          string
 	slackBotToken      string
 	slackSigningSecret string
 	slackChannel       string
@@ -158,8 +157,6 @@ type config struct {
 func parseConfig() *config {
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
-		natsURL:            envOrDefault("NATS_URL", "nats://localhost:4222"),
-		natsToken:          os.Getenv("NATS_TOKEN"),
 		slackBotToken:      os.Getenv("SLACK_BOAT_TOKEN"),
 		slackSigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
 		slackChannel:       os.Getenv("SLACK_CHANNEL"),
