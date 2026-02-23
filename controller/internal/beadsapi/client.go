@@ -166,7 +166,7 @@ type BeadDetail struct {
 // GetBead fetches a single bead by ID from the daemon.
 func (c *Client) GetBead(ctx context.Context, beadID string) (*BeadDetail, error) {
 	var bead beadJSON
-	if err := c.doJSON(ctx, http.MethodGet, "/api/v1/beads/"+url.PathEscape(beadID), nil, &bead); err != nil {
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads/"+url.PathEscape(beadID), nil, &bead); err != nil {
 		return nil, fmt.Errorf("getting bead %s: %w", beadID, err)
 	}
 	return bead.toDetail(), nil
@@ -198,7 +198,7 @@ func (c *Client) UpdateBeadFields(ctx context.Context, beadID string, fields map
 	body := map[string]json.RawMessage{
 		"fields": merged,
 	}
-	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
+	if err := c.doJSON(ctx, http.MethodPatch, "/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
 		return fmt.Errorf("updating fields on bead %s: %w", beadID, err)
 	}
 	return nil
@@ -209,7 +209,7 @@ func (c *Client) UpdateBeadNotes(ctx context.Context, beadID, notes string) erro
 	body := map[string]any{
 		"notes": notes,
 	}
-	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
+	if err := c.doJSON(ctx, http.MethodPatch, "/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
 		return fmt.Errorf("updating notes on bead %s: %w", beadID, err)
 	}
 	return nil
@@ -231,7 +231,7 @@ func (c *Client) CloseBead(ctx context.Context, beadID string, fields map[string
 	body := map[string]string{
 		"closed_by": "gasboat",
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/beads/"+url.PathEscape(beadID)+"/close", body, nil); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/beads/"+url.PathEscape(beadID)+"/close", body, nil); err != nil {
 		return fmt.Errorf("closing bead %s: %w", beadID, err)
 	}
 	return nil
@@ -242,7 +242,7 @@ func (c *Client) SetConfig(ctx context.Context, key string, value []byte) error 
 	body := map[string]json.RawMessage{
 		"value": value,
 	}
-	if err := c.doJSON(ctx, http.MethodPut, "/api/v1/config/"+url.PathEscape(key), body, nil); err != nil {
+	if err := c.doJSON(ctx, http.MethodPut, "/v1/configs/"+url.PathEscape(key), body, nil); err != nil {
 		return fmt.Errorf("setting config %s: %w", key, err)
 	}
 	return nil
@@ -286,7 +286,7 @@ func (b *beadJSON) toDetail() *BeadDetail {
 	}
 }
 
-// listBeadsResponse is the JSON response from GET /api/v1/beads.
+// listBeadsResponse is the JSON response from GET /v1/beads.
 type listBeadsResponse struct {
 	Beads []beadJSON `json:"beads"`
 	Total int        `json:"total"`
@@ -302,7 +302,7 @@ func (c *Client) listBeads(ctx context.Context, types, statuses []string) (*list
 		q.Set("status", strings.Join(statuses, ","))
 	}
 
-	path := "/api/v1/beads"
+	path := "/v1/beads"
 	if len(q) > 0 {
 		path += "?" + q.Encode()
 	}
