@@ -77,12 +77,6 @@ func configs() map[string]any {
 				{Name: "mode", Type: "string"},
 				{Name: "role", Type: "enum", Values: []string{"captain", "crew", "job"}},
 				{Name: "agent", Type: "string"},
-				// Work assignment — the bead this agent is working on (jobs
-				// are always created with hook_bead set; crew pick up work
-				// from their inbox or are assigned via mail).
-				{Name: "hook_bead", Type: "string"},
-				// Free-form instructions for the agent (replaces formulas).
-				{Name: "instructions", Type: "string"},
 				// Agent lifecycle state written back by the controller.
 				{Name: "agent_state", Type: "enum", Values: []string{"spawning", "working", "done", "failed"}},
 				// Pod lifecycle state written back by the controller.
@@ -196,8 +190,8 @@ func configs() map[string]any {
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 			},
 		},
-		// No context:job — a job's entire context is its hook_bead,
-		// surfaced by prime.sh directly from the agent bead.
+		// No context:job — a job's entire context is the agent bead
+		// itself (title, description, dependencies), shown by prime.sh.
 	}
 }
 

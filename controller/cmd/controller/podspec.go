@@ -9,10 +9,27 @@ import (
 	"gasboat/controller/internal/subscriber"
 )
 
+// modeForRole returns the canonical mode for a role.
+// If mode is already set, it is returned unchanged.
+func modeForRole(mode, role string) string {
+	if mode != "" {
+		return mode
+	}
+	switch role {
+	case "captain", "crew":
+		return "crew"
+	case "job":
+		return "job"
+	default:
+		return "crew"
+	}
+}
+
 // BuildSpecFromBeadInfo constructs an AgentPodSpec from config and bead identity,
 // Used by the reconciler to produce specs identical to those created by
 // handleEvent, using controller config for all metadata.
 func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName string, metadata map[string]string) podmanager.AgentPodSpec {
+	mode = modeForRole(mode, role)
 	image := cfg.CoopImage
 	if img := metadata["image"]; img != "" {
 		image = img
@@ -47,10 +64,11 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 // It applies role-specific defaults, then overlays event metadata.
 func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.AgentPodSpec {
 	ns := namespaceFromEvent(event, cfg.Namespace)
+	mode := modeForRole(event.Mode, event.Role)
 
 	spec := podmanager.AgentPodSpec{
 		Project:   event.Project,
-		Mode:      event.Mode,
+		Mode:      mode,
 		Role:      event.Role,
 		AgentName: event.AgentName,
 		BeadID:    event.BeadID,
@@ -63,7 +81,7 @@ func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.Ag
 	}
 
 	// Apply mode-specific defaults (workspace storage, resources).
-	defaults := podmanager.DefaultPodDefaults(event.Mode)
+	defaults := podmanager.DefaultPodDefaults(mode)
 	podmanager.ApplyDefaults(&spec, defaults)
 
 	// Apply project-level overrides from project bead metadata.
