@@ -44,7 +44,7 @@ agents:
   # --- Controller deployment ---
 
   image:
-    repository: ghcr.io/alfredjeanlab/gasboat/controller
+    repository: ghcr.io/groblegark/gasboat/controller
     tag: "latest"
     pullPolicy: Always
 
@@ -70,7 +70,7 @@ agents:
 
   # Image used for agent pods spawned by the controller
   agentImage:
-    repository: ghcr.io/alfredjeanlab/gasboat/agent
+    repository: ghcr.io/groblegark/gasboat/agent
     tag: "latest"
 
   # ServiceAccount for spawned agent pods (not the controller itself).
@@ -155,7 +155,7 @@ coopmux:
   enabled: false
 
   image:
-    repository: ghcr.io/alfredjeanlab/coop
+    repository: ghcr.io/groblegark/coop
     tag: "coopmux"
     pullPolicy: Always
 
