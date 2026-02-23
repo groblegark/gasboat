@@ -2,10 +2,8 @@
 # prime.sh — SessionStart hook that outputs role-specific priming context.
 #
 # Renders the gasboat context template for this agent's role via
-# `bd context <role>`, providing a tailored dashboard at session start.
-#
-# For job agents, also fetches and displays the assigned work (hook_bead)
-# and any instructions from the agent bead.
+# `bd context <role>`, then surfaces any hooked work (hook_bead) and
+# instructions from the agent's own bead.
 #
 # Env:
 #   BOAT_ROLE    — agent role (captain, crew, job)
@@ -21,14 +19,16 @@ AGENT="${BOAT_AGENT:-}"
 PROJECT="${BOAT_PROJECT:-}"
 
 # Render the role's context dashboard from the daemon.
-bd context "${ROLE}" 2>/dev/null || true
+# Jobs have no context config — their entire context is the hook_bead below.
+if [ "${ROLE}" != "job" ]; then
+    bd context "${ROLE}" 2>/dev/null || true
+fi
 
-# For jobs, show the assigned work and instructions.
-if [ "${ROLE}" = "job" ] && [ -n "${AGENT}" ]; then
-    # Find this agent's bead to read hook_bead and instructions.
+# Look up this agent's bead to surface hooked work and instructions.
+# Any role can have a hook_bead (crew get assigned work too).
+if [ -n "${AGENT}" ]; then
     agent_json=$(bd list --type agent --status open,in_progress,blocked --json 2>/dev/null) || exit 0
 
-    # Filter to our specific agent bead.
     bead=$(echo "${agent_json}" | jq --arg agent "${AGENT}" --arg project "${PROJECT}" \
         '[.[] | select(.fields.agent == $agent and .fields.project == $project)] | first // empty' 2>/dev/null) || exit 0
 

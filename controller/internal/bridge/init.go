@@ -178,27 +178,26 @@ func configs() map[string]any {
 		// Rendered by `bd context <name>`.  Each role gets a tailored
 		// dashboard that doubles as its session-start priming context.
 
+		// Captain: fleet coordinator — needs the full picture.
 		"context:captain": ContextConfig{
 			Sections: []ContextSection{
 				{Header: "## Active Agents", View: "agents:active", Format: "table"},
+				{Header: "## Active Jobs", View: "agents:jobs", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Projects", View: "projects", Format: "table"},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
 			},
 		},
+		// Crew: persistent worker — inbox and blockers only.
+		// Hooked work (if any) is surfaced by prime.sh, not here.
 		"context:crew": ContextConfig{
 			Sections: []ContextSection{
-				{Header: "## Fleet", View: "agents:active", Format: "count"},
-				{Header: "## Active Jobs", View: "agents:jobs", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 			},
 		},
-		"context:job": ContextConfig{
-			Sections: []ContextSection{
-				{Header: "## Fleet", View: "agents:active", Format: "count"},
-			},
-		},
+		// No context:job — a job's entire context is its hook_bead,
+		// surfaced by prime.sh directly from the agent bead.
 	}
 }
 
