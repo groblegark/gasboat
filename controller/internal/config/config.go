@@ -31,19 +31,15 @@ type Config struct {
 	// and passes the secret name to agent pods for secretKeyRef injection.
 	BeadsTokenSecret string
 
-	// --- NATS Event Bus ---
+	// --- NATS (passed to agent pods only, controller uses SSE) ---
 
 	// NatsURL is the NATS server URL for event bus (env: NATS_URL).
-	// Passed to agent pods as COOP_NATS_URL for real-time events.
+	// Passed to agent pods as BEADS_NATS_URL and COOP_NATS_URL.
 	NatsURL string
 
 	// NatsTokenSecret is the K8s secret containing the NATS auth token (env: NATS_TOKEN_SECRET).
 	// Injected as COOP_NATS_TOKEN in agent pods.
 	NatsTokenSecret string
-
-	// NatsConsumerName is the durable consumer name for JetStream (env: NATS_CONSUMER_NAME).
-	// Default: "controller-<namespace>".
-	NatsConsumerName string
 
 	// --- Agent Pods ---
 
@@ -148,10 +144,9 @@ func Parse() *Config {
 		BeadsHTTPAddr:    envOr("BEADS_HTTP_ADDR", "localhost:8080"),
 		BeadsTokenSecret: os.Getenv("BEADS_TOKEN_SECRET"),
 
-		// NATS Event Bus
-		NatsURL:          os.Getenv("NATS_URL"),
-		NatsTokenSecret:  os.Getenv("NATS_TOKEN_SECRET"),
-		NatsConsumerName: os.Getenv("NATS_CONSUMER_NAME"),
+		// NATS Event Bus (passed to agent pods, not used by the controller itself)
+		NatsURL:         os.Getenv("NATS_URL"),
+		NatsTokenSecret: os.Getenv("NATS_TOKEN_SECRET"),
 
 		// Agent Pods
 		CoopImage:          os.Getenv("COOP_IMAGE"),
