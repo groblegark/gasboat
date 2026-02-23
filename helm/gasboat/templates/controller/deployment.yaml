@@ -31,6 +31,44 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 65534
+      {{- if .Values.nats.enabled }}
+      initContainers:
+        - name: nats-stream-init
+          image: natsio/nats-box:0.14.5
+          command:
+            - /bin/sh
+            - -c
+            - |
+              NATS_URL="{{ include "gasboat.natsURL" . }}"
+              # Wait for NATS to be ready (up to 60s)
+              for i in $(seq 1 30); do
+                if nats server check connection -s "$NATS_URL" 2>/dev/null; then break; fi
+                echo "Waiting for NATS... ($i/30)"
+                sleep 2
+              done
+              # Create MUTATION_EVENTS stream (idempotent — exits 0 if already exists)
+              if nats stream info MUTATION_EVENTS -s "$NATS_URL" >/dev/null 2>&1; then
+                echo "MUTATION_EVENTS stream already exists"
+              else
+                nats stream add MUTATION_EVENTS -s "$NATS_URL" \
+                  --subjects "beads.>" \
+                  --retention limits \
+                  --max-age 72h \
+                  --storage file \
+                  --replicas 1 \
+                  --discard old \
+                  --dupe-window 2m \
+                  --defaults
+                echo "Created MUTATION_EVENTS stream"
+              fi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+      {{- end }}
       containers:
         - name: agents
           image: "{{ .Values.agents.image.repository }}:{{ .Values.agents.image.tag }}"
