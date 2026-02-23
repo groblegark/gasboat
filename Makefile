@@ -2,7 +2,7 @@
 
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-REGISTRY ?= ghcr.io/alfredjeanlab/gasboat
+REGISTRY ?= ghcr.io/groblegark/gasboat
 
 # ── Controller ──────────────────────────────────────────────────────────
 
@@ -21,25 +21,25 @@ image:
 	docker build \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg COMMIT=$(COMMIT) \
-		-t $(REGISTRY)/agents:$(VERSION) \
-		-t $(REGISTRY)/agents:latest \
+		-t $(REGISTRY)/controller:$(VERSION) \
+		-t $(REGISTRY)/controller:latest \
 		controller/
 
 image-agent:
 	docker build \
-		-t $(REGISTRY)/gasboat-agent:$(VERSION) \
-		-t $(REGISTRY)/gasboat-agent:latest \
-		deploy/agent/
+		-t $(REGISTRY)/agent:$(VERSION) \
+		-t $(REGISTRY)/agent:latest \
+		images/agent/
 
 image-all: image image-agent
 
 push: image
-	docker push $(REGISTRY)/agents:$(VERSION)
-	docker push $(REGISTRY)/agents:latest
+	docker push $(REGISTRY)/controller:$(VERSION)
+	docker push $(REGISTRY)/controller:latest
 
 push-agent: image-agent
-	docker push $(REGISTRY)/gasboat-agent:$(VERSION)
-	docker push $(REGISTRY)/gasboat-agent:latest
+	docker push $(REGISTRY)/agent:$(VERSION)
+	docker push $(REGISTRY)/agent:latest
 
 push-all: push push-agent
 

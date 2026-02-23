@@ -36,10 +36,10 @@ RUN npm install -g @anthropic-ai/claude-code
 # ── Coop (terminal session manager) ─────────────────────────────
 RUN set -e && \
     if [ -z "${COOP_VERSION}" ]; then \
-      COOP_VERSION=$(curl -fsSL "https://api.github.com/repos/alfredjeanlab/coop/releases/latest" | jq -r .tag_name); \
+      COOP_VERSION=$(curl -fsSL "https://api.github.com/repos/groblegark/coop/releases/latest" | jq -r .tag_name); \
     fi && \
     case "${TARGETARCH}" in arm64) COOP_ARCH=aarch64 ;; *) COOP_ARCH=x86_64 ;; esac && \
-    curl -fsSL "https://github.com/alfredjeanlab/coop/releases/download/${COOP_VERSION}/coop-linux-${COOP_ARCH}.tar.gz" \
+    curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VERSION}/coop-linux-${COOP_ARCH}.tar.gz" \
       | tar -xz -C /usr/local/bin coop
 
 # ── Beads CLI (kd) ──────────────────────────────────────────────
