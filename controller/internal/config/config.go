@@ -110,24 +110,8 @@ type Config struct {
 	// Default: hostname.
 	LeaderElectionIdentity string
 
-	// --- Slack Notifications ---
-
-	// SlackBotToken is the Slack bot OAuth token (env: SLACK_BOAT_TOKEN).
-	// NOTE: The env var is SLACK_BOAT_TOKEN (not SLACK_BOT_TOKEN) — a deliberate
-	// "gasboat" pun that has been baked into deploy configs.
-	// When set, enables Slack notifications for decision beads.
-	SlackBotToken string
-
-	// SlackSigningSecret is the Slack app signing secret (env: SLACK_SIGNING_SECRET).
-	// Used to verify inbound Slack interaction payloads.
-	SlackSigningSecret string
-
-	// SlackChannel is the Slack channel ID to post decision notifications (env: SLACK_CHANNEL).
-	SlackChannel string
-
-	// SlackListenAddr is the HTTP listen address for Slack interactions (env: SLACK_LISTEN_ADDR).
-	// Default: ":8090".
-	SlackListenAddr string
+	// Slack notifications are now handled by the standalone slack-bridge
+	// binary (cmd/slack-bridge). Slack config fields removed — see bd-8x8fy.
 
 	// --- Controller ---
 
@@ -190,11 +174,7 @@ func Parse() *Config {
 		LeaderElectionID:       envOr("LEADER_ELECTION_ID", "agents-leader"),
 		LeaderElectionIdentity: envOr("POD_NAME", hostname()),
 
-		// Slack Notifications
-		SlackBotToken:      os.Getenv("SLACK_BOAT_TOKEN"),
-		SlackSigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
-		SlackChannel:       os.Getenv("SLACK_CHANNEL"),
-		SlackListenAddr:    envOr("SLACK_LISTEN_ADDR", ":8090"),
+		// Slack config removed — handled by standalone slack-bridge (bd-8x8fy).
 
 		// Controller
 		LogLevel: envOr("LOG_LEVEL", "info"),
