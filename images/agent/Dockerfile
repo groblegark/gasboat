@@ -13,7 +13,7 @@ FROM ubuntu:24.04 AS slim
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_VERSION=22
 ARG COOP_VERSION=2026.221.0
-ARG BEADS_VERSION=v0.1.0
+ARG BEADS_VERSION=v0.2.1
 ARG TARGETARCH
 
 # ── System packages (minimal) ─────────────────────────────────────
