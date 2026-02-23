@@ -282,6 +282,12 @@ cd "${WORKSPACE}"
 
 COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 50"
 
+# Claude CLI args (model selection, permissions bypass).
+CLAUDE_ARGS="--dangerously-skip-permissions"
+if [ -n "${CLAUDE_MODEL:-}" ]; then
+    CLAUDE_ARGS="--model ${CLAUDE_MODEL} ${CLAUDE_ARGS}"
+fi
+
 # Coop log level (overridable via pod env).
 export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 
@@ -369,9 +375,13 @@ inject_initial_prompt() {
     if [ "${ROLE}" = "deckhand" ] && [ -z "${BOAT_AGENT_BEAD_ID:-}" ]; then
         # Deckhand without assigned work — point it to available work.
         nudge_msg="Run \`bd view ready\` to find available work and begin."
-    else
-        # Mate/captain or deckhand with assigned work — prime.sh already showed context.
+    elif [ "${ROLE}" = "deckhand" ]; then
+        # Deckhand with assigned work — prime.sh already showed context.
         nudge_msg="Begin working."
+    else
+        # Mate/captain — prime.sh already showed context, no nudge needed.
+        echo "[entrypoint] Crew agent (${ROLE}), skipping initial nudge"
+        return 0
     fi
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
@@ -609,7 +619,7 @@ while true; do
 
     if [ -n "${RESUME_FLAG}" ]; then
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
-        ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
+        ${COOP_CMD} ${RESUME_FLAG} -- claude ${CLAUDE_ARGS} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
@@ -623,7 +633,7 @@ while true; do
         fi
     else
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
-        ${COOP_CMD} -- claude --dangerously-skip-permissions &
+        ${COOP_CMD} -- claude ${CLAUDE_ARGS} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &

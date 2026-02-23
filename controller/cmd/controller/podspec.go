@@ -48,6 +48,13 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 		},
 	}
 
+	// Model selection (default: opus).
+	model := "opus"
+	if m := metadata["model"]; m != "" {
+		model = m
+	}
+	spec.Env["CLAUDE_MODEL"] = model
+
 	defaults := podmanager.DefaultPodDefaults(mode)
 	podmanager.ApplyDefaults(&spec, defaults)
 
@@ -94,6 +101,10 @@ func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.Ag
 	if cm := event.Metadata["configmap"]; cm != "" {
 		spec.ConfigMapName = cm
 	}
+
+	// Model selection (default: opus).
+	model := metadataOr(event, "model", "opus")
+	spec.Env["CLAUDE_MODEL"] = model
 
 	// Apply common config (credentials, daemon token, coop, NATS).
 	applyCommonConfig(cfg, &spec)

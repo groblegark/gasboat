@@ -77,6 +77,7 @@ func configs() map[string]any {
 				{Name: "mode", Type: "string"},
 				{Name: "role", Type: "enum", Values: []string{"captain", "mate", "deckhand"}},
 				{Name: "agent", Type: "string"},
+				{Name: "model", Type: "string"},
 				// Agent lifecycle state written back by the controller.
 				{Name: "agent_state", Type: "enum", Values: []string{"spawning", "working", "done", "failed"}},
 				// Pod lifecycle state written back by the controller.

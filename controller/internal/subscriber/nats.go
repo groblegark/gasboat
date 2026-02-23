@@ -326,6 +326,9 @@ func (w *NATSWatcher) buildEvent(eventType EventType, bead beadData) (Event, boo
 	if w.cfg.BeadsGRPCAddr != "" {
 		meta["beads_grpc_addr"] = w.cfg.BeadsGRPCAddr
 	}
+	if model := bead.Fields["model"]; model != "" {
+		meta["model"] = model
+	}
 
 	return Event{
 		Type:      eventType,
