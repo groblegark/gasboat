@@ -64,6 +64,11 @@ type Config struct {
 	// Default: 60s.
 	CoopSyncInterval time.Duration
 
+	// AgentStorageClass is the default StorageClass for agent workspace PVCs
+	// (env: AGENT_STORAGE_CLASS). When set, crew-mode pods use this unless
+	// overridden by a project bead's storage_class label.
+	AgentStorageClass string
+
 	// --- Secrets & Credentials ---
 
 	// ClaudeOAuthSecret is the K8s secret containing Claude OAuth credentials (env: CLAUDE_OAUTH_SECRET).
@@ -154,6 +159,7 @@ func Parse() *Config {
 		CoopMaxPods:        envIntOr("COOP_MAX_PODS", 0),
 		CoopBurstLimit:     envIntOr("COOP_BURST_LIMIT", 3),
 		CoopSyncInterval:   envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
+		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
 
 		// Secrets & Credentials
 		ClaudeOAuthSecret:    os.Getenv("CLAUDE_OAUTH_SECRET"),

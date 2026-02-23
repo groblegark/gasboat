@@ -183,6 +183,12 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		})
 	}
 
+	// Default storage class for agent workspace PVCs. Applied only if no project
+	// bead override already set it, so project-level config takes precedence.
+	if cfg.AgentStorageClass != "" && spec.WorkspaceStorage != nil && spec.WorkspaceStorage.StorageClassName == "" {
+		spec.WorkspaceStorage.StorageClassName = cfg.AgentStorageClass
+	}
+
 	// Wire coopmux registration config. The agent runs coop directly (builtin)
 	// so it gets COOP_BROKER_URL/TOKEN as env vars.
 	if cfg.CoopmuxURL != "" {
