@@ -38,7 +38,6 @@ func main() {
 
 	logger := setupLogger(cfg.LogLevel)
 	logger.Info("starting gasboat controller",
-		"beads_grpc", cfg.BeadsGRPCAddr,
 		"beads_http", cfg.BeadsHTTPAddr,
 		"namespace", cfg.Namespace)
 
@@ -66,8 +65,8 @@ func main() {
 		"nats_url", cfg.NatsURL, "consumer", consumerName)
 	pods := podmanager.New(k8sClient, logger)
 
-	// Daemon client for gRPC access (used by reconciler, status reporter, and bridge).
-	daemon, err := client.New(client.Config{GRPCAddr: cfg.BeadsGRPCAddr})
+	// Daemon client for HTTP access (used by reconciler, status reporter, and bridge).
+	daemon, err := beadsapi.New(beadsapi.Config{HTTPAddr: cfg.BeadsHTTPAddr})
 	if err != nil {
 		logger.Error("failed to create beads daemon client", "error", err)
 		os.Exit(1)

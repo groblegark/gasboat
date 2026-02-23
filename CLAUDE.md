@@ -19,7 +19,7 @@ gasboat/
 │   ├── cmd/controller/      # Controller entry point
 │   ├── cmd/slack-bridge/    # Standalone Slack bridge binary
 │   └── internal/
-│       ├── beadsapi/        # gRPC client to beads daemon
+│       ├── beadsapi/        # HTTP client to beads daemon
 │       ├── bridge/          # Slack notifications (decisions, mail, interactions)
 │       ├── config/          # Env var parsing
 │       ├── podmanager/      # Pod spec construction & CRUD
@@ -45,7 +45,7 @@ quench check                                    # quality checks
 
 ## Key patterns
 
-- **beadsapi client** (`internal/beadsapi/`) — gRPC client to beads daemon. Used by both controller and bridge.
+- **beadsapi client** (`internal/beadsapi/`) — HTTP/JSON client to beads daemon. Used by both controller and bridge.
 - **podmanager** (`internal/podmanager/`) — Pod spec construction and CRUD against K8s API.
 - **reconciler** (`internal/reconciler/`) — Periodic desired-vs-actual sync loop.
 - **subscriber** (`internal/subscriber/`) — SSE/NATS event listener for bead lifecycle events.
@@ -55,7 +55,7 @@ quench check                                    # quality checks
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BEADS_GRPC_ADDR` | `localhost:9090` | Beads daemon gRPC address |
+| `BEADS_HTTP_ADDR` | `http://localhost:8080` | Beads daemon HTTP address |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
 | `SLACK_BOAT_TOKEN` | *(optional)* | Slack bot OAuth token |
 | `SLACK_CHANNEL` | *(optional)* | Slack channel for notifications |
