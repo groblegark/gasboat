@@ -239,9 +239,9 @@ Agent name: ${AGENT}
 
 ## Quick Reference
 
-- \`bd ready\` — See your workflow steps
-- \`bd mail inbox\` — Check messages
-- \`bd show <issue>\` — View specific issue details
+- \`bd context ${ROLE}\` — See your ${ROLE} dashboard
+- \`bd view mail:inbox\` — Check messages
+- \`bd show <id>\` — View a specific bead
 CLAUDEMD
 fi
 
@@ -365,7 +365,14 @@ inject_initial_prompt() {
         fi
     done
 
-    local nudge_msg="Check \`bd ready\` for your workflow steps and begin working."
+    local nudge_msg
+    if [ "${ROLE}" = "deckhand" ] && [ -z "${BOAT_AGENT_BEAD_ID:-}" ]; then
+        # Deckhand without assigned work — point it to available work.
+        nudge_msg="Run \`bd view ready\` to find available work and begin."
+    else
+        # Mate/captain or deckhand with assigned work — prime.sh already showed context.
+        nudge_msg="Begin working."
+    fi
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
     response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \

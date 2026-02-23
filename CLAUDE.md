@@ -4,7 +4,7 @@
 
 Orchestration concepts are expressed as data rather than code. The beads daemon is the control plane. Gasboat is a reactive bridge that:
 
-1. Pushes declarative config to the daemon at startup (`bridge/init.go`) — bead type definitions (`type:agent`, `type:project`, `type:mail`, `type:decision`, `type:advice`), saved views (`view:agents:active`, `view:decisions:pending`, `view:mail:inbox`), and context dashboards (`context:captain`, `context:crew`)
+1. Pushes declarative config to the daemon at startup (`bridge/init.go`) — bead type definitions (`type:agent`, `type:project`, `type:mail`, `type:decision`, `type:advice`), saved views (`view:agents:active`, `view:decisions:pending`, `view:mail:inbox`), and context dashboards (`context:captain`, `context:mate`, `context:deckhand`)
 2. Watches NATS for lifecycle events (`subscriber/`) — filters for `type:agent` beads, maps to spawn/done/kill/stop/update events, translates into K8s pod operations
 3. Handles decisions and mail via NATS watchers (`bridge/decisions.go`, `bridge/mail.go`) — nudges agents via coop when decisions resolve or urgent mail arrives
 4. Posts decisions to Slack/Mobile/etc (`bridge/slack.go`) — interactive notifications for human-in-the-loop responses

@@ -75,7 +75,7 @@ func configs() map[string]any {
 				// Agent identity.
 				{Name: "project", Type: "string"},
 				{Name: "mode", Type: "string"},
-				{Name: "role", Type: "enum", Values: []string{"captain", "crew", "job"}},
+				{Name: "role", Type: "enum", Values: []string{"captain", "mate", "deckhand"}},
 				{Name: "agent", Type: "string"},
 				// Agent lifecycle state written back by the controller.
 				{Name: "agent_state", Type: "enum", Values: []string{"spawning", "working", "done", "failed"}},
@@ -108,7 +108,7 @@ func configs() map[string]any {
 		//   project:<name>  — agents in that project
 		//   agent:<name>    — specific agent
 		//
-		// Create:  bd create "Always run tests" --type advice -l role:crew
+		// Create:  bd create "Always run tests" --type advice -l role:mate
 		// Query:   bd view advice
 		"type:advice": TypeConfig{
 			Kind: "config",
@@ -136,20 +136,20 @@ func configs() map[string]any {
 			Sort:    "updated_at",
 			Columns: []string{"id", "title", "status", "assignee", "fields"},
 		},
-		"view:agents:jobs": ViewConfig{
+		"view:agents:deckhands": ViewConfig{
 			Filter: ViewFilter{
 				Status: []string{"open", "in_progress", "blocked", "deferred"},
 				Type:   []string{"agent"},
-				Labels: []string{"role:job"},
+				Labels: []string{"role:deckhand"},
 			},
 			Sort:    "updated_at",
 			Columns: []string{"id", "title", "status", "fields"},
 		},
-		"view:agents:crew": ViewConfig{
+		"view:agents:mates": ViewConfig{
 			Filter: ViewFilter{
 				Status: []string{"open", "in_progress", "blocked", "deferred"},
 				Type:   []string{"agent"},
-				Labels: []string{"role:crew"},
+				Labels: []string{"role:mate"},
 			},
 			Sort:    "updated_at",
 			Columns: []string{"id", "title", "status", "assignee", "fields"},
@@ -196,24 +196,24 @@ func configs() map[string]any {
 		"context:captain": ContextConfig{
 			Sections: []ContextSection{
 				{Header: "## Active Agents", View: "agents:active", Format: "table"},
-				{Header: "## Active Jobs", View: "agents:jobs", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Deckhands", View: "agents:deckhands", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Projects", View: "projects", Format: "table"},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
 				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
 			},
 		},
-		// Crew: persistent worker — inbox, blockers, and advice.
-		"context:crew": ContextConfig{
+		// Mate: persistent worker — inbox, blockers, and advice.
+		"context:mate": ContextConfig{
 			Sections: []ContextSection{
 				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
 				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
 				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
 			},
 		},
-		// Job: advice only — the assignment comes from the agent bead
+		// Deckhand: advice only — the assignment comes from the agent bead
 		// itself (title, description, dependencies), shown by prime.sh.
-		"context:job": ContextConfig{
+		"context:deckhand": ContextConfig{
 			Sections: []ContextSection{
 				{Header: "## Advice", View: "advice", Format: "list", Fields: []string{"id", "title", "labels"}},
 			},

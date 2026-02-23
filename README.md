@@ -19,7 +19,7 @@ and **shell hooks** baked into the agent container image:
 - Mail → `type:mail` bead + NATS watcher that nudges agents
 - Advice → `type:advice` bead with hook fields, targeted via labels
 - Projects → `type:project` bead with git/image/storage fields
-- Agent priming → `context:captain` and `context:crew` configs rendered by `bd context <role>`
+- Agent priming → `context:captain`, `context:mate`, and `context:deckhand` configs rendered by `bd context <role>`
 
 Agent pod hooks (`images/agent/hooks/`) handle the last mile inside each agent container:
 

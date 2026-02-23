@@ -23,7 +23,7 @@ type AgentBead struct {
 	// Mode is the agent mode (e.g., "crew", "job").
 	Mode string
 
-	// Role is the agent role (e.g., "crew", "lead", "ops").
+	// Role is the agent role (e.g., "mate", "deckhand", "ops").
 	Role string
 
 	// AgentName is the agent's name within its role (e.g., "hq", "k8s").

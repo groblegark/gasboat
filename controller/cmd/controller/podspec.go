@@ -16,9 +16,9 @@ func modeForRole(mode, role string) string {
 		return mode
 	}
 	switch role {
-	case "captain", "crew":
+	case "captain", "mate":
 		return "crew"
-	case "job":
+	case "deckhand":
 		return "job"
 	default:
 		return "crew"
