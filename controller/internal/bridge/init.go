@@ -29,7 +29,7 @@ type FieldDef struct {
 	Values   []string `json:"values,omitempty"`
 }
 
-// ViewConfig is the saved-view schema consumed by `bd view`.
+// ViewConfig is the saved-view schema consumed by `kd view`.
 type ViewConfig struct {
 	Filter  ViewFilter `json:"filter"`
 	Sort    string     `json:"sort,omitempty"`
@@ -47,7 +47,7 @@ type ViewFilter struct {
 	Search   string   `json:"search,omitempty"`
 }
 
-// ContextConfig is the saved-context schema consumed by `bd context`.
+// ContextConfig is the saved-context schema consumed by `kd context`.
 type ContextConfig struct {
 	Sections []ContextSection `json:"sections"`
 }
@@ -169,7 +169,7 @@ func configs() map[string]any {
 
 		// --- contexts --------------------------------------------------------
 		//
-		// Rendered by `bd context <name>`.  Each role gets a tailored
+		// Rendered by `kd context <name>`.  Each role gets a tailored
 		// dashboard that doubles as its session-start priming context.
 
 		// Captain: fleet coordinator — needs the full picture.

@@ -2,7 +2,7 @@
 # prime.sh — SessionStart hook that outputs role-specific priming context.
 #
 # Renders the gasboat context template for this agent's role via
-# `bd context <role>`, then shows the agent's own bead (which includes
+# `kd context <role>`, then shows the agent's own bead (which includes
 # its title, description/instructions, and dependencies/assigned work).
 #
 # Env:
@@ -19,7 +19,7 @@ BEAD_ID="${BOAT_AGENT_BEAD_ID:-}"
 # Render the role's context dashboard from the daemon.
 # Jobs have no context config — their entire context is the agent bead below.
 if [ "${ROLE}" != "job" ]; then
-    bd context "${ROLE}" 2>/dev/null || true
+    kd context "${ROLE}" 2>/dev/null || true
 fi
 
 # Show this agent's own bead — title is the task, description holds
@@ -28,7 +28,7 @@ if [ -n "${BEAD_ID}" ]; then
     echo ""
     echo "## Assignment"
     echo ""
-    bd show "${BEAD_ID}" 2>/dev/null || true
+    kd show "${BEAD_ID}" 2>/dev/null || true
 fi
 
 exit 0

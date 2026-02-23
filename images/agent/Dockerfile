@@ -1,7 +1,7 @@
 # Gasboat agent images (multi-stage).
 #
 # Targets:
-#   slim     — minimal: git, Node.js, Claude Code, coop, bd, hooks
+#   slim     — minimal: git, Node.js, Claude Code, coop, kd, hooks
 #   omnibus  — slim + Go, Python, Rust Analyzer, kubectl, AWS/Docker/GitHub/GitLab CLIs
 #
 # Build:
@@ -42,14 +42,14 @@ RUN set -e && \
     curl -fsSL "https://github.com/alfredjeanlab/coop/releases/download/${COOP_VERSION}/coop-linux-${COOP_ARCH}.tar.gz" \
       | tar -xz -C /usr/local/bin coop
 
-# ── Beads CLI (bd) ──────────────────────────────────────────────
+# ── Beads CLI (kd) ──────────────────────────────────────────────
 RUN set -e && \
     if [ -z "${BEADS_VERSION}" ]; then \
-      BEADS_VERSION=$(curl -fsSL "https://api.github.com/repos/alfredjeanlab/beads/releases/latest" | jq -r .tag_name); \
+      BEADS_VERSION=$(curl -fsSL "https://api.github.com/repos/groblegark/kbeads/releases/latest" | jq -r .tag_name); \
     fi && \
     case "${TARGETARCH}" in arm64) BD_ARCH=aarch64 ;; *) BD_ARCH=x86_64 ;; esac && \
-    curl -fsSL "https://github.com/alfredjeanlab/beads/releases/download/${BEADS_VERSION}/bd-linux-${BD_ARCH}.tar.gz" \
-      | tar -xz -C /usr/local/bin bd
+    curl -fsSL "https://github.com/groblegark/kbeads/releases/download/${BEADS_VERSION}/kd-linux-${BD_ARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin kd
 
 # ── Agent user ───────────────────────────────────────────────────
 RUN sed -i 's/^ubuntu:/agent:/' /etc/passwd && \

@@ -111,7 +111,7 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 // ProjectInfo represents a registered project from daemon project beads.
 type ProjectInfo struct {
 	Name          string // Project name (from bead title)
-	Prefix        string // Beads prefix (e.g., "bd", "bot")
+	Prefix        string // Beads prefix (e.g., "kd", "bot")
 	GitURL        string // Repository URL
 	DefaultBranch string // Default branch (e.g., "main")
 	Image         string // Per-project agent image override

@@ -25,7 +25,7 @@ AGENT="${BOAT_AGENT:-unknown}"
 WORKSPACE="/home/agent/workspace"
 SESSION_RESUME="${BOAT_SESSION_RESUME:-1}"
 
-# Export platform version for bd version commands
+# Export platform version for kd version commands
 if [ -f /etc/platform-version ]; then
     export BEADS_PLATFORM_VERSION
     BEADS_PLATFORM_VERSION=$(cat /etc/platform-version)
@@ -81,7 +81,7 @@ else
 fi
 
 # ── Daemon connection ────────────────────────────────────────────────────
-# Configure .beads/config.yaml so bd CLI can talk to the remote daemon.
+# Configure .beads/config.yaml so kd CLI can talk to the remote daemon.
 
 if [ -n "${BEADS_DAEMON_HOST:-}" ]; then
     DAEMON_HTTP_PORT="${BEADS_DAEMON_HTTP_PORT:-9080}"
@@ -239,9 +239,9 @@ Agent name: ${AGENT}
 
 ## Quick Reference
 
-- \`bd ready\` — See your workflow steps
-- \`bd mail inbox\` — Check messages
-- \`bd show <issue>\` — View specific issue details
+- \`kd ready\` — See your workflow steps
+- \`kd mail inbox\` — Check messages
+- \`kd show <issue>\` — View specific issue details
 CLAUDEMD
 fi
 
@@ -365,7 +365,7 @@ inject_initial_prompt() {
         fi
     done
 
-    local nudge_msg="Check \`bd ready\` for your workflow steps and begin working."
+    local nudge_msg="Check \`kd ready\` for your workflow steps and begin working."
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
     response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \

@@ -31,7 +31,7 @@ spec:
         - name: beads
           image: "{{ .Values.beads.image.repository }}:{{ .Values.beads.image.tag }}"
           imagePullPolicy: {{ .Values.beads.image.pullPolicy }}
-          command: ["bd", "serve"]
+          command: ["kd", "serve"]
           ports:
             - name: grpc
               containerPort: 9090

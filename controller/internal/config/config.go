@@ -143,8 +143,8 @@ type Config struct {
 
 // ProjectCacheEntry holds project metadata from daemon project beads.
 type ProjectCacheEntry struct {
-	Prefix        string // e.g., "bd", "bot"
-	GitURL        string // e.g., "https://github.com/alfredjeanlab/beads.git"
+	Prefix        string // e.g., "kd", "bot"
+	GitURL        string // e.g., "https://github.com/groblegark/kbeads.git"
 	DefaultBranch string // e.g., "main"
 
 	// Per-project pod customization (from project bead labels).
