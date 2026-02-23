@@ -60,6 +60,24 @@ jobs:
             echo "alias=nightly" >> "$GITHUB_OUTPUT"
           fi
 
+  quench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/go.mod
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Install quench
+        run: cargo install quench --git https://github.com/alfredjeanlab/quench
+      - name: Run quench checks
+        run: quench check
+
   docker:
     name: Docker (${{ matrix.arch }})
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
