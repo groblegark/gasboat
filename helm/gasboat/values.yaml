@@ -81,6 +81,10 @@ agents:
     name: ""        # defaults to "<release>-agent"
     annotations: {}
 
+  # Default StorageClass for agent workspace PVCs (e.g., "gp2").
+  # If empty, uses cluster default. Project beads can override per-project.
+  agentStorageClass: ""
+
   # Max agent pods that can exist simultaneously (0 = unlimited)
   coopMaxPods: 0
 

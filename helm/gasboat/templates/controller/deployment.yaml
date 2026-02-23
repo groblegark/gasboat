@@ -121,6 +121,10 @@ spec:
             {{- end }}
             - name: COOP_SERVICE_ACCOUNT
               value: {{ include "gasboat.coop.serviceAccountName" . }}
+            {{- if .Values.agents.agentStorageClass }}
+            - name: AGENT_STORAGE_CLASS
+              value: {{ .Values.agents.agentStorageClass }}
+            {{- end }}
             {{- if .Values.agents.coopMaxPods }}
             - name: COOP_MAX_PODS
               value: {{ .Values.agents.coopMaxPods | quote }}
