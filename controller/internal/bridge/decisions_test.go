@@ -13,13 +13,13 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"gasboat/controller/internal/beadsapi"
+	"gasboat/controller/internal/client"
 )
 
 // mockDaemon implements BeadClient for testing.
 type mockDaemon struct {
 	mu       sync.Mutex
-	beads    map[string]*beadsapi.BeadDetail
+	beads    map[string]*client.BeadDetail
 	closed   []closeCall
 	getCalls int
 }
@@ -31,18 +31,18 @@ type closeCall struct {
 
 func newMockDaemon() *mockDaemon {
 	return &mockDaemon{
-		beads: make(map[string]*beadsapi.BeadDetail),
+		beads: make(map[string]*client.BeadDetail),
 	}
 }
 
-func (m *mockDaemon) GetBead(_ context.Context, beadID string) (*beadsapi.BeadDetail, error) {
+func (m *mockDaemon) GetBead(_ context.Context, beadID string) (*client.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getCalls++
 	if b, ok := m.beads[beadID]; ok {
 		return b, nil
 	}
-	return &beadsapi.BeadDetail{ID: beadID}, nil
+	return &client.BeadDetail{ID: beadID}, nil
 }
 
 func (m *mockDaemon) CloseBead(_ context.Context, beadID string, fields map[string]string) error {
@@ -165,7 +165,7 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 
 	// Set up a mock daemon that returns the agent bead with coop_url.
 	daemon := newMockDaemon()
-	daemon.beads["crew-town-crew-hq"] = &beadsapi.BeadDetail{
+	daemon.beads["crew-town-crew-hq"] = &client.BeadDetail{
 		ID: "crew-town-crew-hq",
 		Fields: map[string]string{
 			"coop_url": coopServer.URL,

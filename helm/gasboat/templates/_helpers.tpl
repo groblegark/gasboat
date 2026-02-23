@@ -166,25 +166,6 @@ Coopmux service URL
 {{- printf "http://%s:%d" (include "gasboat.coopmux.fullname" .) (int .Values.coopmux.service.port) }}
 {{- end }}
 
-{{/*
-Coopmux ingress middlewares — shared middleware list for all ingress routes.
-Accepts a dict with "fullname" and "Values" keys plus an "includeBasicAuth" boolean.
-*/}}
-{{- define "gasboat.coopmux.ingressMiddlewares" -}}
-{{- if .Values.coopmux.ingress.ipWhitelist.enabled }}
-- name: {{ .fullname }}-ipwhitelist
-{{- end }}
-{{- if .Values.coopmux.ingress.rateLimit.enabled }}
-- name: {{ .fullname }}-ratelimit
-{{- end }}
-{{- if and .includeBasicAuth .Values.coopmux.ingress.basicAuth.enabled }}
-- name: {{ .fullname }}-basicauth
-{{- end }}
-{{- if .Values.coopmux.ingress.bearerToken }}
-- name: {{ .fullname }}-inject-bearer
-{{- end }}
-{{- end }}
-
 {{/* ===== PostgreSQL component helpers ===== */}}
 
 {{/*

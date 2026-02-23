@@ -12,7 +12,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"gasboat/controller/internal/beadsapi"
+	"gasboat/controller/internal/client"
 )
 
 func TestMail_HandleCreated_NonMail_Ignored(t *testing.T) {
@@ -47,7 +47,7 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 	defer coopServer.Close()
 
 	daemon := newMockDaemon()
-	daemon.beads["crew-proj-devops-builder"] = &beadsapi.BeadDetail{
+	daemon.beads["crew-proj-devops-builder"] = &client.BeadDetail{
 		ID: "crew-proj-devops-builder",
 		Fields: map[string]string{
 			"coop_url": coopServer.URL,
@@ -100,7 +100,7 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 	defer coopServer.Close()
 
 	daemon := newMockDaemon()
-	daemon.beads["crew-proj-devops-builder"] = &beadsapi.BeadDetail{
+	daemon.beads["crew-proj-devops-builder"] = &client.BeadDetail{
 		ID: "crew-proj-devops-builder",
 		Fields: map[string]string{
 			"coop_url": coopServer.URL,

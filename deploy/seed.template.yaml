@@ -1,0 +1,28 @@
+# Seed credentials for coopmux OAuth session.
+#
+# Prerequisite: deploy with credentials.reauth=false in values so coopmux
+# treats the token as long-lived (no OAuth refresh attempts).
+#
+# 1. Copy to seed.yaml and paste your OAuth access token
+# 2. kubectl apply -f deploy/seed.yaml
+# 3. Seed via API (recommended, token goes healthy immediately):
+#      COOPMUX_TOKEN=$(kubectl get secret bd-beads-token -n gasboat -o jsonpath='{.data.token}' | base64 -d)
+#      kubectl port-forward -n gasboat deploy/gasboat-coopmux 9800:9800 &
+#      curl -X POST -H "Authorization: Bearer $COOPMUX_TOKEN" -H "Content-Type: application/json" \
+#        http://localhost:9800/api/v1/credentials/set \
+#        -d '{"account":"claude-max","token":"YOUR_TOKEN"}'
+apiVersion: v1
+kind: Secret
+metadata:
+  name: coopmux-seed
+  namespace: gasboat
+stringData:
+  credentials.json: |
+    {
+      "accounts": {
+        "claude-max": {
+          "access_token": "PASTE_YOUR_OAUTH_ACCESS_TOKEN_HERE",
+          "expires_at": 0
+        }
+      }
+    }

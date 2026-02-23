@@ -1,0 +1,85 @@
+# Gasboat deployment values
+# Copy to values.yaml and fill in your environment-specific settings.
+
+imagePullSecrets: []
+
+# --- Agent Controller ---
+agents:
+  enabled: true
+
+  image:
+    repository: ghcr.io/alfredjeanlab/gasboat
+    tag: "nightly"
+    pullPolicy: Always
+
+  agentImage:
+    repository: ghcr.io/alfredjeanlab/gasboat/agent
+    tag: "nightly-slim"
+
+  agentServiceAccount:
+    create: true
+
+  coopMaxPods: 10
+  coopBurstLimit: 5
+  coopSyncInterval: "30s"
+
+  natsURL: ""  # auto-wired from nats.enabled
+
+  logLevel: "debug"
+
+# --- PostgreSQL (disable if using managed database) ---
+postgres:
+  enabled: false
+
+# --- Beads Daemon ---
+beads:
+  image:
+    repository: ghcr.io/alfredjeanlab/beads
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # Database connection string
+  databaseURL: "postgresql://user:password@host:port/beads?sslmode=require"
+
+  tokenSecret: bd-beads-token
+
+# --- NATS (in-chart JetStream) ---
+nats:
+  enabled: true
+  replicas: 1
+
+  jetstream:
+    maxMemory: "256M"
+
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""  # e.g. do-block-storage
+
+# --- Coopmux ---
+coopmux:
+  enabled: true
+  natsURL: "disabled"
+
+  image:
+    repository: ghcr.io/alfredjeanlab/coop
+    tag: "coopmux"
+    pullPolicy: Always
+
+  credentials:
+    reauth: false  # long-lived OAuth token, no refresh
+
+  persistence:
+    enabled: true
+    size: 100Mi
+    storageClass: ""  # e.g. do-block-storage
+
+  ingress:
+    enabled: false
+    ingressClassName: nginx
+    host: ""  # e.g. coopmux.example.com (leave empty for IP-based access)
+    exposeAPI: true
+    bearerToken: ""  # coopmux auth token (injected into requests by ingress)
+    basicAuth:
+      enabled: false
+      secret: ""  # name of htpasswd K8s secret

@@ -1,2 +1,4 @@
 /controller/controller
-/deploy
+/deploy/*
+!/deploy/*.template.*
+.quench/

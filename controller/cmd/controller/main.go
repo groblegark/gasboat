@@ -25,8 +25,8 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
-	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/bridge"
+	"gasboat/controller/internal/client"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/reconciler"
@@ -68,7 +68,7 @@ func main() {
 	pods := podmanager.New(k8sClient, logger)
 
 	// Daemon client for gRPC access (used by reconciler, status reporter, and bridge).
-	daemon, err := beadsapi.New(beadsapi.Config{GRPCAddr: cfg.BeadsGRPCAddr})
+	daemon, err := client.New(client.Config{GRPCAddr: cfg.BeadsGRPCAddr})
 	if err != nil {
 		logger.Error("failed to create beads daemon client", "error", err)
 		os.Exit(1)
@@ -204,7 +204,7 @@ func runLeaderElection(ctx context.Context, logger *slog.Logger, cfg *config.Con
 
 // run is the main controller loop. It reads beads events and dispatches
 // pod operations. Separated from main() for testability.
-func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client) error {
+func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *client.Client) error {
 	// Run reconciler once at startup to catch beads created during downtime.
 	if rec != nil {
 		logger.Info("running startup reconciliation")
@@ -267,7 +267,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 }
 
 // runPeriodicSync runs SyncAll, project cache refresh, and reconciliation at a regular interval.
-func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, cfg *config.Config, interval time.Duration) {
+func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *client.Client, cfg *config.Config, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -411,7 +411,7 @@ func buildK8sClient(kubeconfig string) (kubernetes.Interface, error) {
 }
 
 // refreshProjectCache queries the daemon for project beads and updates cfg.ProjectCache.
-func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *beadsapi.Client, cfg *config.Config) {
+func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *client.Client, cfg *config.Config) {
 	rigs, err := daemon.ListProjectBeads(ctx)
 	if err != nil {
 		logger.Warn("failed to refresh project cache", "error", err)

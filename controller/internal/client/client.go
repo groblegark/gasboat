@@ -1,5 +1,5 @@
-// Package beadsapi queries the beads daemon for bead state via gRPC.
-package beadsapi
+// Package client queries the beads daemon for bead state via gRPC.
+package client
 
 import (
 	"context"

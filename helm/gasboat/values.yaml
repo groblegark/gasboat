@@ -201,25 +201,20 @@ coopmux:
     remoteRef: ""
     refreshTokenProperty: "refresh_token"
 
-  # Ingress (Traefik IngressRoute for coopmux dashboard)
+  # Ingress (standard Kubernetes Ingress for coopmux dashboard)
   ingress:
     enabled: false
+    ingressClassName: nginx
     host: ""
-    # Expose full API at / (default: mux-only at /mux, /ws/mux, /api/v1/sessions)
+    # Expose full API at / (default: mux-only at /mux, /ws, /api/v1/sessions)
     exposeAPI: false
     # Bearer token injected into requests so coopmux auth is satisfied.
     bearerToken: ""
-    ipWhitelist:
-      enabled: false
-      sourceRange: []
-      depth: 1
+    # Extra annotations merged into the Ingress metadata.
+    annotations: {}
     basicAuth:
       enabled: false
       secret: ""
-    rateLimit:
-      enabled: false
-      average: 100
-      burst: 200
 
   # Coopmux settings
   mux:

@@ -19,12 +19,12 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"gasboat/controller/internal/beadsapi"
+	"gasboat/controller/internal/client"
 )
 
-// BeadClient is the subset of beadsapi.Client used by the bridge package.
+// BeadClient is the subset of client.Client used by the bridge package.
 type BeadClient interface {
-	GetBead(ctx context.Context, beadID string) (*beadsapi.BeadDetail, error)
+	GetBead(ctx context.Context, beadID string) (*client.BeadDetail, error)
 	CloseBead(ctx context.Context, beadID string, fields map[string]string) error
 }
 

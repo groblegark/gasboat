@@ -11,7 +11,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"gasboat/controller/internal/beadsapi"
+	"gasboat/controller/internal/client"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 )
@@ -23,7 +23,7 @@ type SpecBuilder func(cfg *config.Config, project, mode, role, agentName string,
 // Reconciler diffs desired state (agent beads) against actual state (K8s pods)
 // and creates/deletes pods to converge.
 type Reconciler struct {
-	lister         beadsapi.BeadLister
+	lister         client.BeadLister
 	pods           podmanager.Manager
 	cfg            *config.Config
 	logger         *slog.Logger
@@ -35,7 +35,7 @@ type Reconciler struct {
 
 // New creates a Reconciler.
 func New(
-	lister beadsapi.BeadLister,
+	lister client.BeadLister,
 	pods podmanager.Manager,
 	cfg *config.Config,
 	logger *slog.Logger,
@@ -74,7 +74,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	// Build desired pod name set.
-	desired := make(map[string]beadsapi.AgentBead)
+	desired := make(map[string]client.AgentBead)
 	for _, b := range beads {
 		podName := fmt.Sprintf("%s-%s-%s-%s", b.Mode, b.Project, b.Role, b.AgentName)
 		desired[podName] = b
