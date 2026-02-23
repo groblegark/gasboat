@@ -100,6 +100,15 @@ agents:
   # Mount as ~/.claude/.credentials.json. See scripts/sync-claude-credentials.sh
   claudeOAuthSecret: ""
 
+  # K8s secret with Claude OAuth access token (key: "token").
+  # Injected as CLAUDE_CODE_OAUTH_TOKEN env var. Coop auto-writes .credentials.json
+  # when this is set — preferred over the static credentials secret mount.
+  claudeOAuthTokenSecret: ""
+
+  # K8s secret with Anthropic API key (key: "key").
+  # Injected as ANTHROPIC_API_KEY env var. Fallback when OAuth is unavailable.
+  anthropicApiKeySecret: ""
+
   # Git credentials for agent pods (username/token keys).
   gitCredentials:
     secret: ""           # K8s secret name (created manually or by externalSecret below)

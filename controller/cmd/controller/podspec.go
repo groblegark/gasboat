@@ -125,6 +125,24 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	if cfg.ClaudeOAuthSecret != "" {
 		spec.CredentialsSecret = cfg.ClaudeOAuthSecret
 	}
+	// CLAUDE_CODE_OAUTH_TOKEN: preferred auth method — coop auto-writes
+	// .credentials.json when this env var is set. Takes priority over the
+	// static credentials secret mount.
+	if cfg.ClaudeOAuthTokenSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "CLAUDE_CODE_OAUTH_TOKEN",
+			SecretName: cfg.ClaudeOAuthTokenSecret,
+			SecretKey:  "token",
+		})
+	}
+	// ANTHROPIC_API_KEY: fallback when OAuth is unavailable.
+	if cfg.AnthropicApiKeySecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "ANTHROPIC_API_KEY",
+			SecretName: cfg.AnthropicApiKeySecret,
+			SecretKey:  "key",
+		})
+	}
 	if cfg.BeadsTokenSecret != "" {
 		spec.DaemonTokenSecret = cfg.BeadsTokenSecret
 	}

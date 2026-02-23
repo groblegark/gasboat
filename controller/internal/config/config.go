@@ -75,6 +75,17 @@ type Config struct {
 	// Mounted as ~/.claude/.credentials.json in agent pods for Max/Corp accounts.
 	ClaudeOAuthSecret string
 
+	// ClaudeOAuthTokenSecret is the K8s secret containing a Claude OAuth access token
+	// (env: CLAUDE_OAUTH_TOKEN_SECRET). The "token" key is injected as
+	// CLAUDE_CODE_OAUTH_TOKEN in agent pods. When set, coop auto-writes
+	// .credentials.json — preferred over the static credentials secret mount.
+	ClaudeOAuthTokenSecret string
+
+	// AnthropicApiKeySecret is the K8s secret containing an Anthropic API key
+	// (env: ANTHROPIC_API_KEY_SECRET). The "key" key is injected as
+	// ANTHROPIC_API_KEY in agent pods. Fallback when OAuth is unavailable.
+	AnthropicApiKeySecret string
+
 	// GitCredentialsSecret is the K8s secret containing git credentials (env: GIT_CREDENTIALS_SECRET).
 	// Keys "username" and "token" are injected as GIT_USERNAME and GIT_TOKEN env vars
 	// in agent pods for git clone/push to GitHub.
@@ -162,9 +173,11 @@ func Parse() *Config {
 		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
 
 		// Secrets & Credentials
-		ClaudeOAuthSecret:    os.Getenv("CLAUDE_OAUTH_SECRET"),
-		GitCredentialsSecret: os.Getenv("GIT_CREDENTIALS_SECRET"),
-		GithubTokenSecret:    os.Getenv("GITHUB_TOKEN_SECRET"),
+		ClaudeOAuthSecret:      os.Getenv("CLAUDE_OAUTH_SECRET"),
+		ClaudeOAuthTokenSecret: os.Getenv("CLAUDE_OAUTH_TOKEN_SECRET"),
+		AnthropicApiKeySecret:  os.Getenv("ANTHROPIC_API_KEY_SECRET"),
+		GitCredentialsSecret:   os.Getenv("GIT_CREDENTIALS_SECRET"),
+		GithubTokenSecret:      os.Getenv("GITHUB_TOKEN_SECRET"),
 
 		// Coopmux
 		CoopmuxURL:         os.Getenv("COOPMUX_URL"),
