@@ -617,7 +617,7 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.RemoveDecisionMessage(beadID)
+		_ = b.state.RemoveDecisionMessage(beadID)
 	}
 }
 

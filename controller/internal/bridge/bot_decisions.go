@@ -185,7 +185,7 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.SetDecisionMessage(bead.ID, MessageRef{
+		_ = b.state.SetDecisionMessage(bead.ID, MessageRef{
 			ChannelID: channelID,
 			Timestamp: ts,
 			Agent:     agent,
@@ -270,7 +270,7 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.RemoveDecisionMessage(beadID)
+		_ = b.state.RemoveDecisionMessage(beadID)
 	}
 
 	b.logger.Info("dismissed decision from Slack",
