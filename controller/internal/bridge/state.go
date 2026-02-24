@@ -32,6 +32,7 @@ type StateData struct {
 	DecisionMessages map[string]MessageRef  `json:"decision_messages,omitempty"` // bead ID → message ref
 	AgentCards       map[string]MessageRef  `json:"agent_cards,omitempty"`       // agent name → status card ref
 	Dashboard        *DashboardRef          `json:"dashboard,omitempty"`
+	LastEventID      string                 `json:"last_event_id,omitempty"`     // SSE event ID for reconnection
 }
 
 // StateManager provides thread-safe persistence of Slack message references.
@@ -138,6 +139,23 @@ func (sm *StateManager) SetDashboard(ref DashboardRef) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.data.Dashboard = &ref
+	return sm.saveLocked()
+}
+
+// --- SSE Event ID ---
+
+// GetLastEventID returns the last processed SSE event ID.
+func (sm *StateManager) GetLastEventID() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.data.LastEventID
+}
+
+// SetLastEventID stores the last processed SSE event ID and persists.
+func (sm *StateManager) SetLastEventID(id string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.data.LastEventID = id
 	return sm.saveLocked()
 }
 

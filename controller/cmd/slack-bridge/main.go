@@ -136,11 +136,16 @@ func main() {
 		}()
 	}
 
-	// Create SSE event stream for decisions, mail, and agents watchers.
+	// Create event deduplicator for preventing duplicate Slack notifications.
+	dedup := bridge.NewDedup(logger)
+
+	// Create SSE event stream for decisions, mail, agents, and jacks watchers.
 	sseStream := bridge.NewSSEStream(bridge.SSEStreamConfig{
 		BeadsHTTPAddr: cfg.beadsHTTPAddr,
 		Topics:        []string{"beads.bead.created", "beads.bead.closed", "beads.bead.updated"},
 		Logger:        logger,
+		Dedup:         dedup,
+		State:         state,
 	})
 
 	// Register decisions handler on the SSE stream.
@@ -179,6 +184,10 @@ func main() {
 		Logger:   logger,
 	})
 	jacks.RegisterHandlers(sseStream)
+
+	// Catch-up: notify pending decisions that may have been missed during downtime.
+	// Run before SSE stream starts to pre-populate dedup map.
+	go dedup.CatchUpDecisions(ctx, daemon, notifier, logger)
 
 	// Start the shared SSE stream (delivers events to all watchers).
 	go func() {
