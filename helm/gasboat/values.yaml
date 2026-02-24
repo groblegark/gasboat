@@ -124,6 +124,9 @@ agents:
   # K8s secret with GitHub token for gh CLI in agent pods (releases, GHCR push)
   githubTokenSecret: ""
 
+  # K8s secret with GitLab token for glab CLI and git clone/push in agent pods
+  gitlabTokenSecret: ""
+
   # --- NATS event bus ---
 
   # NATS server URL for event bus integration (e.g., "nats://nats-svc:4222")
