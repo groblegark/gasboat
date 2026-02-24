@@ -38,6 +38,17 @@ type Bot struct {
 	// In-memory decision tracking (augments StateManager).
 	mu       sync.Mutex
 	messages map[string]string // bead ID → Slack message ts (hot cache)
+
+	// Agent status cards — persistent per-agent Slack messages that parent decisions.
+	cardsMu      sync.Mutex
+	agentCards   map[string]agentCardInfo // agent name → card info
+	pendingCount map[string]int           // agent name → number of pending decisions
+}
+
+// agentCardInfo tracks a status card's Slack message location.
+type agentCardInfo struct {
+	ChannelID string
+	Timestamp string
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
@@ -65,21 +76,33 @@ func NewBot(cfg BotConfig) *Bot {
 	)
 
 	b := &Bot{
-		api:      api,
-		socket:   socket,
-		state:    cfg.State,
-		daemon:   cfg.Daemon,
-		router:   cfg.Router,
-		logger:   cfg.Logger,
-		channel:  cfg.Channel,
-		messages: make(map[string]string),
+		api:          api,
+		socket:       socket,
+		state:        cfg.State,
+		daemon:       cfg.Daemon,
+		router:       cfg.Router,
+		logger:       cfg.Logger,
+		channel:      cfg.Channel,
+		messages:     make(map[string]string),
+		agentCards:   make(map[string]agentCardInfo),
+		pendingCount: make(map[string]int),
 	}
 
 	// Hydrate hot cache from persisted state.
 	if cfg.State != nil {
 		for id, ref := range cfg.State.AllDecisionMessages() {
 			b.messages[id] = ref.Timestamp
-			_ = ref // channel info available if needed
+			// Count pending decisions per agent for status card tracking.
+			if ref.Agent != "" {
+				b.pendingCount[ref.Agent]++
+			}
+		}
+		// Hydrate agent cards from persisted state.
+		for agent, ref := range cfg.State.AllAgentCards() {
+			b.agentCards[agent] = agentCardInfo{
+				ChannelID: ref.ChannelID,
+				Timestamp: ref.Timestamp,
+			}
 		}
 	}
 
@@ -802,6 +825,138 @@ func (b *Bot) handleRosterCommand(ctx context.Context, cmd slack.SlashCommand) {
 		slack.MsgOptionBlocks(blocks...))
 }
 
+// --- Agent Status Cards ---
+
+// ensureAgentCard creates or retrieves the persistent status card for an agent.
+// Returns the card's (channelID, timestamp) for threading decisions underneath.
+func (b *Bot) ensureAgentCard(ctx context.Context, agent string) (string, string) {
+	if agent == "" {
+		return "", ""
+	}
+
+	targetChannel := b.resolveChannel(agent)
+
+	b.cardsMu.Lock()
+	if card, ok := b.agentCards[agent]; ok {
+		b.cardsMu.Unlock()
+		return card.ChannelID, card.Timestamp
+	}
+	b.cardsMu.Unlock()
+
+	// Create a new status card.
+	pending := b.getPendingCount(agent)
+	blocks := b.buildAgentCardBlocks(agent, pending)
+
+	channelID, ts, err := b.api.PostMessageContext(ctx, targetChannel,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", agent), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to create agent status card",
+			"agent", agent, "error", err)
+		return "", ""
+	}
+
+	// Store in memory and persist.
+	b.cardsMu.Lock()
+	b.agentCards[agent] = agentCardInfo{
+		ChannelID: channelID,
+		Timestamp: ts,
+	}
+	b.cardsMu.Unlock()
+
+	if b.state != nil {
+		_ = b.state.SetAgentCard(agent, MessageRef{
+			ChannelID: channelID,
+			Timestamp: ts,
+			Agent:     agent,
+		})
+	}
+
+	b.logger.Info("created agent status card",
+		"agent", agent, "channel", channelID, "ts", ts)
+	return channelID, ts
+}
+
+// buildAgentCardBlocks creates Block Kit blocks for an agent status card.
+func (b *Bot) buildAgentCardBlocks(agent string, pendingCount int) []slack.Block {
+	// Status emoji: green if active, yellow if has pending decisions.
+	emoji := ":large_green_circle:"
+	if pendingCount > 0 {
+		emoji = ":yellow_circle:"
+	}
+
+	headerText := fmt.Sprintf("%s *%s*", emoji, agent)
+
+	pendingText := "No pending decisions"
+	if pendingCount == 1 {
+		pendingText = "1 pending decision"
+	} else if pendingCount > 1 {
+		pendingText = fmt.Sprintf("%d pending decisions", pendingCount)
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", pendingText, false, false)),
+	}
+
+	return blocks
+}
+
+// updateAgentCard updates the status card for an agent with the current pending count.
+func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
+	b.cardsMu.Lock()
+	card, ok := b.agentCards[agent]
+	b.cardsMu.Unlock()
+	if !ok {
+		return
+	}
+
+	pending := b.getPendingCount(agent)
+	blocks := b.buildAgentCardBlocks(agent, pending)
+
+	_, _, _, err := b.api.UpdateMessageContext(ctx, card.ChannelID, card.Timestamp,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", agent), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to update agent status card",
+			"agent", agent, "error", err)
+	}
+}
+
+// getPendingCount returns the number of pending decisions for an agent.
+func (b *Bot) getPendingCount(agent string) int {
+	b.cardsMu.Lock()
+	defer b.cardsMu.Unlock()
+	return b.pendingCount[agent]
+}
+
+// incrementPending increments the pending decision count for an agent.
+func (b *Bot) incrementPending(agent string) {
+	if agent == "" {
+		return
+	}
+	b.cardsMu.Lock()
+	b.pendingCount[agent]++
+	b.cardsMu.Unlock()
+}
+
+// decrementPending decrements the pending decision count for an agent.
+func (b *Bot) decrementPending(agent string) {
+	if agent == "" {
+		return
+	}
+	b.cardsMu.Lock()
+	if b.pendingCount[agent] > 0 {
+		b.pendingCount[agent]--
+	}
+	b.cardsMu.Unlock()
+}
+
 // --- Notifier interface implementation ---
 
 // NotifyDecision posts a Block Kit message to Slack for a new decision.
@@ -949,13 +1104,30 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	// Resolve target channel for this agent.
 	targetChannel := b.resolveChannel(agent)
 
-	// Thread under predecessor if present and tracked.
-	var predecessorThreadTS string
+	// Threading priority:
+	// 1. Predecessor chain (if present and same channel)
+	// 2. Agent status card (if agent has one)
+	var threadTS string
+	var threadSource string
+
 	if predecessorID != "" {
 		if ref, ok := b.lookupMessage(predecessorID); ok && ref.ChannelID == targetChannel {
-			predecessorThreadTS = ref.Timestamp
-			msgOpts = append(msgOpts, slack.MsgOptionTS(predecessorThreadTS))
+			threadTS = ref.Timestamp
+			threadSource = "predecessor"
 		}
+	}
+
+	if threadTS == "" && agent != "" {
+		// Ensure agent has a status card and thread under it.
+		cardChannel, cardTS := b.ensureAgentCard(ctx, agent)
+		if cardTS != "" && cardChannel == targetChannel {
+			threadTS = cardTS
+			threadSource = "agent_card"
+		}
+	}
+
+	if threadTS != "" {
+		msgOpts = append(msgOpts, slack.MsgOptionTS(threadTS))
 	}
 
 	// Post the message.
@@ -964,7 +1136,7 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		return fmt.Errorf("post decision to Slack: %w", err)
 	}
 
-	// Track the message.
+	// Track the message and update pending count.
 	b.mu.Lock()
 	b.messages[bead.ID] = ts
 	b.mu.Unlock()
@@ -977,14 +1149,21 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		})
 	}
 
+	b.incrementPending(agent)
+
+	// Update the agent status card with new pending count.
+	if agent != "" {
+		b.updateAgentCard(ctx, agent)
+	}
+
 	// Mark predecessor as superseded if we threaded under it.
-	if predecessorThreadTS != "" {
-		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, targetChannel, predecessorThreadTS)
+	if threadSource == "predecessor" {
+		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, targetChannel, threadTS)
 	}
 
 	b.logger.Info("posted decision to Slack",
 		"bead", bead.ID, "channel", channelID, "ts", ts,
-		"predecessor", predecessorID)
+		"thread_source", threadSource, "predecessor", predecessorID)
 	return nil
 }
 
@@ -992,8 +1171,26 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 // Called via SSE close event. The modal submission handler may have already
 // updated the message directly, so this serves as a fallback.
 func (b *Bot) UpdateDecision(ctx context.Context, beadID, chosen string) error {
+	// Look up the agent for this decision to update status card.
+	agent := b.getAgentForDecision(beadID)
 	b.updateMessageResolved(ctx, beadID, chosen, "", "", "")
+
+	// Decrement pending count and update the agent status card.
+	if agent != "" {
+		b.decrementPending(agent)
+		b.updateAgentCard(ctx, agent)
+	}
 	return nil
+}
+
+// getAgentForDecision looks up the agent name for a tracked decision message.
+func (b *Bot) getAgentForDecision(beadID string) string {
+	if b.state != nil {
+		if ref, ok := b.state.GetDecisionMessage(beadID); ok {
+			return ref.Agent
+		}
+	}
+	return ""
 }
 
 // resolveChannel returns the target Slack channel for an agent.
@@ -1088,6 +1285,9 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 
 // DismissDecision deletes the Slack message for an expired/dismissed decision.
 func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
+	// Look up agent before we clean up tracking.
+	agent := b.getAgentForDecision(beadID)
+
 	ref, ok := b.lookupMessage(beadID)
 	if !ok {
 		b.logger.Debug("no Slack message found for dismissed decision", "bead", beadID)
@@ -1106,6 +1306,12 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 
 	if b.state != nil {
 		b.state.RemoveDecisionMessage(beadID)
+	}
+
+	// Decrement pending count and update the agent status card.
+	if agent != "" {
+		b.decrementPending(agent)
+		b.updateAgentCard(ctx, agent)
 	}
 
 	b.logger.Info("dismissed decision from Slack",

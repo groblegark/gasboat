@@ -121,6 +121,17 @@ func (sm *StateManager) RemoveAgentCard(agent string) error {
 	return sm.saveLocked()
 }
 
+// AllAgentCards returns a copy of all tracked agent status cards.
+func (sm *StateManager) AllAgentCards() map[string]MessageRef {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	out := make(map[string]MessageRef, len(sm.data.AgentCards))
+	for k, v := range sm.data.AgentCards {
+		out[k] = v
+	}
+	return out
+}
+
 // --- Dashboard ---
 
 // GetDashboard returns the dashboard message ref.
