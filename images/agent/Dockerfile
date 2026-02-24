@@ -19,7 +19,9 @@ ARG TARGETARCH
 # ── System packages (minimal) ─────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git jq xz-utils ca-certificates screen \
-    openssh-client sudo && \
+    openssh-client sudo \
+    python3 python3-pip python3-venv && \
+    ln -sf /usr/bin/python3 /usr/bin/python && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ── Node.js ──────────────────────────────────────────────────────
