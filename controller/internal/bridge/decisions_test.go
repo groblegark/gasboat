@@ -247,9 +247,11 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 	notif := &mockNotifier{}
 
 	d := &Decisions{
-		daemon:   daemon,
-		notifier: notif,
-		logger:   slog.Default(),
+		daemon:     daemon,
+		notifier:   notif,
+		logger:     slog.Default(),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+		escalated:  make(map[string]time.Time),
 	}
 
 	closedEvent := marshalSSEBeadPayload(BeadEvent{
