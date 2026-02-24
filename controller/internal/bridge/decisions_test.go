@@ -73,11 +73,13 @@ func (m *mockDaemon) getGetCalls() int {
 	return m.getCalls
 }
 
-// mockNotifier records calls to NotifyDecision and UpdateDecision.
+// mockNotifier records calls to NotifyDecision, UpdateDecision, NotifyEscalation, and DismissDecision.
 type mockNotifier struct {
-	mu      sync.Mutex
-	created []BeadEvent
-	updated []updateCall
+	mu        sync.Mutex
+	created   []BeadEvent
+	updated   []updateCall
+	escalated []BeadEvent
+	dismissed []string
 }
 
 type updateCall struct {
@@ -99,6 +101,20 @@ func (m *mockNotifier) UpdateDecision(_ context.Context, beadID, chosen string) 
 	return nil
 }
 
+func (m *mockNotifier) NotifyEscalation(_ context.Context, bead BeadEvent) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.escalated = append(m.escalated, bead)
+	return nil
+}
+
+func (m *mockNotifier) DismissDecision(_ context.Context, beadID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dismissed = append(m.dismissed, beadID)
+	return nil
+}
+
 func (m *mockNotifier) getCreated() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -111,6 +127,18 @@ func (m *mockNotifier) getUpdated() []updateCall {
 	return append([]updateCall{}, m.updated...)
 }
 
+func (m *mockNotifier) getEscalated() []BeadEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]BeadEvent{}, m.escalated...)
+}
+
+func (m *mockNotifier) getDismissed() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string{}, m.dismissed...)
+}
+
 // marshalSSEBeadPayload wraps a BeadEvent in the kbeads SSE event format
 // ({"bead": {...}}) for testing handleCreated/handleClosed which now accept
 // raw SSE JSON data.
@@ -121,8 +149,9 @@ func marshalSSEBeadPayload(bead BeadEvent) []byte {
 
 func TestDecisions_HandleCreated(t *testing.T) {
 	d := &Decisions{
-		notifier: &mockNotifier{},
-		logger:   slog.Default(),
+		notifier:  &mockNotifier{},
+		logger:    slog.Default(),
+		escalated: make(map[string]bool),
 	}
 
 	// Non-decision bead should be ignored.
@@ -230,8 +259,9 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 
 func TestDecisions_HandleClosed_NoAssignee(t *testing.T) {
 	d := &Decisions{
-		notifier: &mockNotifier{},
-		logger:   slog.Default(),
+		notifier:  &mockNotifier{},
+		logger:    slog.Default(),
+		escalated: make(map[string]bool),
 	}
 
 	// Decision closed without assignee — should log warning but not panic.
@@ -244,4 +274,162 @@ func TestDecisions_HandleClosed_NoAssignee(t *testing.T) {
 	})
 	d.handleClosed(context.Background(), closedEvent)
 	// No panic = pass.
+}
+
+func TestDecisions_HandleClosed_Expiry(t *testing.T) {
+	notif := &mockNotifier{}
+	d := NewDecisions(DecisionsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Decision closed with chosen=_expired should dismiss the Slack message.
+	expiredEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:   "dec-3",
+		Type: "decision",
+		Fields: map[string]string{
+			"chosen":    "_expired",
+			"rationale": "Decision expired after 30m with no response",
+		},
+	})
+	d.handleClosed(context.Background(), expiredEvent)
+
+	dismissed := notif.getDismissed()
+	if len(dismissed) != 1 {
+		t.Fatalf("expected 1 dismiss call, got %d", len(dismissed))
+	}
+	if dismissed[0] != "dec-3" {
+		t.Errorf("expected dismissed bead dec-3, got %s", dismissed[0])
+	}
+
+	// UpdateDecision should NOT be called for expired decisions.
+	if len(notif.getUpdated()) != 0 {
+		t.Error("UpdateDecision should not be called for expired decisions")
+	}
+}
+
+func TestDecisions_HandleClosed_Dismissed(t *testing.T) {
+	notif := &mockNotifier{}
+	d := NewDecisions(DecisionsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Decision closed with chosen=dismissed should dismiss the Slack message.
+	dismissedEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:   "dec-4",
+		Type: "decision",
+		Fields: map[string]string{
+			"chosen": "dismissed",
+		},
+	})
+	d.handleClosed(context.Background(), dismissedEvent)
+
+	dismissed := notif.getDismissed()
+	if len(dismissed) != 1 {
+		t.Fatalf("expected 1 dismiss call, got %d", len(dismissed))
+	}
+}
+
+func TestDecisions_HandleUpdated_Escalation(t *testing.T) {
+	notif := &mockNotifier{}
+	d := NewDecisions(DecisionsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Non-decision bead should be ignored.
+	nonDecision := marshalSSEBeadPayload(BeadEvent{
+		ID:     "agent-1",
+		Type:   "agent",
+		Labels: []string{"escalated"},
+	})
+	d.handleUpdated(context.Background(), nonDecision)
+	if len(notif.getEscalated()) != 0 {
+		t.Fatal("non-decision bead should not trigger escalation")
+	}
+
+	// Decision without escalation marker should be ignored.
+	normalUpdate := marshalSSEBeadPayload(BeadEvent{
+		ID:   "dec-5",
+		Type: "decision",
+		Fields: map[string]string{
+			"question": "Deploy to prod?",
+		},
+	})
+	d.handleUpdated(context.Background(), normalUpdate)
+	if len(notif.getEscalated()) != 0 {
+		t.Fatal("decision without escalation should not trigger notification")
+	}
+
+	// Decision with "escalated" label should trigger notification.
+	escalatedEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:       "dec-6",
+		Type:     "decision",
+		Labels:   []string{"escalated"},
+		Assignee: "gasboat/crew/test-bot",
+		Fields: map[string]string{
+			"question": "Deploy to prod?",
+		},
+	})
+	d.handleUpdated(context.Background(), escalatedEvent)
+
+	escalated := notif.getEscalated()
+	if len(escalated) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(escalated))
+	}
+	if escalated[0].ID != "dec-6" {
+		t.Errorf("expected bead ID dec-6, got %s", escalated[0].ID)
+	}
+}
+
+func TestDecisions_HandleUpdated_EscalationByLabel(t *testing.T) {
+	notif := &mockNotifier{}
+	d := NewDecisions(DecisionsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Decision with "escalated" label should trigger escalation.
+	criticalEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:     "dec-7",
+		Type:   "decision",
+		Labels: []string{"escalated", "urgent"},
+		Fields: map[string]string{
+			"question": "System down — deploy hotfix?",
+		},
+	})
+	d.handleUpdated(context.Background(), criticalEvent)
+
+	escalated := notif.getEscalated()
+	if len(escalated) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(escalated))
+	}
+}
+
+func TestDecisions_HandleUpdated_EscalationDedup(t *testing.T) {
+	notif := &mockNotifier{}
+	d := NewDecisions(DecisionsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	escalatedEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:     "dec-8",
+		Type:   "decision",
+		Labels: []string{"escalated"},
+		Fields: map[string]string{
+			"question": "Approve?",
+		},
+	})
+
+	// First call: should notify.
+	d.handleUpdated(context.Background(), escalatedEvent)
+	// Second call: should be deduplicated.
+	d.handleUpdated(context.Background(), escalatedEvent)
+
+	escalated := notif.getEscalated()
+	if len(escalated) != 1 {
+		t.Fatalf("expected exactly 1 escalation (dedup), got %d", len(escalated))
+	}
 }

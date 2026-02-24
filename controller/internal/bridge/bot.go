@@ -909,6 +909,73 @@ func (b *Bot) markDecisionSuperseded(ctx context.Context, predecessorID, newDeci
 	}
 }
 
+// NotifyEscalation posts a highlighted notification for an escalated decision.
+func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
+	question := bead.Fields["question"]
+	agent := bead.Assignee
+
+	displayID := bead.ID
+	text := fmt.Sprintf(":rotating_light: *ESCALATED: %s*\n%s", displayID, question)
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", text, false, false),
+			nil, nil),
+	}
+
+	// Add context with agent and requester info.
+	contextParts := []string{fmt.Sprintf("Bead: `%s`", bead.ID)}
+	if agent != "" {
+		contextParts = append([]string{fmt.Sprintf("Agent: `%s`", agent)}, contextParts...)
+	}
+	if requestedBy := bead.Fields["requested_by"]; requestedBy != "" {
+		contextParts = append(contextParts, fmt.Sprintf("Requested by: %s", requestedBy))
+	}
+	blocks = append(blocks, slack.NewContextBlock("",
+		slack.NewTextBlockObject("mrkdwn", strings.Join(contextParts, " | "), false, false)))
+
+	targetChannel := b.resolveChannel(agent)
+
+	_, _, err := b.api.PostMessageContext(ctx, targetChannel,
+		slack.MsgOptionText(fmt.Sprintf("ESCALATED: %s — %s", displayID, question), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return fmt.Errorf("post escalation to Slack: %w", err)
+	}
+
+	b.logger.Info("posted escalation to Slack",
+		"bead", bead.ID, "channel", targetChannel)
+	return nil
+}
+
+// DismissDecision deletes the Slack message for an expired/dismissed decision.
+func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
+	ref, ok := b.lookupMessage(beadID)
+	if !ok {
+		b.logger.Debug("no Slack message found for dismissed decision", "bead", beadID)
+		return nil
+	}
+
+	_, _, err := b.api.DeleteMessageContext(ctx, ref.ChannelID, ref.Timestamp)
+	if err != nil {
+		return fmt.Errorf("delete dismissed decision from Slack: %w", err)
+	}
+
+	// Clean up tracking.
+	b.mu.Lock()
+	delete(b.messages, beadID)
+	b.mu.Unlock()
+
+	if b.state != nil {
+		b.state.RemoveDecisionMessage(beadID)
+	}
+
+	b.logger.Info("dismissed decision from Slack",
+		"bead", beadID, "channel", ref.ChannelID)
+	return nil
+}
+
 // NotifyAgentCrash posts a crash alert to the agent's resolved Slack channel.
 func (b *Bot) NotifyAgentCrash(ctx context.Context, bead BeadEvent) error {
 	agent := bead.Assignee
