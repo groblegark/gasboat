@@ -154,13 +154,14 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 
 // BeadDetail represents a full bead returned by the daemon.
 type BeadDetail struct {
-	ID     string            `json:"id"`
-	Title  string            `json:"title"`
-	Type   string            `json:"type"`
-	Status string            `json:"status"`
-	Labels []string          `json:"labels"`
-	Notes  string            `json:"notes"`
-	Fields map[string]string `json:"fields"`
+	ID       string            `json:"id"`
+	Title    string            `json:"title"`
+	Type     string            `json:"type"`
+	Status   string            `json:"status"`
+	Assignee string            `json:"assignee"`
+	Labels   []string          `json:"labels"`
+	Notes    string            `json:"notes"`
+	Fields   map[string]string `json:"fields"`
 }
 
 // GetBead fetches a single bead by ID from the daemon.
@@ -252,23 +253,43 @@ func (c *Client) SetConfig(ctx context.Context, key string, value []byte) error 
 
 // beadJSON is the JSON representation of a bead from the HTTP API.
 type beadJSON struct {
-	ID     string          `json:"id"`
-	Title  string          `json:"title"`
-	Type   string          `json:"type"`
-	Status string          `json:"status"`
-	Labels []string        `json:"labels"`
-	Notes  string          `json:"notes"`
-	Fields json.RawMessage `json:"fields"`
+	ID       string          `json:"id"`
+	Title    string          `json:"title"`
+	Type     string          `json:"type"`
+	Status   string          `json:"status"`
+	Assignee string          `json:"assignee"`
+	Labels   []string        `json:"labels"`
+	Notes    string          `json:"notes"`
+	Fields   json.RawMessage `json:"fields"`
 }
 
 // fieldsMap decodes the JSON fields into a string map.
+// Complex values (arrays, objects) are re-marshaled to JSON strings.
 func (b *beadJSON) fieldsMap() map[string]string {
 	if len(b.Fields) == 0 {
 		return make(map[string]string)
 	}
 	m := make(map[string]string)
-	if err := json.Unmarshal(b.Fields, &m); err != nil {
+	// Try direct string map first (fast path).
+	if err := json.Unmarshal(b.Fields, &m); err == nil {
+		return m
+	}
+	// Fall back to map[string]any — re-marshal complex values.
+	var raw map[string]any
+	if err := json.Unmarshal(b.Fields, &raw); err != nil {
 		return make(map[string]string)
+	}
+	for k, v := range raw {
+		switch v := v.(type) {
+		case string:
+			m[k] = v
+		default:
+			if bs, err := json.Marshal(v); err == nil {
+				m[k] = string(bs)
+			} else {
+				m[k] = fmt.Sprintf("%v", v)
+			}
+		}
 	}
 	return m
 }
@@ -276,13 +297,14 @@ func (b *beadJSON) fieldsMap() map[string]string {
 // toDetail converts a beadJSON to a BeadDetail.
 func (b *beadJSON) toDetail() *BeadDetail {
 	return &BeadDetail{
-		ID:     b.ID,
-		Title:  b.Title,
-		Type:   b.Type,
-		Status: b.Status,
-		Labels: b.Labels,
-		Notes:  b.Notes,
-		Fields: b.fieldsMap(),
+		ID:       b.ID,
+		Title:    b.Title,
+		Type:     b.Type,
+		Status:   b.Status,
+		Assignee: b.Assignee,
+		Labels:   b.Labels,
+		Notes:    b.Notes,
+		Fields:   b.fieldsMap(),
 	}
 }
 

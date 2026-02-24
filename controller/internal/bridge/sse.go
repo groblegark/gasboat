@@ -234,11 +234,21 @@ func ParseBeadEvent(data []byte) *BeadEvent {
 	if len(bead.Fields) > 0 {
 		// Try direct string map first.
 		if err := json.Unmarshal(bead.Fields, &fields); err != nil {
-			// Fall back to map[string]any.
+			// Fall back to map[string]any — re-marshal complex values to JSON strings.
 			var raw map[string]any
 			if err := json.Unmarshal(bead.Fields, &raw); err == nil {
 				for k, v := range raw {
-					fields[k] = fmt.Sprintf("%v", v)
+					switch v := v.(type) {
+					case string:
+						fields[k] = v
+					default:
+						// Arrays, maps, etc. — marshal back to JSON.
+						if b, err := json.Marshal(v); err == nil {
+							fields[k] = string(b)
+						} else {
+							fields[k] = fmt.Sprintf("%v", v)
+						}
+					}
 				}
 			}
 		}

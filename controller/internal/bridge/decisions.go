@@ -110,6 +110,18 @@ func (d *Decisions) handleClosed(ctx context.Context, data []byte) {
 	}
 
 	chosen := bead.Fields["chosen"]
+
+	// SSE close events may not include close-time fields (chosen, rationale).
+	// Fetch the full bead if chosen is missing.
+	if chosen == "" {
+		if detail, err := d.daemon.GetBead(ctx, bead.ID); err == nil {
+			chosen = detail.Fields["chosen"]
+			if bead.Assignee == "" {
+				bead.Assignee = detail.Assignee
+			}
+		}
+	}
+
 	d.logger.Info("decision bead closed",
 		"id", bead.ID,
 		"chosen", chosen,
