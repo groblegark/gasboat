@@ -25,11 +25,11 @@ func TestUpdateBeadFields_MergesFields(t *testing.T) {
 				ID:     "bd-merge",
 				Fields: json.RawMessage(`{"existing":"keep","overwrite":"old"}`),
 			}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &putBody)
+			_ = json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -77,11 +77,11 @@ func TestUpdateBeadFields_HandlesNilExistingFields(t *testing.T) {
 		case r.Method == http.MethodGet:
 			// Return bead with no fields (nil Fields).
 			bead := beadJSON{ID: "bd-nil"}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &putBody)
+			_ = json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -239,7 +239,7 @@ func TestAPIError_500WithJSONError(t *testing.T) {
 func TestAPIError_500WithPlainTextBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("something went wrong"))
+		_, _ = w.Write([]byte("something went wrong"))
 	}))
 	defer srv.Close()
 
@@ -278,7 +278,7 @@ func TestDoJSON_204NoContent(t *testing.T) {
 func TestListAgentBeads_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("service unavailable"))
+		_, _ = w.Write([]byte("service unavailable"))
 	}))
 	defer srv.Close()
 
