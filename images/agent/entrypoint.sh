@@ -167,11 +167,15 @@ if [ -d "/usr/local/go/bin" ]; then
     export PATH="/usr/local/go/bin:${PATH}"
     echo "[entrypoint] Added /usr/local/go/bin to PATH"
 fi
+if [ -d "/usr/local/cargo/bin" ]; then
+    export PATH="/usr/local/cargo/bin:${PATH}"
+    echo "[entrypoint] Added /usr/local/cargo/bin to PATH"
+fi
 
 # ── Claude settings ──────────────────────────────────────────────────────
 #
 # User-level settings (permissions + LSP plugins) written to ~/.claude/settings.json.
-# LSP plugins are always enabled — gopls and rust-analyzer are built into the image.
+# LSP plugins are always enabled — gopls and rust-analyzer are in the omnibus image.
 
 # Start with base settings JSON (permissions + LSP plugins).
 SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}'
@@ -301,13 +305,18 @@ All tools are installed directly in the agent image — use them from the comman
 | Tool | Command | Notes |
 |------|---------|-------|
 | Go | `go build`, `go test` | + `gopls` LSP server |
+| Rust | `rustc`, `cargo` | Full toolchain + `rust-analyzer` LSP |
 | Node.js | `node`, `npm`, `npx` | |
-| Python 3 | `python3`, `pip`, `python3 -m venv` | |
-| Rust | `rust-analyzer` | LSP server (no compiler — use `rustup` if needed) |
+| Bun | `bun`, `bunx` | Fast JS runtime + package manager |
+| Python 3 | `python3`, `uv`, `uvx` | `uv` for fast package management |
+| Task | `task` | Taskfile runner |
+| Helm | `helm` | K8s chart management |
+| kubectl | `kubectl` | |
 | AWS CLI | `aws` | |
 | Docker CLI | `docker` | Client only (no daemon) |
-| kubectl | `kubectl` | |
-| git | `git` | HTTPS + SSH protocols |
+| GitHub CLI | `gh` | |
+| GitLab CLI | `glab` | |
+| git | `git`, `git-lfs` | HTTPS + SSH protocols |
 | Build tools | `make`, `gcc`, `g++` | |
 | Utilities | `curl`, `jq`, `unzip`, `ssh` | |
 DEVTOOLS
