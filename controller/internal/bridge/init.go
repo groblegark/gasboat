@@ -94,11 +94,18 @@ func configs() map[string]any {
 		"type:decision": TypeConfig{
 			Kind: "data",
 			Fields: []FieldDef{
-				{Name: "question", Type: "string", Required: true},
+				{Name: "question", Type: "string"},
+				{Name: "prompt", Type: "string"},
 				{Name: "options", Type: "json", Required: true},
 				{Name: "chosen", Type: "string"},
 				{Name: "rationale", Type: "string"},
 				{Name: "session", Type: "string"},
+				{Name: "context", Type: "string"},
+				{Name: "requested_by", Type: "string"},
+				{Name: "requesting_agent_bead_id", Type: "string"},
+				{Name: "responded_by", Type: "string"},
+				{Name: "responded_at", Type: "string"},
+				{Name: "response_text", Type: "string"},
 			},
 		},
 		"type:project": TypeConfig{
