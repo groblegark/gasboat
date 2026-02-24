@@ -27,6 +27,8 @@ type SSEStream struct {
 
 	handlers map[string][]SSEHandler // topic -> handlers
 	lastID   string                  // last event ID for reconnection
+	dedup    *Dedup                  // optional event deduplicator
+	state    *StateManager           // optional state for persisting last event ID
 }
 
 // SSEHandler is a callback for SSE events on a specific topic.
@@ -40,16 +42,30 @@ type SSEStreamConfig struct {
 	Topics []string
 	// Logger for diagnostic output.
 	Logger *slog.Logger
+	// Dedup is an optional event deduplicator for preventing duplicate notifications.
+	Dedup *Dedup
+	// State is an optional state manager for persisting the last SSE event ID.
+	State *StateManager
 }
 
 // NewSSEStream creates a new SSE event stream for the slack-bridge.
 func NewSSEStream(cfg SSEStreamConfig) *SSEStream {
-	return &SSEStream{
+	s := &SSEStream{
 		baseURL:  strings.TrimRight(cfg.BeadsHTTPAddr, "/"),
 		topics:   cfg.Topics,
 		logger:   cfg.Logger,
 		handlers: make(map[string][]SSEHandler),
+		dedup:    cfg.Dedup,
+		state:    cfg.State,
 	}
+	// Restore last event ID from persisted state.
+	if cfg.State != nil {
+		if id := cfg.State.GetLastEventID(); id != "" {
+			s.lastID = id
+			s.logger.Info("restored SSE last event ID from state", "last_id", id)
+		}
+	}
+	return s
 }
 
 // On registers a handler for a specific SSE topic (e.g., "beads.bead.created").
@@ -184,13 +200,35 @@ func (s *SSEStream) readEvents(ctx context.Context, body io.Reader) error {
 }
 
 // dispatch calls all registered handlers for the given topic.
+// If dedup is configured, events are deduplicated by bead ID + topic.
 func (s *SSEStream) dispatch(ctx context.Context, id, topic, data string) {
 	handlers, ok := s.handlers[topic]
 	if !ok {
 		return
 	}
+
+	// Deduplicate: extract bead ID from payload and check.
+	if s.dedup != nil {
+		bead := ParseBeadEvent([]byte(data))
+		if bead != nil {
+			key := topic + ":" + bead.ID
+			if s.dedup.Seen(key) {
+				s.logger.Debug("dedup: skipping duplicate event",
+					"topic", topic, "bead", bead.ID, "sse_id", id)
+				return
+			}
+		}
+	}
+
 	for _, h := range handlers {
 		h(ctx, []byte(data))
+	}
+
+	// Persist last event ID after successful dispatch.
+	if s.state != nil && id != "" {
+		if err := s.state.SetLastEventID(id); err != nil {
+			s.logger.Warn("failed to persist last event ID", "id", id, "error", err)
+		}
 	}
 }
 
