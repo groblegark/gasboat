@@ -30,6 +30,12 @@ type AgentBead struct {
 	// AgentName is the agent's name within its role (e.g., "hq", "k8s").
 	AgentName string
 
+	// AgentState is the agent_state field (spawning, working, done, failed).
+	AgentState string
+
+	// PodPhase is the pod_phase field (pending, running, succeeded, failed).
+	PodPhase string
+
 	// Metadata contains additional bead metadata from the daemon.
 	Metadata map[string]string
 }
@@ -100,12 +106,14 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 			continue
 		}
 		beads = append(beads, AgentBead{
-			ID:        b.ID,
-			Project:   project,
-			Mode:      mode,
-			Role:      role,
-			AgentName: name,
-			Metadata:  ParseNotes(b.Notes),
+			ID:         b.ID,
+			Project:    project,
+			Mode:       mode,
+			Role:       role,
+			AgentName:  name,
+			AgentState: fields["agent_state"],
+			PodPhase:   fields["pod_phase"],
+			Metadata:   ParseNotes(b.Notes),
 		})
 	}
 

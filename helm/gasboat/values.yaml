@@ -424,6 +424,12 @@ slackBridge:
     # K8s secret name with keys: bot-token, app-token, signing-secret (for production)
     secretName: ""
 
+  # Live agent activity dashboard — pinned Slack message updated periodically.
+  dashboard:
+    enabled: false
+    channel: ""       # Dashboard channel (defaults to slack.channel if empty)
+    interval: ""      # Poll interval (e.g., "15s", "30s"); default 15s
+
   service:
     type: ClusterIP
     port: 8090

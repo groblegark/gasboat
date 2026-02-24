@@ -196,6 +196,22 @@ func main() {
 		chat.RegisterHandlers(sseStream)
 	}
 
+	// Start live agent dashboard if configured.
+	if cfg.dashboardEnabled && bot != nil {
+		dashChannel := cfg.dashboardChannel
+		if dashChannel == "" {
+			dashChannel = cfg.slackChannel
+		}
+		dash := bridge.NewDashboard(bot.API(), daemon, state, logger, bridge.DashboardConfig{
+			Enabled:   true,
+			ChannelID: dashChannel,
+			Interval:  cfg.dashboardInterval,
+		})
+		dash.RegisterHandlers(sseStream)
+		go dash.Run(ctx)
+		logger.Info("dashboard enabled", "channel", dashChannel, "interval", cfg.dashboardInterval)
+	}
+
 	// Catch-up: notify pending decisions that may have been missed during downtime.
 	// Run before SSE stream starts to pre-populate dedup map.
 	go dedup.CatchUpDecisions(ctx, daemon, notifier, logger)
@@ -234,9 +250,28 @@ type config struct {
 	logLevel           string
 	statePath          string
 	debug              bool
+
+	// Dashboard
+	dashboardEnabled  bool
+	dashboardChannel  string
+	dashboardInterval time.Duration
 }
 
 func parseConfig() *config {
+	dashInterval := 15 * time.Second
+	if v := os.Getenv("SLACK_DASHBOARD_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			dashInterval = d
+		}
+	}
+
+	dashChannel := os.Getenv("SLACK_DASHBOARD_CHANNEL")
+	dashEnabled := os.Getenv("SLACK_DASHBOARD") == "true"
+	// Auto-enable if channel is set.
+	if dashChannel != "" && os.Getenv("SLACK_DASHBOARD") == "" {
+		dashEnabled = true
+	}
+
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
 		slackBotToken:      os.Getenv("SLACK_BOT_TOKEN"),
@@ -247,6 +282,10 @@ func parseConfig() *config {
 		logLevel:           envOrDefault("LOG_LEVEL", "info"),
 		statePath:          envOrDefault("STATE_PATH", "/tmp/slack-bridge-state.json"),
 		debug:              os.Getenv("DEBUG") == "true" || os.Getenv("LOG_LEVEL") == "debug",
+
+		dashboardEnabled:  dashEnabled,
+		dashboardChannel:  dashChannel,
+		dashboardInterval: dashInterval,
 	}
 }
 

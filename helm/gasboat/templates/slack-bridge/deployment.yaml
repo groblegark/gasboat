@@ -97,6 +97,19 @@ spec:
             - name: LOG_LEVEL
               value: {{ .Values.slackBridge.logLevel | quote }}
             {{- end }}
+            # Dashboard
+            {{- if .Values.slackBridge.dashboard.enabled }}
+            - name: SLACK_DASHBOARD
+              value: "true"
+            {{- end }}
+            {{- if .Values.slackBridge.dashboard.channel }}
+            - name: SLACK_DASHBOARD_CHANNEL
+              value: {{ .Values.slackBridge.dashboard.channel | quote }}
+            {{- end }}
+            {{- if .Values.slackBridge.dashboard.interval }}
+            - name: SLACK_DASHBOARD_INTERVAL
+              value: {{ .Values.slackBridge.dashboard.interval | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
