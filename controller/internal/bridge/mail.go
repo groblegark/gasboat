@@ -10,9 +10,19 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"gasboat/controller/internal/beadsapi"
 )
+
+// noteValue parses "key: value" lines from a notes string and returns the value
+// for the given key, or "" if not found.
+func noteValue(notes, key string) string {
+	for _, line := range strings.Split(notes, "\n") {
+		parts := strings.SplitN(strings.TrimSpace(line), ":", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
+}
 
 // MailConfig holds configuration for the Mail watcher.
 type MailConfig struct {
@@ -87,16 +97,23 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		return
 	}
 
+	// Find the agent bead by assignee name (not by ID).
 	agentBead, err := m.daemon.FindAgentBead(ctx, agentName)
 	if err != nil {
-		m.logger.Error("failed to get agent bead for mail nudge",
+		m.logger.Error("failed to find agent bead for mail nudge",
 			"agent", agentName, "mail", bead.ID, "error", err)
 		return
 	}
+	if agentBead == nil {
+		m.logger.Warn("no agent bead found for assignee, cannot nudge",
+			"agent", agentName, "mail", bead.ID)
+		return
+	}
 
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
+	// coop_url is stored in the notes field as "key: value" lines, not in fields.
+	coopURL := noteValue(agentBead.Notes, "coop_url")
 	if coopURL == "" {
-		m.logger.Warn("agent bead has no coop_url, cannot nudge",
+		m.logger.Warn("agent bead has no coop_url in notes, cannot nudge",
 			"agent", agentName, "mail", bead.ID)
 		return
 	}
