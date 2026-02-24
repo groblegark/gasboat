@@ -129,6 +129,8 @@ func (b *Bot) handleEvents(ctx context.Context) {
 }
 
 func (b *Bot) handleEvent(ctx context.Context, evt socketmode.Event) {
+	b.logger.Debug("socket mode event received", "type", string(evt.Type))
+
 	switch evt.Type {
 	case socketmode.EventTypeConnecting:
 		b.logger.Info("Slack Socket Mode connecting")

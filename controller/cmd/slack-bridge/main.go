@@ -204,7 +204,7 @@ func parseConfig() *config {
 		listenAddr:         envOrDefault("SLACK_LISTEN_ADDR", ":8090"),
 		logLevel:           envOrDefault("LOG_LEVEL", "info"),
 		statePath:          envOrDefault("STATE_PATH", "/tmp/slack-bridge-state.json"),
-		debug:              os.Getenv("DEBUG") == "true",
+		debug:              os.Getenv("DEBUG") == "true" || os.Getenv("LOG_LEVEL") == "debug",
 	}
 }
 
