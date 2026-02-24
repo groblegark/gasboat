@@ -14,8 +14,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
+
+	"gasboat/controller/internal/beadsapi"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -207,7 +210,90 @@ func (b *Bot) handleMessageEvent(ctx context.Context, ev *slackevents.MessageEve
 		return
 	}
 
-	// TODO: Channel-to-agent chat forwarding (bd-b0pnp).
+	// Channel-to-agent chat forwarding (bd-b0pnp).
+	b.handleChatForward(ctx, ev)
+}
+
+// handleChatForward creates a tracking bead for a Slack message directed at an agent.
+// The router's override mapping determines which channel maps to which agent.
+func (b *Bot) handleChatForward(ctx context.Context, ev *slackevents.MessageEvent) {
+	if b.router == nil {
+		return
+	}
+	agent := b.router.GetAgentByChannel(ev.Channel)
+	if agent == "" {
+		return // Not a mapped agent channel
+	}
+
+	// Resolve sender display name.
+	username := ev.User
+	if user, err := b.api.GetUserInfo(ev.User); err == nil {
+		if user.RealName != "" {
+			username = user.RealName
+		} else if user.Name != "" {
+			username = user.Name
+		}
+	}
+
+	// Build bead title (truncated) and description with slack metadata tag.
+	title := truncateText(fmt.Sprintf("Slack: %s", ev.Text), 80)
+	slackTag := fmt.Sprintf("[slack:%s:%s]", ev.Channel, ev.TimeStamp)
+	description := fmt.Sprintf("Message from %s in Slack:\n\n%s\n\n---\n%s", username, ev.Text, slackTag)
+
+	// Create tracking bead assigned to the agent.
+	beadID, err := b.daemon.CreateBead(ctx, beadsapi.CreateBeadRequest{
+		Title:       title,
+		Type:        "task",
+		Description: description,
+		Assignee:    extractAgentName(agent),
+		Labels:      []string{"slack-chat"},
+		Priority:    2,
+	})
+	if err != nil {
+		b.logger.Error("failed to create chat bead",
+			"channel", ev.Channel, "agent", agent, "error", err)
+		return
+	}
+
+	b.logger.Info("chat forwarding: created tracking bead",
+		"bead", beadID, "agent", agent, "user", username)
+
+	// Persist message ref for response relay.
+	if b.state != nil {
+		_ = b.state.SetChatMessage(beadID, MessageRef{
+			ChannelID: ev.Channel,
+			Timestamp: ev.TimeStamp,
+			Agent:     agent,
+		})
+	}
+
+	// Post confirmation in thread.
+	_, _, _ = b.api.PostMessage(ev.Channel,
+		slack.MsgOptionText(
+			fmt.Sprintf(":speech_balloon: Forwarded to *%s* (tracking: `%s`)", extractAgentName(agent), beadID),
+			false),
+		slack.MsgOptionTS(ev.TimeStamp),
+	)
+}
+
+// extractAgentName returns the last segment of an agent identity.
+// "gasboat/crew/test-bot" → "test-bot", "test-bot" → "test-bot"
+func extractAgentName(identity string) string {
+	if i := strings.LastIndex(identity, "/"); i >= 0 {
+		return identity[i+1:]
+	}
+	return identity
+}
+
+// truncateText truncates s to maxLen, appending "..." if truncated.
+func truncateText(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // handleThreadReply processes replies to decision threads.

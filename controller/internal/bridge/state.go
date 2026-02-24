@@ -29,9 +29,10 @@ type DashboardRef struct {
 
 // StateData is the JSON-serialized state structure.
 type StateData struct {
-	DecisionMessages map[string]MessageRef  `json:"decision_messages,omitempty"` // bead ID → message ref
-	Dashboard        *DashboardRef          `json:"dashboard,omitempty"`
-	LastEventID      string                 `json:"last_event_id,omitempty"`     // SSE event ID for reconnection
+	DecisionMessages map[string]MessageRef `json:"decision_messages,omitempty"` // bead ID → message ref
+	ChatMessages     map[string]MessageRef `json:"chat_messages,omitempty"`     // bead ID → message ref (chat forwarding)
+	Dashboard        *DashboardRef         `json:"dashboard,omitempty"`
+	LastEventID      string                `json:"last_event_id,omitempty"` // SSE event ID for reconnection
 }
 
 // StateManager provides thread-safe persistence of Slack message references.
@@ -48,6 +49,7 @@ func NewStateManager(path string) (*StateManager, error) {
 		path: path,
 		data: StateData{
 			DecisionMessages: make(map[string]MessageRef),
+			ChatMessages:     make(map[string]MessageRef),
 		},
 	}
 	if err := sm.load(); err != nil && !os.IsNotExist(err) {
@@ -88,6 +90,43 @@ func (sm *StateManager) AllDecisionMessages() map[string]MessageRef {
 	defer sm.mu.RUnlock()
 	out := make(map[string]MessageRef, len(sm.data.DecisionMessages))
 	for k, v := range sm.data.DecisionMessages {
+		out[k] = v
+	}
+	return out
+}
+
+// --- Chat Messages ---
+
+// GetChatMessage returns the message ref for a chat bead.
+func (sm *StateManager) GetChatMessage(beadID string) (MessageRef, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	ref, ok := sm.data.ChatMessages[beadID]
+	return ref, ok
+}
+
+// SetChatMessage stores a message ref for a chat bead and persists.
+func (sm *StateManager) SetChatMessage(beadID string, ref MessageRef) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.data.ChatMessages[beadID] = ref
+	return sm.saveLocked()
+}
+
+// RemoveChatMessage removes a message ref for a chat bead and persists.
+func (sm *StateManager) RemoveChatMessage(beadID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.data.ChatMessages, beadID)
+	return sm.saveLocked()
+}
+
+// AllChatMessages returns a copy of all tracked chat messages.
+func (sm *StateManager) AllChatMessages() map[string]MessageRef {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	out := make(map[string]MessageRef, len(sm.data.ChatMessages))
+	for k, v := range sm.data.ChatMessages {
 		out[k] = v
 	}
 	return out
@@ -144,6 +183,9 @@ func (sm *StateManager) load() error {
 	// Ensure maps are initialized.
 	if sm.data.DecisionMessages == nil {
 		sm.data.DecisionMessages = make(map[string]MessageRef)
+	}
+	if sm.data.ChatMessages == nil {
+		sm.data.ChatMessages = make(map[string]MessageRef)
 	}
 	return nil
 }

@@ -165,6 +165,27 @@ func (c *Client) ListDecisionBeads(ctx context.Context) ([]*BeadDetail, error) {
 	return beads, nil
 }
 
+// CreateBeadRequest contains the fields for creating a new bead.
+type CreateBeadRequest struct {
+	Title       string   `json:"title"`
+	Type        string   `json:"issue_type"`
+	Description string   `json:"description,omitempty"`
+	Assignee    string   `json:"assignee,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
+	Priority    int      `json:"priority,omitempty"`
+}
+
+// CreateBead creates a new bead and returns its ID.
+func (c *Client) CreateBead(ctx context.Context, req CreateBeadRequest) (string, error) {
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, "/v1/beads", req, &result); err != nil {
+		return "", fmt.Errorf("creating bead: %w", err)
+	}
+	return result.ID, nil
+}
+
 // BeadDetail represents a full bead returned by the daemon.
 type BeadDetail struct {
 	ID       string            `json:"id"`

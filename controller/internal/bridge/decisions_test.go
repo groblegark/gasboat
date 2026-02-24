@@ -61,6 +61,20 @@ func (m *mockDaemon) CloseBead(_ context.Context, beadID string, fields map[stri
 	return nil
 }
 
+func (m *mockDaemon) CreateBead(_ context.Context, req beadsapi.CreateBeadRequest) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := fmt.Sprintf("bd-chat-%d", len(m.beads)+1)
+	m.beads[id] = &beadsapi.BeadDetail{
+		ID:       id,
+		Title:    req.Title,
+		Type:     req.Type,
+		Assignee: req.Assignee,
+		Labels:   req.Labels,
+	}
+	return id, nil
+}
+
 func (m *mockDaemon) ListDecisionBeads(_ context.Context) ([]*beadsapi.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

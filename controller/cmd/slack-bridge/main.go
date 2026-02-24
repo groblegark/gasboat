@@ -185,6 +185,17 @@ func main() {
 	})
 	jacks.RegisterHandlers(sseStream)
 
+	// Register chat forwarding handler (Slack→agent→Slack relay).
+	if bot != nil {
+		chat := bridge.NewChat(bridge.ChatConfig{
+			Daemon: daemon,
+			Bot:    bot,
+			State:  state,
+			Logger: logger,
+		})
+		chat.RegisterHandlers(sseStream)
+	}
+
 	// Catch-up: notify pending decisions that may have been missed during downtime.
 	// Run before SSE stream starts to pre-populate dedup map.
 	go dedup.CatchUpDecisions(ctx, daemon, notifier, logger)
