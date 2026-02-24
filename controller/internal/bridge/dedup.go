@@ -65,7 +65,6 @@ func (d *Dedup) CatchUpDecisions(ctx context.Context, daemon BeadClient, notifie
 	}
 
 	notified := 0
-	skippedOld := 0
 	skippedSeen := 0
 
 	for _, dec := range decisions {
@@ -96,7 +95,6 @@ func (d *Dedup) CatchUpDecisions(ctx context.Context, daemon BeadClient, notifie
 	logger.Info("catch-up complete",
 		"total", len(decisions),
 		"notified", notified,
-		"skipped_old", skippedOld,
 		"skipped_seen", skippedSeen)
 }
 
