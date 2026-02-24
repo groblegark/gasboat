@@ -195,6 +195,8 @@ fi
 echo "${SETTINGS_JSON}" | jq . > "${CLAUDE_DIR}/settings.json"
 
 # Write project-level settings with hooks.
+# Stop and SessionStart use kd bus emit for gate enforcement and priming.
+# check-mail.sh and drain-queue.sh are gasboat-specific (not gate-related).
 mkdir -p "${WORKSPACE}/.claude"
 cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
 {
@@ -210,6 +212,17 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
           {
             "type": "command",
             "command": "/hooks/check-mail.sh 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/hooks/prime.sh 2>/dev/null || true"
           }
         ]
       }
@@ -242,7 +255,7 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
         "hooks": [
           {
             "type": "command",
-            "command": "/hooks/stop-decision.sh 2>/dev/null || true"
+            "command": "kd bus emit --hook=Stop"
           }
         ]
       }
