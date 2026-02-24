@@ -53,10 +53,10 @@ spec:
             {{- end }}
             # Slack credentials
             {{- if .Values.slackBridge.slack.botToken }}
-            - name: SLACK_BOAT_TOKEN
+            - name: SLACK_BOT_TOKEN
               value: {{ .Values.slackBridge.slack.botToken | quote }}
             {{- else if .Values.slackBridge.slack.secretName }}
-            - name: SLACK_BOAT_TOKEN
+            - name: SLACK_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.slackBridge.slack.secretName }}
@@ -73,12 +73,26 @@ spec:
                   key: signing-secret
                   optional: true
             {{- end }}
+            # Slack App Token (for Socket Mode)
+            {{- if .Values.slackBridge.slack.appToken }}
+            - name: SLACK_APP_TOKEN
+              value: {{ .Values.slackBridge.slack.appToken | quote }}
+            {{- else if .Values.slackBridge.slack.secretName }}
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.slackBridge.slack.secretName }}
+                  key: app-token
+                  optional: true
+            {{- end }}
             {{- if .Values.slackBridge.slack.channel }}
             - name: SLACK_CHANNEL
               value: {{ .Values.slackBridge.slack.channel | quote }}
             {{- end }}
             - name: SLACK_LISTEN_ADDR
               value: ":8090"
+            - name: STATE_PATH
+              value: "/data/slack-bridge-state.json"
             {{- if .Values.slackBridge.logLevel }}
             - name: LOG_LEVEL
               value: {{ .Values.slackBridge.logLevel | quote }}
@@ -95,8 +109,14 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
+          volumeMounts:
+            - name: state
+              mountPath: /data
           resources:
             {{- toYaml .Values.slackBridge.resources | nindent 12 }}
+      volumes:
+        - name: state
+          emptyDir: {}
       {{- with .Values.slackBridge.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
