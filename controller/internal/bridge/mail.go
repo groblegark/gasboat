@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-
-	"gasboat/controller/internal/beadsapi"
 )
 
 // noteValue parses "key: value" lines from a notes string and returns the value
