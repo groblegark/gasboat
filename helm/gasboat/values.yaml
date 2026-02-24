@@ -137,16 +137,6 @@ agents:
   # Coopmux URL override (auto-wired when coopmux is enabled in this chart)
   coopmuxURL: ""
 
-  # --- Slack notifications ---
-
-  # Slack notifications for decision beads
-  slack:
-    # NOTE: env var is SLACK_BOAT_TOKEN (not SLACK_BOT_TOKEN) — deliberate "gasboat" pun.
-    botToken: ""
-    signingSecret: ""
-    channel: ""
-    listenAddr: ""
-
   # --- Infrastructure ---
 
   # Pod disruption budget for safe rolling deploys (only useful with replicaCount > 1)
@@ -427,9 +417,10 @@ slackBridge:
   slack:
     # Direct values (for dev/testing)
     botToken: ""
+    appToken: ""      # xapp-... token for Socket Mode (real-time events, interactions, modals)
     signingSecret: ""
     channel: ""
-    # K8s secret name with keys: bot-token, signing-secret (for production)
+    # K8s secret name with keys: bot-token, app-token, signing-secret (for production)
     secretName: ""
 
   service:
