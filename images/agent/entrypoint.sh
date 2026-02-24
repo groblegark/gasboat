@@ -45,12 +45,28 @@ git config --global --add safe.directory '*'
 # ── Git credentials ────────────────────────────────────────────────────
 # If GIT_USERNAME and GIT_TOKEN are set (from ExternalSecret), configure
 # git credential-store so clone/push to github.com works automatically.
+CRED_FILE="${HOME}/.git-credentials"
+CRED_WRITTEN=0
+
 if [ -n "${GIT_USERNAME:-}" ] && [ -n "${GIT_TOKEN:-}" ]; then
-    CRED_FILE="${HOME}/.git-credentials"
     echo "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com" > "${CRED_FILE}"
+    CRED_WRITTEN=1
+    echo "[entrypoint] Git credentials configured for ${GIT_USERNAME}@github.com"
+fi
+
+# Append GitLab credentials if GITLAB_TOKEN is set.
+# Uses GITLAB_USERNAME env var if provided, otherwise defaults to "oauth2" (PAT auth).
+if [ -n "${GITLAB_TOKEN:-}" ]; then
+    GL_USER="${GITLAB_USERNAME:-oauth2}"
+    GL_HOST="${GITLAB_HOST:-gitlab.com}"
+    echo "https://${GL_USER}:${GITLAB_TOKEN}@${GL_HOST}" >> "${CRED_FILE}"
+    CRED_WRITTEN=1
+    echo "[entrypoint] Git credentials configured for ${GL_USER}@${GL_HOST}"
+fi
+
+if [ "${CRED_WRITTEN}" = "1" ]; then
     chmod 600 "${CRED_FILE}"
     git config --global credential.helper "store --file=${CRED_FILE}"
-    echo "[entrypoint] Git credentials configured for ${GIT_USERNAME}@github.com"
 fi
 
 # Initialize git repo in workspace if not already present.
