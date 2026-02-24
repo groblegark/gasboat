@@ -282,29 +282,65 @@ func (b *Bot) handleInteraction(ctx context.Context, evt socketmode.Event, callb
 // handleBlockActions processes button clicks on decision messages.
 func (b *Bot) handleBlockActions(ctx context.Context, callback slack.InteractionCallback) {
 	for _, action := range callback.ActionCallback.BlockActions {
-		blockID := action.BlockID
+		actionID := action.ActionID
 
-		// Decision option buttons: block_id = "decision_{beadID}".
-		beadID := strings.TrimPrefix(blockID, "decision_")
-		if beadID == blockID {
-			continue // Not a decision action
-		}
-
-		// Check for special actions.
 		switch {
-		case strings.HasPrefix(action.ActionID, "dismiss_"):
-			b.handleDismiss(ctx, beadID, callback)
+		// Dismiss button: action_id = "dismiss_decision", value = beadID.
+		case actionID == "dismiss_decision":
+			b.handleDismiss(ctx, action.Value, callback)
 			return
 
-		case strings.HasPrefix(action.ActionID, "resolve_other_"):
+		// "Other..." button: action_id = "resolve_other_{beadID}", value = beadID.
+		case strings.HasPrefix(actionID, "resolve_other_"):
+			beadID := strings.TrimPrefix(actionID, "resolve_other_")
 			b.openOtherModal(ctx, beadID, callback)
 			return
 
-		default:
-			// Regular option selection — open resolve modal.
-			b.openResolveModal(ctx, beadID, action.Value, callback)
+		// Option button: action_id = "resolve_{beadID}_{n}", value = "{beadID}:{n}".
+		case strings.HasPrefix(actionID, "resolve_"):
+			// value is "beadID:optionIndex" — extract beadID and resolve.
+			parts := strings.SplitN(action.Value, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			beadID := parts[0]
+			optIndex := parts[1]
+			// Look up the option label from the bead.
+			chosen := b.resolveOptionLabel(ctx, beadID, optIndex)
+			b.openResolveModal(ctx, beadID, chosen, callback)
+			return
 		}
 	}
+}
+
+// resolveOptionLabel looks up the label for an option by index from the bead's fields.
+func (b *Bot) resolveOptionLabel(ctx context.Context, beadID, optIndex string) string {
+	bead, err := b.daemon.GetBead(ctx, beadID)
+	if err != nil {
+		return fmt.Sprintf("Option %s", optIndex)
+	}
+	type optionObj struct {
+		ID    string `json:"id"`
+		Short string `json:"short"`
+		Label string `json:"label"`
+	}
+	var opts []optionObj
+	if raw, ok := bead.Fields["options"]; ok {
+		_ = json.Unmarshal([]byte(raw), &opts)
+	}
+	// optIndex is 1-based.
+	idx := 0
+	if _, err := fmt.Sscanf(optIndex, "%d", &idx); err == nil && idx >= 1 && idx <= len(opts) {
+		opt := opts[idx-1]
+		if opt.Label != "" {
+			return opt.Label
+		}
+		if opt.Short != "" {
+			return opt.Short
+		}
+		return opt.ID
+	}
+	return fmt.Sprintf("Option %s", optIndex)
 }
 
 // openResolveModal opens a modal for confirming a decision choice with optional rationale.
@@ -545,6 +581,8 @@ func (b *Bot) handleRosterCommand(ctx context.Context, cmd slack.SlashCommand) {
 // --- Notifier interface implementation ---
 
 // NotifyDecision posts a Block Kit message to Slack for a new decision.
+// Layout matches the beads implementation: each option is a Section block
+// with numbered label, description, and right-aligned accessory button.
 func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	question := bead.Fields["question"]
 	optionsRaw := bead.Fields["options"]
@@ -552,9 +590,10 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 
 	// Parse options — try JSON array of objects first, then strings.
 	type optionObj struct {
-		ID    string `json:"id"`
-		Short string `json:"short"`
-		Label string `json:"label"`
+		ID          string `json:"id"`
+		Short       string `json:"short"`
+		Label       string `json:"label"`
+		Description string `json:"description"`
 	}
 	var optObjs []optionObj
 	var optStrings []string
@@ -565,13 +604,11 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		}
 	}
 
-	// Build Block Kit blocks.
+	// Build Block Kit blocks — header section with question.
 	blocks := []slack.Block{
-		slack.NewHeaderBlock(
-			slack.NewTextBlockObject("plain_text", "Decision Needed", false, false),
-		),
 		slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*%s*", question), false, false),
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf(":white_circle: *Decision Needed*\n%s", question), false, false),
 			nil, nil,
 		),
 	}
@@ -582,63 +619,90 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 			slack.NewTextBlockObject("mrkdwn",
 				fmt.Sprintf("Agent: `%s` | Bead: `%s`", agent, bead.ID), false, false),
 		))
-	}
-
-	// Action buttons.
-	var buttons []slack.BlockElement
-	if len(optObjs) > 0 {
-		for i, opt := range optObjs {
-			label := opt.Short
-			if label == "" {
-				label = opt.Label
-			}
-			if label == "" {
-				label = opt.ID
-			}
-			btn := slack.NewButtonBlockElement(
-				fmt.Sprintf("decision_%s_%d", bead.ID, i),
-				label,
-				slack.NewTextBlockObject("plain_text", label, false, false),
-			)
-			if i == 0 {
-				btn.Style = slack.StylePrimary
-			}
-			buttons = append(buttons, btn)
-		}
 	} else {
-		for i, opt := range optStrings {
-			btn := slack.NewButtonBlockElement(
-				fmt.Sprintf("decision_%s_%d", bead.ID, i),
-				opt,
-				slack.NewTextBlockObject("plain_text", opt, false, false),
-			)
-			if i == 0 {
-				btn.Style = slack.StylePrimary
-			}
-			buttons = append(buttons, btn)
-		}
+		blocks = append(blocks, slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("Bead: `%s`", bead.ID), false, false),
+		))
 	}
 
-	// Add "Other..." and "Dismiss" buttons.
-	otherBtn := slack.NewButtonBlockElement(
-		fmt.Sprintf("resolve_other_%s", bead.ID),
-		"other",
-		slack.NewTextBlockObject("plain_text", "Other...", false, false),
-	)
-	buttons = append(buttons, otherBtn)
+	// Option blocks — each option is a Section with accessory button.
+	if len(optObjs) > 0 || len(optStrings) > 0 {
+		blocks = append(blocks, slack.NewDividerBlock())
 
-	dismissBtn := slack.NewButtonBlockElement(
-		fmt.Sprintf("dismiss_%s", bead.ID),
-		"dismiss",
-		slack.NewTextBlockObject("plain_text", "Dismiss", false, false),
-	)
-	dismissBtn.Style = slack.StyleDanger
-	buttons = append(buttons, dismissBtn)
+		if len(optObjs) > 0 {
+			for i, opt := range optObjs {
+				label := opt.Label
+				if label == "" {
+					label = opt.Short
+				}
+				if label == "" {
+					label = opt.ID
+				}
 
-	blocks = append(blocks, slack.NewActionBlock(
-		"decision_"+bead.ID,
-		buttons...,
-	))
+				optText := fmt.Sprintf("*%d. %s*", i+1, label)
+				if opt.Description != "" {
+					desc := opt.Description
+					if len(desc) > 150 {
+						desc = desc[:147] + "..."
+					}
+					optText += fmt.Sprintf("\n%s", desc)
+				}
+
+				buttonLabel := "Choose"
+				if len(optObjs) <= 4 {
+					buttonLabel = fmt.Sprintf("Choose %d", i+1)
+				}
+
+				blocks = append(blocks,
+					slack.NewSectionBlock(
+						slack.NewTextBlockObject("mrkdwn", optText, false, false),
+						nil,
+						slack.NewAccessory(
+							slack.NewButtonBlockElement(
+								fmt.Sprintf("resolve_%s_%d", bead.ID, i+1),
+								fmt.Sprintf("%s:%d", bead.ID, i+1),
+								slack.NewTextBlockObject("plain_text", buttonLabel, false, false)))))
+			}
+		} else {
+			for i, opt := range optStrings {
+				optText := fmt.Sprintf("*%d. %s*", i+1, opt)
+
+				buttonLabel := "Choose"
+				if len(optStrings) <= 4 {
+					buttonLabel = fmt.Sprintf("Choose %d", i+1)
+				}
+
+				blocks = append(blocks,
+					slack.NewSectionBlock(
+						slack.NewTextBlockObject("mrkdwn", optText, false, false),
+						nil,
+						slack.NewAccessory(
+							slack.NewButtonBlockElement(
+								fmt.Sprintf("resolve_%s_%d", bead.ID, i+1),
+								fmt.Sprintf("%s:%d", bead.ID, i+1),
+								slack.NewTextBlockObject("plain_text", buttonLabel, false, false)))))
+			}
+		}
+
+		// "Other" option — own section with accessory button.
+		blocks = append(blocks,
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn",
+					"*Other*\n_None of the above? Provide your own response._", false, false),
+				nil,
+				slack.NewAccessory(
+					slack.NewButtonBlockElement(
+						fmt.Sprintf("resolve_other_%s", bead.ID),
+						bead.ID,
+						slack.NewTextBlockObject("plain_text", "Other...", false, false)))))
+	}
+
+	// Action buttons: Dismiss at the bottom.
+	dismissBtn := slack.NewButtonBlockElement("dismiss_decision", bead.ID,
+		slack.NewTextBlockObject("plain_text", "Dismiss", false, false))
+	blocks = append(blocks,
+		slack.NewActionBlock("", dismissBtn))
 
 	// Post the message.
 	channelID, ts, err := b.api.PostMessageContext(ctx, b.channel,
