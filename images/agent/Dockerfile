@@ -67,6 +67,12 @@ RUN sed -i 's/^ubuntu:/agent:/' /etc/passwd && \
 COPY hooks/ /hooks/
 RUN chmod +x /hooks/*.sh
 
+# ── kubectl ──────────────────────────────────────────────────────
+RUN KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) && \
+    curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
+      -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
 # ── Entrypoint ───────────────────────────────────────────────────
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -114,12 +120,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --default-toolchain stable --profile default \
           --component rust-analyzer && \
     chmod -R a+rw ${RUSTUP_HOME} ${CARGO_HOME}
-
-# ── kubectl ──────────────────────────────────────────────────────
-RUN KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) && \
-    curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \
-      -o /usr/local/bin/kubectl && \
-    chmod +x /usr/local/bin/kubectl
 
 # ── GitHub CLI ───────────────────────────────────────────────────
 RUN GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" \
