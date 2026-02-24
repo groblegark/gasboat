@@ -291,23 +291,25 @@ type beadJSON struct {
 	Fields   json.RawMessage `json:"fields"`
 }
 
-// fieldsMap decodes the JSON fields into a string map.
-// Complex values (arrays, objects) are re-marshaled to JSON strings.
-func (b *beadJSON) fieldsMap() map[string]string {
-	if len(b.Fields) == 0 {
+// ParseFieldsJSON decodes a raw JSON object into a map[string]string.
+// String values are kept as-is; complex values (arrays, objects, numbers)
+// are re-marshaled to their JSON representation. Returns an empty (non-nil)
+// map when raw is nil or empty.
+func ParseFieldsJSON(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
 		return make(map[string]string)
 	}
 	m := make(map[string]string)
 	// Try direct string map first (fast path).
-	if err := json.Unmarshal(b.Fields, &m); err == nil {
+	if err := json.Unmarshal(raw, &m); err == nil {
 		return m
 	}
 	// Fall back to map[string]any — re-marshal complex values.
-	var raw map[string]any
-	if err := json.Unmarshal(b.Fields, &raw); err != nil {
+	var anyMap map[string]any
+	if err := json.Unmarshal(raw, &anyMap); err != nil {
 		return make(map[string]string)
 	}
-	for k, v := range raw {
+	for k, v := range anyMap {
 		switch v := v.(type) {
 		case string:
 			m[k] = v
@@ -320,6 +322,12 @@ func (b *beadJSON) fieldsMap() map[string]string {
 		}
 	}
 	return m
+}
+
+// fieldsMap decodes the JSON fields into a string map.
+// Complex values (arrays, objects) are re-marshaled to JSON strings.
+func (b *beadJSON) fieldsMap() map[string]string {
+	return ParseFieldsJSON(b.Fields)
 }
 
 // toDetail converts a beadJSON to a BeadDetail.

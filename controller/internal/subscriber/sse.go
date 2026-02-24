@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gasboat/controller/internal/beadsapi"
 )
 
 // SSEConfig holds configuration for the SSE watcher.
@@ -223,31 +225,6 @@ type sseBead struct {
 	CreatedBy  string          `json:"created_by"`
 }
 
-// parseFields decodes the raw JSON fields into a string map.
-// kbeads stores fields as a JSON object (e.g., {"project":"foo","role":"devops"}).
-func (b *sseBead) parseFields() map[string]string {
-	if len(b.Fields) == 0 {
-		return nil
-	}
-
-	// Try as map[string]string first (most common).
-	var fields map[string]string
-	if err := json.Unmarshal(b.Fields, &fields); err == nil {
-		return fields
-	}
-
-	// Fall back to map[string]any and coerce to strings.
-	var raw map[string]any
-	if err := json.Unmarshal(b.Fields, &raw); err != nil {
-		return nil
-	}
-	fields = make(map[string]string, len(raw))
-	for k, v := range raw {
-		fields[k] = fmt.Sprintf("%v", v)
-	}
-	return fields
-}
-
 // processSSEEvent parses an SSE event and emits a lifecycle Event if relevant.
 func (w *SSEWatcher) processSSEEvent(id, topic, data string) {
 	// Only care about bead lifecycle events.
@@ -285,7 +262,7 @@ func (w *SSEWatcher) processSSEEvent(id, topic, data string) {
 	}
 
 	// Convert to the internal beadData format the mapBeadEvent expects.
-	fields := payload.Bead.parseFields()
+	fields := beadsapi.ParseFieldsJSON(payload.Bead.Fields)
 	bd := beadData{
 		ID:         payload.Bead.ID,
 		Title:      payload.Bead.Title,

@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"gasboat/controller/internal/beadsapi"
 )
 
 // SSEStream connects to the kbeads SSE endpoint and dispatches bead lifecycle
@@ -268,29 +270,7 @@ func ParseBeadEvent(data []byte) *BeadEvent {
 	}
 
 	// Parse fields from json.RawMessage to map[string]string.
-	fields := make(map[string]string)
-	if len(bead.Fields) > 0 {
-		// Try direct string map first.
-		if err := json.Unmarshal(bead.Fields, &fields); err != nil {
-			// Fall back to map[string]any — re-marshal complex values to JSON strings.
-			var raw map[string]any
-			if err := json.Unmarshal(bead.Fields, &raw); err == nil {
-				for k, v := range raw {
-					switch v := v.(type) {
-					case string:
-						fields[k] = v
-					default:
-						// Arrays, maps, etc. — marshal back to JSON.
-						if b, err := json.Marshal(v); err == nil {
-							fields[k] = string(b)
-						} else {
-							fields[k] = fmt.Sprintf("%v", v)
-						}
-					}
-				}
-			}
-		}
-	}
+	fields := beadsapi.ParseFieldsJSON(bead.Fields)
 
 	return &BeadEvent{
 		ID:       bead.ID,
