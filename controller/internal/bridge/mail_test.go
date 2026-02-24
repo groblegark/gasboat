@@ -45,11 +45,9 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 	defer coopServer.Close()
 
 	daemon := newMockDaemon()
-	daemon.beads["crew-proj-devops-builder"] = &client.BeadDetail{
-		ID: "crew-proj-devops-builder",
-		Fields: map[string]string{
-			"coop_url": coopServer.URL,
-		},
+	daemon.beads["crew-proj-devops-builder"] = &beadsapi.BeadDetail{
+		ID:    "crew-proj-devops-builder",
+		Notes: "coop_url: " + coopServer.URL,
 	}
 
 	m := &Mail{
@@ -98,11 +96,9 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 	defer coopServer.Close()
 
 	daemon := newMockDaemon()
-	daemon.beads["crew-proj-devops-builder"] = &client.BeadDetail{
-		ID: "crew-proj-devops-builder",
-		Fields: map[string]string{
-			"coop_url": coopServer.URL,
-		},
+	daemon.beads["crew-proj-devops-builder"] = &beadsapi.BeadDetail{
+		ID:    "crew-proj-devops-builder",
+		Notes: "coop_url: " + coopServer.URL,
 	}
 
 	m := &Mail{

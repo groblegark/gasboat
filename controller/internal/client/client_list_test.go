@@ -144,6 +144,64 @@ func TestListAgentBeads_SkipsBeadsMissingRoleOrAgent(t *testing.T) {
 	}
 }
 
+// --- FindAgentBead tests ---
+
+func TestFindAgentBead_FindsByAgentField(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:     "kd-abc",
+					Title:  "Agent: hq",
+					Type:   "agent",
+					Status: "open",
+					Notes:  "coop_url: http://coop:9090",
+					Fields: json.RawMessage(`{"role":"crew","agent":"hq"}`),
+				},
+				{
+					ID:     "kd-def",
+					Title:  "Agent: test-bot-2",
+					Type:   "agent",
+					Status: "open",
+					Notes:  "coop_url: http://coop2:9090",
+					Fields: json.RawMessage(`{"role":"crew","agent":"test-bot-2"}`),
+				},
+			},
+			Total: 2,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	detail, err := c.FindAgentBead(context.Background(), "test-bot-2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detail.ID != "kd-def" {
+		t.Errorf("expected ID kd-def, got %s", detail.ID)
+	}
+	if detail.Notes != "coop_url: http://coop2:9090" {
+		t.Errorf("expected notes with coop_url, got %s", detail.Notes)
+	}
+}
+
+func TestFindAgentBead_ReturnsErrorWhenNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	_, err := c.FindAgentBead(context.Background(), "nobody")
+	if err == nil {
+		t.Fatal("expected error when agent not found")
+	}
+	if !strings.Contains(err.Error(), "agent bead not found") {
+		t.Errorf("expected 'agent bead not found' error, got: %v", err)
+	}
+}
+
 // --- ListProjectBeads tests ---
 
 func TestListProjectBeads_QueryParams(t *testing.T) {
