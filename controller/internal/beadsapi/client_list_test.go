@@ -15,7 +15,7 @@ func TestListAgentBeads_QueryParams(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.String()
-		json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
+		_ = json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
 	}))
 	defer srv.Close()
 
@@ -60,7 +60,7 @@ func TestListAgentBeads_ParsesBeads(t *testing.T) {
 			},
 			Total: 2,
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -127,7 +127,7 @@ func TestListAgentBeads_SkipsBeadsMissingRoleOrAgent(t *testing.T) {
 			},
 			Total: 3,
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -169,7 +169,7 @@ func TestFindAgentBead_FindsByAgentField(t *testing.T) {
 			},
 			Total: 2,
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -188,7 +188,7 @@ func TestFindAgentBead_FindsByAgentField(t *testing.T) {
 
 func TestFindAgentBead_ReturnsErrorWhenNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
+		_ = json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
 	}))
 	defer srv.Close()
 
@@ -208,7 +208,7 @@ func TestListProjectBeads_QueryParams(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.String()
-		json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
+		_ = json.NewEncoder(w).Encode(listBeadsResponse{Beads: nil, Total: 0})
 	}))
 	defer srv.Close()
 
@@ -244,7 +244,7 @@ func TestListProjectBeads_ParsesProjects(t *testing.T) {
 			},
 			Total: 2,
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -311,7 +311,7 @@ func TestListProjectBeads_SkipsEmptyTitle(t *testing.T) {
 			},
 			Total: 1,
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 

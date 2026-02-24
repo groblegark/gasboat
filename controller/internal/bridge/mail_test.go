@@ -149,7 +149,7 @@ func TestMail_HandleCreated_QueueDelivery_NormalPriority_NoNudge(t *testing.T) {
 	m.handleCreated(context.Background(), event)
 
 	if daemon.getGetCalls() != 0 {
-		t.Fatalf("expected no daemon GetBead calls for queue+normal priority, got %d", daemon.getGetCalls())
+		t.Fatalf("expected no daemon calls for queue+normal priority, got %d", daemon.getGetCalls())
 	}
 }
 

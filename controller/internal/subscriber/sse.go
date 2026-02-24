@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -380,14 +379,3 @@ func (w *SSEWatcher) SetLastEventID(id string) {
 	w.mu.Unlock()
 }
 
-// lastEventIDUint returns the last event ID as a uint64 (0 if not set or invalid).
-func (w *SSEWatcher) lastEventIDUint() uint64 {
-	w.mu.Lock()
-	id := w.lastEventID
-	w.mu.Unlock()
-	if id == "" {
-		return 0
-	}
-	n, _ := strconv.ParseUint(id, 10, 64)
-	return n
-}
