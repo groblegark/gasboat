@@ -51,8 +51,9 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 	}
 
 	m := &Mail{
-		daemon: daemon,
-		logger: slog.Default(),
+		daemon:     daemon,
+		logger:     slog.Default(),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
 	event := marshalSSEBeadPayload(BeadEvent{
@@ -102,8 +103,9 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 	}
 
 	m := &Mail{
-		daemon: daemon,
-		logger: slog.Default(),
+		daemon:     daemon,
+		logger:     slog.Default(),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
 	// Priority 1 (high) should nudge even without interrupt label.
