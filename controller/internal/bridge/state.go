@@ -1,8 +1,8 @@
 // Package bridge provides state persistence for the slack-bridge.
 //
-// StateManager persists message references (decision messages, agent status
-// cards, dashboard) to a JSON file so that Slack message threading and
-// update-in-place survive pod restarts.
+// StateManager persists message references (decision messages, dashboard)
+// to a JSON file so that Slack message threading and update-in-place
+// survive pod restarts.
 package bridge
 
 import (
@@ -30,7 +30,6 @@ type DashboardRef struct {
 // StateData is the JSON-serialized state structure.
 type StateData struct {
 	DecisionMessages map[string]MessageRef  `json:"decision_messages,omitempty"` // bead ID → message ref
-	AgentCards       map[string]MessageRef  `json:"agent_cards,omitempty"`       // agent name → status card ref
 	Dashboard        *DashboardRef          `json:"dashboard,omitempty"`
 	LastEventID      string                 `json:"last_event_id,omitempty"`     // SSE event ID for reconnection
 }
@@ -49,7 +48,6 @@ func NewStateManager(path string) (*StateManager, error) {
 		path: path,
 		data: StateData{
 			DecisionMessages: make(map[string]MessageRef),
-			AgentCards:       make(map[string]MessageRef),
 		},
 	}
 	if err := sm.load(); err != nil && !os.IsNotExist(err) {
@@ -90,43 +88,6 @@ func (sm *StateManager) AllDecisionMessages() map[string]MessageRef {
 	defer sm.mu.RUnlock()
 	out := make(map[string]MessageRef, len(sm.data.DecisionMessages))
 	for k, v := range sm.data.DecisionMessages {
-		out[k] = v
-	}
-	return out
-}
-
-// --- Agent Status Cards ---
-
-// GetAgentCard returns the status card ref for an agent.
-func (sm *StateManager) GetAgentCard(agent string) (MessageRef, bool) {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	ref, ok := sm.data.AgentCards[agent]
-	return ref, ok
-}
-
-// SetAgentCard stores a status card ref for an agent and persists.
-func (sm *StateManager) SetAgentCard(agent string, ref MessageRef) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	sm.data.AgentCards[agent] = ref
-	return sm.saveLocked()
-}
-
-// RemoveAgentCard removes a status card ref for an agent and persists.
-func (sm *StateManager) RemoveAgentCard(agent string) error {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	delete(sm.data.AgentCards, agent)
-	return sm.saveLocked()
-}
-
-// AllAgentCards returns a copy of all tracked agent status cards.
-func (sm *StateManager) AllAgentCards() map[string]MessageRef {
-	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-	out := make(map[string]MessageRef, len(sm.data.AgentCards))
-	for k, v := range sm.data.AgentCards {
 		out[k] = v
 	}
 	return out
@@ -183,9 +144,6 @@ func (sm *StateManager) load() error {
 	// Ensure maps are initialized.
 	if sm.data.DecisionMessages == nil {
 		sm.data.DecisionMessages = make(map[string]MessageRef)
-	}
-	if sm.data.AgentCards == nil {
-		sm.data.AgentCards = make(map[string]MessageRef)
 	}
 	return nil
 }
