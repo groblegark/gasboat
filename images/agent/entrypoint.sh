@@ -255,7 +255,7 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
         "hooks": [
           {
             "type": "command",
-            "command": "kd bus emit --hook=Stop"
+            "command": "/hooks/stop-gate.sh"
           }
         ]
       }
@@ -277,6 +277,20 @@ Agent name: ${AGENT}
 - \`kd ready\` — See your workflow steps
 - \`kd mail inbox\` — Check messages
 - \`kd show <issue>\` — View specific issue details
+
+## Checkpoint Protocol (Stop Hook)
+
+When you hit a Stop hook block, you MUST create a decision checkpoint:
+
+1. Review what you accomplished
+2. Create a decision:
+   \`\`\`bash
+   kd decision create --no-wait \\
+     --prompt="<what you did and why these options>" \\
+     --options='[{"id":"opt1","short":"Option 1","label":"Full description"}]'
+   \`\`\`
+3. Run \`kd yield\` — blocks until human responds
+4. When \`kd yield\` returns, act on the response
 CLAUDEMD
 fi
 
