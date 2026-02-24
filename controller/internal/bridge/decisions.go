@@ -25,6 +25,8 @@ type BeadClient interface {
 	GetBead(ctx context.Context, beadID string) (*beadsapi.BeadDetail, error)
 	FindAgentBead(ctx context.Context, agentName string) (*beadsapi.BeadDetail, error)
 	CloseBead(ctx context.Context, beadID string, fields map[string]string) error
+	ListDecisionBeads(ctx context.Context) ([]*beadsapi.BeadDetail, error)
+	ListAgentBeads(ctx context.Context) ([]beadsapi.AgentBead, error)
 }
 
 // BeadEvent is the JSON payload published on beads.bead.created / beads.bead.closed.
