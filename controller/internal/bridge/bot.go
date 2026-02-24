@@ -388,8 +388,8 @@ func (b *Bot) openResolveModal(ctx context.Context, beadID, chosen string, callb
 	inputBlock := blocks.BlockSet[3].(*slack.InputBlock)
 	inputBlock.Optional = true
 
-	// Encode metadata: beadID:chosen
-	metadata := fmt.Sprintf("%s|%s", beadID, chosen)
+	// Encode metadata: beadID|chosen|channelID|messageTS
+	metadata := fmt.Sprintf("%s|%s|%s|%s", beadID, chosen, callback.Channel.ID, callback.Message.Timestamp)
 
 	modal := slack.ModalViewRequest{
 		Type:            slack.VTModal,
@@ -442,13 +442,16 @@ func (b *Bot) openOtherModal(ctx context.Context, beadID string, callback slack.
 		},
 	}
 
+	// Encode metadata: beadID|channelID|messageTS
+	otherMetadata := fmt.Sprintf("%s|%s|%s", beadID, callback.Channel.ID, callback.Message.Timestamp)
+
 	modal := slack.ModalViewRequest{
 		Type:            slack.VTModal,
 		Title:           titleText,
 		Submit:          submitText,
 		Close:           closeText,
 		Blocks:          blocks,
-		PrivateMetadata: beadID,
+		PrivateMetadata: otherMetadata,
 		CallbackID:      "resolve_other",
 	}
 
@@ -487,13 +490,20 @@ func (b *Bot) handleViewSubmission(ctx context.Context, callback slack.Interacti
 // handleResolveSubmission processes the resolve decision modal submission.
 func (b *Bot) handleResolveSubmission(ctx context.Context, callback slack.InteractionCallback) {
 	metadata := callback.View.PrivateMetadata
-	parts := strings.SplitN(metadata, "|", 2)
-	if len(parts) != 2 {
+	// Metadata format: beadID|chosen|channelID|messageTS
+	parts := strings.SplitN(metadata, "|", 4)
+	if len(parts) < 2 {
 		b.logger.Error("invalid resolve modal metadata", "metadata", metadata)
 		return
 	}
 	beadID := parts[0]
 	chosen := parts[1]
+	channelID := ""
+	messageTS := ""
+	if len(parts) >= 4 {
+		channelID = parts[2]
+		messageTS = parts[3]
+	}
 
 	// Extract rationale from form values.
 	rationale := ""
@@ -519,13 +529,25 @@ func (b *Bot) handleResolveSubmission(ctx context.Context, callback slack.Intera
 		return
 	}
 
+	// Directly update the Slack message to show resolved state.
+	b.updateMessageResolved(ctx, beadID, chosen, rationale, channelID, messageTS)
+
 	b.logger.Info("decision resolved via modal",
 		"bead", beadID, "chosen", chosen, "user", user)
 }
 
 // handleOtherSubmission processes the custom response modal submission.
 func (b *Bot) handleOtherSubmission(ctx context.Context, callback slack.InteractionCallback) {
-	beadID := callback.View.PrivateMetadata
+	metadata := callback.View.PrivateMetadata
+	// Metadata format: beadID|channelID|messageTS
+	parts := strings.SplitN(metadata, "|", 3)
+	beadID := parts[0]
+	channelID := ""
+	messageTS := ""
+	if len(parts) >= 3 {
+		channelID = parts[1]
+		messageTS = parts[2]
+	}
 
 	response := ""
 	if v, ok := callback.View.State.Values["response"]["response_input"]; ok {
@@ -548,8 +570,68 @@ func (b *Bot) handleOtherSubmission(ctx context.Context, callback slack.Interact
 		return
 	}
 
+	// Directly update the Slack message to show resolved state.
+	b.updateMessageResolved(ctx, beadID, response, rationale, channelID, messageTS)
+
 	b.logger.Info("decision resolved via custom response",
 		"bead", beadID, "response", response, "user", user)
+}
+
+// updateMessageResolved updates the original Slack message to show resolved state.
+// It tries the provided channelID/messageTS first (from modal metadata), then falls
+// back to the hot cache / state manager.
+func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationale, channelID, messageTS string) {
+	// Try hot cache first.
+	if messageTS == "" {
+		b.mu.Lock()
+		if ts, ok := b.messages[beadID]; ok {
+			messageTS = ts
+			channelID = b.channel
+		}
+		b.mu.Unlock()
+	}
+	// Fall back to state manager.
+	if messageTS == "" && b.state != nil {
+		if ref, ok := b.state.GetDecisionMessage(beadID); ok {
+			messageTS = ref.Timestamp
+			channelID = ref.ChannelID
+		}
+	}
+
+	if messageTS == "" || channelID == "" {
+		b.logger.Debug("no Slack message found for resolved decision", "bead", beadID)
+		return
+	}
+
+	text := fmt.Sprintf(":white_check_mark: *Resolved*: %s", chosen)
+	if rationale != "" {
+		text += fmt.Sprintf("\n_%s_", rationale)
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", text, false, false),
+			nil, nil,
+		),
+	}
+
+	_, _, _, err := b.api.UpdateMessageContext(ctx, channelID, messageTS,
+		slack.MsgOptionText(fmt.Sprintf("Decision resolved: %s", chosen), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to update Slack message", "bead", beadID, "error", err)
+		return
+	}
+
+	// Clean up tracking.
+	b.mu.Lock()
+	delete(b.messages, beadID)
+	b.mu.Unlock()
+
+	if b.state != nil {
+		b.state.RemoveDecisionMessage(beadID)
+	}
 }
 
 // handleSlashCommand processes Slack slash commands.
@@ -734,41 +816,10 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 }
 
 // UpdateDecision edits the Slack message to show resolved state.
+// Called via SSE close event. The modal submission handler may have already
+// updated the message directly, so this serves as a fallback.
 func (b *Bot) UpdateDecision(ctx context.Context, beadID, chosen string) error {
-	b.mu.Lock()
-	ts, ok := b.messages[beadID]
-	b.mu.Unlock()
-
-	if !ok {
-		b.logger.Debug("no Slack message found for resolved decision", "bead", beadID)
-		return nil
-	}
-
-	blocks := []slack.Block{
-		slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("~Decision needed~ — :white_check_mark: *Resolved*: %s", chosen), false, false),
-			nil, nil,
-		),
-	}
-
-	_, _, _, err := b.api.UpdateMessageContext(ctx, b.channel, ts,
-		slack.MsgOptionText(fmt.Sprintf("Decision resolved: %s", chosen), false),
-		slack.MsgOptionBlocks(blocks...),
-	)
-	if err != nil {
-		return fmt.Errorf("update decision in Slack: %w", err)
-	}
-
-	// Clean up tracking.
-	b.mu.Lock()
-	delete(b.messages, beadID)
-	b.mu.Unlock()
-
-	if b.state != nil {
-		b.state.RemoveDecisionMessage(beadID)
-	}
-
+	b.updateMessageResolved(ctx, beadID, chosen, "", "", "")
 	return nil
 }
 
