@@ -25,11 +25,11 @@ func TestUpdateBeadFields_MergesFields(t *testing.T) {
 				ID:     "bd-merge",
 				Fields: json.RawMessage(`{"existing":"keep","overwrite":"old"}`),
 			}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &putBody)
+			_ = json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -77,11 +77,11 @@ func TestUpdateBeadFields_HandlesNilExistingFields(t *testing.T) {
 		case r.Method == http.MethodGet:
 			// Return bead with no fields (nil Fields).
 			bead := beadJSON{ID: "bd-nil"}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &putBody)
+			_ = json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -116,7 +116,7 @@ func TestUpdateBeadNotes_SendsCorrectBody(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &gotBody)
+		_ = json.Unmarshal(body, &gotBody)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -150,11 +150,11 @@ func TestUpdateAgentState_SetsFieldViaUpdateBeadFields(t *testing.T) {
 				ID:     "bd-state1",
 				Fields: json.RawMessage(`{"project":"town"}`),
 			}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
-			json.Unmarshal(body, &putBody)
+			_ = json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}))
@@ -184,7 +184,7 @@ func TestUpdateAgentState_SetsFieldViaUpdateBeadFields(t *testing.T) {
 func TestAPIError_404(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "bead not found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "bead not found"})
 	}))
 	defer srv.Close()
 
@@ -219,7 +219,7 @@ func TestAPIError_404(t *testing.T) {
 func TestAPIError_500WithJSONError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
 	}))
 	defer srv.Close()
 
@@ -239,7 +239,7 @@ func TestAPIError_500WithJSONError(t *testing.T) {
 func TestAPIError_500WithPlainTextBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("something went wrong"))
+		_, _ = w.Write([]byte("something went wrong"))
 	}))
 	defer srv.Close()
 
@@ -278,7 +278,7 @@ func TestDoJSON_204NoContent(t *testing.T) {
 func TestListAgentBeads_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("service unavailable"))
+		_, _ = w.Write([]byte("service unavailable"))
 	}))
 	defer srv.Close()
 
@@ -295,7 +295,7 @@ func TestListAgentBeads_ServerError(t *testing.T) {
 func TestUpdateBeadFields_GetFailsPropagatesError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "not found"})
 	}))
 	defer srv.Close()
 
@@ -313,7 +313,7 @@ func TestCloseBead_FieldUpdateFailsPropagatesError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// All requests return 500 -- the GET in UpdateBeadFields will fail.
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("boom"))
+		_, _ = w.Write([]byte("boom"))
 	}))
 	defer srv.Close()
 

@@ -88,7 +88,7 @@ func TestGetBead_ParsesResponse(t *testing.T) {
 			Notes:  "key: value",
 			Fields: json.RawMessage(`{"priority":"high","component":"api"}`),
 		}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
@@ -132,7 +132,7 @@ func TestGetBead_HandlesEmptyFields(t *testing.T) {
 			Type:   "issue",
 			Status: "open",
 		}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
@@ -151,7 +151,7 @@ func TestGetBead_EscapesBeadID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRawPath = r.URL.RawPath
 		bead := beadJSON{ID: "has/slash"}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
@@ -177,7 +177,7 @@ func TestCloseBead_SendsCloseRequest(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &gotBody)
+		_ = json.Unmarshal(body, &gotBody)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -217,7 +217,7 @@ func TestCloseBead_UpdatesFieldsBeforeClose(t *testing.T) {
 				ID:     "bd-close2",
 				Fields: json.RawMessage(`{"existing":"val"}`),
 			}
-			json.NewEncoder(w).Encode(bead)
+			_ = json.NewEncoder(w).Encode(bead)
 
 		default:
 			w.WriteHeader(http.StatusNoContent)
@@ -290,7 +290,7 @@ func TestSetConfig_SendsCorrectRequest(t *testing.T) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &gotBody)
+		_ = json.Unmarshal(body, &gotBody)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -346,7 +346,7 @@ func TestDoJSON_SetsContentTypeForBody(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
-	c.UpdateBeadNotes(context.Background(), "bd-ct", "notes")
+	_ = c.UpdateBeadNotes(context.Background(), "bd-ct", "notes")
 
 	if gotContentType != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %s", gotContentType)
@@ -358,12 +358,12 @@ func TestDoJSON_NoContentTypeForGET(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotContentType = r.Header.Get("Content-Type")
 		bead := beadJSON{ID: "bd-get"}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
-	c.GetBead(context.Background(), "bd-get")
+	_, _ = c.GetBead(context.Background(), "bd-get")
 
 	if gotContentType != "" {
 		t.Errorf("expected no Content-Type for GET, got %s", gotContentType)
