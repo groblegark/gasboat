@@ -23,9 +23,10 @@ import (
 // events to registered topic handlers. It auto-reconnects with exponential
 // backoff and uses Last-Event-ID for reconnection replay.
 type SSEStream struct {
-	baseURL string
-	topics  []string
-	logger  *slog.Logger
+	baseURL    string
+	topics     []string
+	logger     *slog.Logger
+	httpClient *http.Client // reused across reconnections (long-lived, no timeout)
 
 	handlers map[string][]SSEHandler // topic -> handlers
 	lastID   string                  // last event ID for reconnection
@@ -53,12 +54,13 @@ type SSEStreamConfig struct {
 // NewSSEStream creates a new SSE event stream for the slack-bridge.
 func NewSSEStream(cfg SSEStreamConfig) *SSEStream {
 	s := &SSEStream{
-		baseURL:  strings.TrimRight(cfg.BeadsHTTPAddr, "/"),
-		topics:   cfg.Topics,
-		logger:   cfg.Logger,
-		handlers: make(map[string][]SSEHandler),
-		dedup:    cfg.Dedup,
-		state:    cfg.State,
+		baseURL:    strings.TrimRight(cfg.BeadsHTTPAddr, "/"),
+		topics:     cfg.Topics,
+		logger:     cfg.Logger,
+		httpClient: &http.Client{Timeout: 0}, // no timeout for long-lived SSE
+		handlers:   make(map[string][]SSEHandler),
+		dedup:      cfg.Dedup,
+		state:      cfg.State,
 	}
 	// Restore last event ID from persisted state.
 	if cfg.State != nil {
@@ -123,9 +125,7 @@ func (s *SSEStream) stream(ctx context.Context) error {
 		req.Header.Set("Last-Event-ID", s.lastID)
 	}
 
-	// Long-lived connection -- no timeout.
-	client := &http.Client{Timeout: 0}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("SSE connect: %w", err)
 	}

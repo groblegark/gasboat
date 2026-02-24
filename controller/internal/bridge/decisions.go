@@ -55,9 +55,10 @@ type Notifier interface {
 
 // Decisions watches the kbeads SSE event stream for decision bead lifecycle events.
 type Decisions struct {
-	daemon   BeadClient
-	notifier Notifier // nil = no notifications
-	logger   *slog.Logger
+	daemon     BeadClient
+	notifier   Notifier // nil = no notifications
+	logger     *slog.Logger
+	httpClient *http.Client // reused for nudge requests
 
 	escalatedMu sync.Mutex
 	escalated   map[string]bool // bead ID → already notified (dedup)
@@ -73,10 +74,11 @@ type DecisionsConfig struct {
 // NewDecisions creates a new decision lifecycle watcher.
 func NewDecisions(cfg DecisionsConfig) *Decisions {
 	return &Decisions{
-		daemon:    cfg.Daemon,
-		notifier:  cfg.Notifier,
-		logger:    cfg.Logger,
-		escalated: make(map[string]bool),
+		daemon:     cfg.Daemon,
+		notifier:   cfg.Notifier,
+		logger:     cfg.Logger,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+		escalated:  make(map[string]bool),
 	}
 }
 
@@ -239,7 +241,7 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		message += fmt.Sprintf(" — %s", rationale)
 	}
 
-	if err := nudgeCoop(ctx, coopURL, message); err != nil {
+	if err := nudgeCoop(ctx, d.httpClient, coopURL, message); err != nil {
 		d.logger.Error("failed to nudge agent",
 			"agent", agentName, "coop_url", coopURL, "error", err)
 		return
@@ -250,7 +252,7 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 }
 
 // nudgeCoop POSTs a nudge message to a coop agent endpoint.
-func nudgeCoop(ctx context.Context, coopURL, message string) error {
+func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string) error {
 	body, err := json.Marshal(map[string]string{"message": message})
 	if err != nil {
 		return fmt.Errorf("marshal nudge body: %w", err)
@@ -263,7 +265,6 @@ func nudgeCoop(ctx context.Context, coopURL, message string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("nudge request failed: %w", err)
