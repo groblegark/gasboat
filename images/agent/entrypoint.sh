@@ -194,25 +194,32 @@ fi
 
 echo "${SETTINGS_JSON}" | jq . > "${CLAUDE_DIR}/settings.json"
 
-# Write project-level settings with hooks.
-# Stop and SessionStart use kd bus emit for gate enforcement and priming.
-# check-mail.sh and drain-queue.sh are gasboat-specific (not gate-related).
+# Materialize hooks from config beads (writes workspace .claude/settings.json).
+# Falls back to hardcoded hooks if daemon is unreachable or no config beads exist.
 mkdir -p "${WORKSPACE}/.claude"
-cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
+MATERIALIZED=0
+
+if command -v kd &>/dev/null; then
+    echo "[entrypoint] Materializing hooks from config beads (role: ${ROLE})"
+    if kd setup claude --workspace="${WORKSPACE}" --role="${ROLE}" 2>&1; then
+        if grep -q '"hooks"' "${WORKSPACE}/.claude/settings.json" 2>/dev/null; then
+            MATERIALIZED=1
+            echo "[entrypoint] Hooks materialized from config beads"
+        fi
+    fi
+fi
+
+if [ "${MATERIALIZED}" = "0" ]; then
+    echo "[entrypoint] No config beads found, writing static hooks"
+    cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
 {
   "hooks": {
     "SessionStart": [
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/hooks/prime.sh 2>/dev/null || true"
-          },
-          {
-            "type": "command",
-            "command": "/hooks/check-mail.sh 2>/dev/null || true"
-          }
+          {"type": "command", "command": "/hooks/prime.sh 2>/dev/null || true"},
+          {"type": "command", "command": "/hooks/check-mail.sh 2>/dev/null || true"}
         ]
       }
     ],
@@ -220,10 +227,7 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/hooks/prime.sh 2>/dev/null || true"
-          }
+          {"type": "command", "command": "/hooks/prime.sh 2>/dev/null || true"}
         ]
       }
     ],
@@ -231,10 +235,7 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/hooks/check-mail.sh 2>/dev/null || true"
-          }
+          {"type": "command", "command": "/hooks/check-mail.sh 2>/dev/null || true"}
         ]
       }
     ],
@@ -242,10 +243,7 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/hooks/drain-queue.sh --quiet 2>/dev/null || true"
-          }
+          {"type": "command", "command": "/hooks/drain-queue.sh --quiet 2>/dev/null || true"}
         ]
       }
     ],
@@ -253,16 +251,14 @@ cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
       {
         "matcher": "",
         "hooks": [
-          {
-            "type": "command",
-            "command": "/hooks/stop-gate.sh"
-          }
+          {"type": "command", "command": "/hooks/stop-gate.sh"}
         ]
       }
     ]
   }
 }
 HOOKS
+fi
 
 # Write CLAUDE.md with role context if not already present.
 if [ ! -f "${WORKSPACE}/CLAUDE.md" ]; then
