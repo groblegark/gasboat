@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"gasboat/controller/internal/beadsapi"
 )
 
 // MailConfig holds configuration for the Mail watcher.
@@ -85,14 +87,14 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		return
 	}
 
-	agentBead, err := m.daemon.GetBead(ctx, agentName)
+	agentBead, err := m.daemon.FindAgentBead(ctx, agentName)
 	if err != nil {
 		m.logger.Error("failed to get agent bead for mail nudge",
 			"agent", agentName, "mail", bead.ID, "error", err)
 		return
 	}
 
-	coopURL := agentBead.Fields["coop_url"]
+	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
 	if coopURL == "" {
 		m.logger.Warn("agent bead has no coop_url, cannot nudge",
 			"agent", agentName, "mail", bead.ID)

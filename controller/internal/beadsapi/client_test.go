@@ -76,8 +76,8 @@ func TestGetBead_ParsesResponse(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/v1/beads/bd-abc123" {
-			t.Errorf("expected path /api/v1/beads/bd-abc123, got %s", r.URL.Path)
+		if r.URL.Path != "/v1/beads/bd-abc123" {
+			t.Errorf("expected path /v1/beads/bd-abc123, got %s", r.URL.Path)
 		}
 		bead := beadJSON{
 			ID:     "bd-abc123",
@@ -161,7 +161,7 @@ func TestGetBead_EscapesBeadID(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// The slash should be percent-encoded in the raw URL.
-	if gotRawPath != "/api/v1/beads/has%2Fslash" {
+	if gotRawPath != "/v1/beads/has%2Fslash" {
 		t.Errorf("expected encoded path, got %s", gotRawPath)
 	}
 }
@@ -191,8 +191,8 @@ func TestCloseBead_SendsCloseRequest(t *testing.T) {
 	if gotMethod != http.MethodPost {
 		t.Errorf("expected POST, got %s", gotMethod)
 	}
-	if gotPath != "/api/v1/beads/bd-close1/close" {
-		t.Errorf("expected path /api/v1/beads/bd-close1/close, got %s", gotPath)
+	if gotPath != "/v1/beads/bd-close1/close" {
+		t.Errorf("expected path /v1/beads/bd-close1/close, got %s", gotPath)
 	}
 	if gotBody["closed_by"] != "gasboat" {
 		t.Errorf("expected closed_by=gasboat, got %v", gotBody)
@@ -231,20 +231,20 @@ func TestCloseBead_UpdatesFieldsBeforeClose(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should be 3 requests: GET (read fields), PUT (update fields), POST (close).
+	// Should be 3 requests: GET (read fields), PATCH (update fields), POST (close).
 	if len(requests) != 3 {
-		t.Fatalf("expected 3 requests (GET+PUT+POST), got %d: %v", len(requests), requests)
+		t.Fatalf("expected 3 requests (GET+PATCH+POST), got %d: %v", len(requests), requests)
 	}
 	if requests[0].Method != http.MethodGet {
 		t.Errorf("first request should be GET, got %s", requests[0].Method)
 	}
-	if requests[1].Method != http.MethodPut {
-		t.Errorf("second request should be PUT, got %s", requests[1].Method)
+	if requests[1].Method != http.MethodPatch {
+		t.Errorf("second request should be PATCH, got %s", requests[1].Method)
 	}
 	if requests[2].Method != http.MethodPost {
 		t.Errorf("third request should be POST, got %s", requests[2].Method)
 	}
-	if requests[2].Path != "/api/v1/beads/bd-close2/close" {
+	if requests[2].Path != "/v1/beads/bd-close2/close" {
 		t.Errorf("third request should be /close, got %s", requests[2].Path)
 	}
 }
@@ -304,8 +304,8 @@ func TestSetConfig_SendsCorrectRequest(t *testing.T) {
 	if gotMethod != http.MethodPut {
 		t.Errorf("expected PUT, got %s", gotMethod)
 	}
-	if gotPath != "/api/v1/config/my-key" {
-		t.Errorf("expected path /api/v1/config/my-key, got %s", gotPath)
+	if gotPath != "/v1/configs/my-key" {
+		t.Errorf("expected path /v1/configs/my-key, got %s", gotPath)
 	}
 
 	valueRaw, ok := gotBody["value"]
@@ -330,7 +330,7 @@ func TestSetConfig_EscapesConfigKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotRawPath != "/api/v1/config/key%2Fwith%2Fslashes" {
+	if gotRawPath != "/v1/configs/key%2Fwith%2Fslashes" {
 		t.Errorf("expected encoded path, got %s", gotRawPath)
 	}
 }

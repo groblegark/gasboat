@@ -22,6 +22,7 @@ import (
 // BeadClient is the subset of beadsapi.Client used by the bridge package.
 type BeadClient interface {
 	GetBead(ctx context.Context, beadID string) (*beadsapi.BeadDetail, error)
+	FindAgentBead(ctx context.Context, agentName string) (*beadsapi.BeadDetail, error)
 	CloseBead(ctx context.Context, beadID string, fields map[string]string) error
 }
 
@@ -147,14 +148,14 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 	}
 
 	// Look up the agent bead to get the coop_url.
-	agentBead, err := d.daemon.GetBead(ctx, agentName)
+	agentBead, err := d.daemon.FindAgentBead(ctx, agentName)
 	if err != nil {
 		d.logger.Error("failed to get agent bead for nudge",
 			"agent", agentName, "decision", bead.ID, "error", err)
 		return
 	}
 
-	coopURL := agentBead.Fields["coop_url"]
+	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
 	if coopURL == "" {
 		d.logger.Warn("agent bead has no coop_url, cannot nudge",
 			"agent", agentName, "decision", bead.ID)

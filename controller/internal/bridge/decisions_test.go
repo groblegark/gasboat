@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -41,6 +42,16 @@ func (m *mockDaemon) GetBead(_ context.Context, beadID string) (*beadsapi.BeadDe
 		return b, nil
 	}
 	return &beadsapi.BeadDetail{ID: beadID}, nil
+}
+
+func (m *mockDaemon) FindAgentBead(_ context.Context, agentName string) (*beadsapi.BeadDetail, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getCalls++
+	if b, ok := m.beads[agentName]; ok {
+		return b, nil
+	}
+	return nil, fmt.Errorf("agent bead not found for agent %q", agentName)
 }
 
 func (m *mockDaemon) CloseBead(_ context.Context, beadID string, fields map[string]string) error {
@@ -169,13 +180,11 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 	}))
 	defer coopServer.Close()
 
-	// Set up a mock daemon that returns the agent bead with coop_url.
+	// Set up a mock daemon that returns the agent bead with coop_url in Notes.
 	daemon := newMockDaemon()
 	daemon.beads["crew-town-crew-hq"] = &beadsapi.BeadDetail{
-		ID: "crew-town-crew-hq",
-		Fields: map[string]string{
-			"coop_url": coopServer.URL,
-		},
+		ID:    "crew-town-crew-hq",
+		Notes: "coop_url: " + coopServer.URL,
 	}
 	notif := &mockNotifier{}
 

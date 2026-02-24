@@ -19,7 +19,7 @@ func TestUpdateBeadFields_MergesFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/beads/"):
+		case r.Method == http.MethodGet:
 			// Return bead with existing fields.
 			bead := beadJSON{
 				ID:     "bd-merge",
@@ -27,7 +27,7 @@ func TestUpdateBeadFields_MergesFields(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(bead)
 
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/beads/"):
+		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
 			json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
@@ -45,13 +45,13 @@ func TestUpdateBeadFields_MergesFields(t *testing.T) {
 	}
 
 	if callCount != 2 {
-		t.Fatalf("expected 2 HTTP calls (GET + PUT), got %d", callCount)
+		t.Fatalf("expected 2 HTTP calls (GET + PATCH), got %d", callCount)
 	}
 
-	// Verify the PUT body contains merged fields.
+	// Verify the PATCH body contains merged fields.
 	fieldsRaw, ok := putBody["fields"]
 	if !ok {
-		t.Fatal("expected 'fields' key in PUT body")
+		t.Fatal("expected 'fields' key in PATCH body")
 	}
 	var merged map[string]string
 	if err := json.Unmarshal(fieldsRaw, &merged); err != nil {
@@ -79,7 +79,7 @@ func TestUpdateBeadFields_HandlesNilExistingFields(t *testing.T) {
 			bead := beadJSON{ID: "bd-nil"}
 			json.NewEncoder(w).Encode(bead)
 
-		case r.Method == http.MethodPut:
+		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
 			json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
@@ -127,11 +127,11 @@ func TestUpdateBeadNotes_SendsCorrectBody(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if gotMethod != http.MethodPut {
-		t.Errorf("expected PUT, got %s", gotMethod)
+	if gotMethod != http.MethodPatch {
+		t.Errorf("expected PATCH, got %s", gotMethod)
 	}
-	if gotPath != "/api/v1/beads/bd-notes1" {
-		t.Errorf("expected path /api/v1/beads/bd-notes1, got %s", gotPath)
+	if gotPath != "/v1/beads/bd-notes1" {
+		t.Errorf("expected path /v1/beads/bd-notes1, got %s", gotPath)
 	}
 	if gotBody["notes"] != "coop_url: http://coop:9090\npod_name: agent-0" {
 		t.Errorf("expected notes body, got %v", gotBody)
@@ -152,7 +152,7 @@ func TestUpdateAgentState_SetsFieldViaUpdateBeadFields(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(bead)
 
-		case r.Method == http.MethodPut:
+		case r.Method == http.MethodPatch:
 			body, _ := io.ReadAll(r.Body)
 			json.Unmarshal(body, &putBody)
 			w.WriteHeader(http.StatusNoContent)
@@ -331,7 +331,7 @@ func TestCloseBead_FieldUpdateFailsPropagatesError(t *testing.T) {
 
 func TestParseNotes_ParsesKeyValueLines(t *testing.T) {
 	notes := "coop_url: http://coop:9090\npod_name: agent-hq-0\n"
-	m := parseNotes(notes)
+	m := ParseNotes(notes)
 	if m["coop_url"] != "http://coop:9090" {
 		t.Errorf("expected coop_url, got %v", m)
 	}
@@ -341,7 +341,7 @@ func TestParseNotes_ParsesKeyValueLines(t *testing.T) {
 }
 
 func TestParseNotes_HandlesEmptyString(t *testing.T) {
-	m := parseNotes("")
+	m := ParseNotes("")
 	if m != nil {
 		t.Errorf("expected nil for empty notes, got %v", m)
 	}
@@ -349,7 +349,7 @@ func TestParseNotes_HandlesEmptyString(t *testing.T) {
 
 func TestParseNotes_SkipsBlankLines(t *testing.T) {
 	notes := "key1: val1\n\n\nkey2: val2\n"
-	m := parseNotes(notes)
+	m := ParseNotes(notes)
 	if len(m) != 2 {
 		t.Errorf("expected 2 entries, got %d: %v", len(m), m)
 	}
@@ -357,7 +357,7 @@ func TestParseNotes_SkipsBlankLines(t *testing.T) {
 
 func TestParseNotes_HandlesColonInValue(t *testing.T) {
 	notes := "url: http://host:8080/path"
-	m := parseNotes(notes)
+	m := ParseNotes(notes)
 	if m["url"] != "http://host:8080/path" {
 		t.Errorf("expected URL value preserved, got %s", m["url"])
 	}
@@ -365,7 +365,7 @@ func TestParseNotes_HandlesColonInValue(t *testing.T) {
 
 func TestParseNotes_TrimsWhitespace(t *testing.T) {
 	notes := "  key  :  value  "
-	m := parseNotes(notes)
+	m := ParseNotes(notes)
 	if m["key"] != "value" {
 		t.Errorf("expected trimmed key/value, got key=%q value=%q", "key", m["key"])
 	}
@@ -373,7 +373,7 @@ func TestParseNotes_TrimsWhitespace(t *testing.T) {
 
 func TestParseNotes_NoColonLinesIgnored(t *testing.T) {
 	notes := "no-colon-here\nkey: val"
-	m := parseNotes(notes)
+	m := ParseNotes(notes)
 	if len(m) != 1 {
 		t.Errorf("expected 1 entry, got %d: %v", len(m), m)
 	}

@@ -105,7 +105,7 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 			Mode:      mode,
 			Role:      role,
 			AgentName: name,
-			Metadata:  parseNotes(b.Notes),
+			Metadata:  ParseNotes(b.Notes),
 		})
 	}
 
@@ -171,6 +171,21 @@ func (c *Client) GetBead(ctx context.Context, beadID string) (*BeadDetail, error
 		return nil, fmt.Errorf("getting bead %s: %w", beadID, err)
 	}
 	return bead.toDetail(), nil
+}
+
+// FindAgentBead searches active agent beads for the one whose "agent" field
+// matches agentName (e.g., "test-bot-2"). Returns an error if no match is found.
+func (c *Client) FindAgentBead(ctx context.Context, agentName string) (*BeadDetail, error) {
+	resp, err := c.listBeads(ctx, []string{"agent"}, activeStatuses)
+	if err != nil {
+		return nil, fmt.Errorf("listing agent beads: %w", err)
+	}
+	for _, b := range resp.Beads {
+		if b.fieldsMap()["agent"] == agentName {
+			return b.toDetail(), nil
+		}
+	}
+	return nil, fmt.Errorf("agent bead not found for agent %q", agentName)
 }
 
 // UpdateBeadFields updates typed fields on a bead via a read-modify-write cycle.
@@ -401,8 +416,8 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, resu
 	return nil
 }
 
-// parseNotes parses "key: value" lines from a bead's notes field into a map.
-func parseNotes(notes string) map[string]string {
+// ParseNotes parses "key: value" lines from a bead's notes field into a map.
+func ParseNotes(notes string) map[string]string {
 	if notes == "" {
 		return nil
 	}
