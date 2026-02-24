@@ -170,6 +170,8 @@ coopmux:
 
   # K8s secret containing the Claude API key for coopmux
   claudeApiKeySecret: ""
+  # Key within the secret that holds the API key (default: ANTHROPIC_API_KEY)
+  claudeApiKeyField: "ANTHROPIC_API_KEY"
 
   # NATS connection (must be explicitly set — no auto-wiring)
   natsURL: ""

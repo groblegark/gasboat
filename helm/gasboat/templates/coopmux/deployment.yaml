@@ -47,7 +47,7 @@ spec:
               CRED_DIR="{{ dir .Values.coopmux.persistence.path }}"
               CRED_FILE="${CRED_DIR}/credentials.json"
               ACCOUNT_NAME="{{ .Values.coopmux.credentials.accountName }}"
-              API_KEY=$(cat /etc/coop-api-key/ANTHROPIC_API_KEY)
+              API_KEY=$(cat /etc/coop-api-key/{{ .Values.coopmux.claudeApiKeyField | default "ANTHROPIC_API_KEY" }})
               if [ -z "$API_KEY" ]; then
                 echo "ERROR: API key is empty"
                 exit 1
