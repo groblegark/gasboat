@@ -9,7 +9,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"gasboat/controller/internal/beadsapi"
 )
@@ -22,15 +24,17 @@ type MailConfig struct {
 
 // Mail watches the kbeads SSE event stream for mail bead lifecycle events.
 type Mail struct {
-	daemon BeadClient
-	logger *slog.Logger
+	daemon     BeadClient
+	logger     *slog.Logger
+	httpClient *http.Client // reused for nudge requests
 }
 
 // NewMail creates a new mail lifecycle watcher.
 func NewMail(cfg MailConfig) *Mail {
 	return &Mail{
-		daemon: cfg.Daemon,
-		logger: cfg.Logger,
+		daemon:     cfg.Daemon,
+		logger:     cfg.Logger,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -112,7 +116,7 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 
 	message := fmt.Sprintf("New mail from %s: %s — run 'kd show %s' to read", sender, bead.Title, bead.ID)
 
-	if err := nudgeCoop(ctx, coopURL, message); err != nil {
+	if err := nudgeCoop(ctx, m.httpClient, coopURL, message); err != nil {
 		m.logger.Error("failed to nudge agent for mail",
 			"agent", agentName, "coop_url", coopURL, "error", err)
 		return

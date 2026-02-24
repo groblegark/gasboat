@@ -41,9 +41,10 @@ type SSEConfig struct {
 // events into lifecycle Events. It tracks Last-Event-ID for reconnection and
 // auto-reconnects with exponential backoff.
 type SSEWatcher struct {
-	cfg    SSEConfig
-	events chan Event
-	logger *slog.Logger
+	cfg        SSEConfig
+	events     chan Event
+	logger     *slog.Logger
+	httpClient *http.Client // reused across reconnections (long-lived, no timeout)
 
 	mu          sync.Mutex
 	lastEventID string // tracks the most recent SSE event ID for reconnection
@@ -52,9 +53,10 @@ type SSEWatcher struct {
 // NewSSEWatcher creates a watcher backed by the kbeads SSE event stream.
 func NewSSEWatcher(cfg SSEConfig, logger *slog.Logger) *SSEWatcher {
 	return &SSEWatcher{
-		cfg:    cfg,
-		events: make(chan Event, 64),
-		logger: logger,
+		cfg:        cfg,
+		events:     make(chan Event, 64),
+		logger:     logger,
+		httpClient: &http.Client{Timeout: 0}, // no timeout for long-lived SSE
 	}
 }
 
@@ -126,12 +128,7 @@ func (w *SSEWatcher) stream(ctx context.Context) error {
 	w.logger.Info("connecting to SSE event stream",
 		"url", url, "last_event_id", lastID)
 
-	client := &http.Client{
-		// No timeout — SSE connections are long-lived.
-		Timeout: 0,
-	}
-
-	resp, err := client.Do(req)
+	resp, err := w.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("SSE connect: %w", err)
 	}
