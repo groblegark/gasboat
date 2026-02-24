@@ -364,6 +364,24 @@ func (c *Client) listBeads(ctx context.Context, types, statuses []string) (*list
 	return &resp, nil
 }
 
+// FindAgentBead returns the first active agent bead whose assignee matches
+// agentName. Returns (nil, nil) if no matching bead is found.
+func (c *Client) FindAgentBead(ctx context.Context, agentName string) (*BeadDetail, error) {
+	q := url.Values{}
+	q.Set("type", "agent")
+	q.Set("assignee", agentName)
+
+	var resp listBeadsResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads?"+q.Encode(), nil, &resp); err != nil {
+		return nil, fmt.Errorf("finding agent bead for %q: %w", agentName, err)
+	}
+	for _, b := range resp.Beads {
+		detail := b.toDetail()
+		return detail, nil
+	}
+	return nil, nil
+}
+
 // APIError represents an error response from the daemon HTTP API.
 type APIError struct {
 	StatusCode int
