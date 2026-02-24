@@ -697,6 +697,18 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		),
 	}
 
+	// Predecessor chain info.
+	predecessorID := bead.Fields["predecessor_id"]
+	if predecessorID != "" {
+		chainText := fmt.Sprintf(":link: _Chained from: %s_", predecessorID)
+		if iterStr := bead.Fields["iteration"]; iterStr != "" && iterStr != "1" {
+			chainText = fmt.Sprintf(":link: _Iteration %s — chained from: %s_", iterStr, predecessorID)
+		}
+		blocks = append(blocks, slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", chainText, false, false),
+		))
+	}
+
 	// Context block with agent info.
 	if agent != "" {
 		blocks = append(blocks, slack.NewContextBlock("",
@@ -788,11 +800,23 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	blocks = append(blocks,
 		slack.NewActionBlock("", dismissBtn))
 
-	// Post the message.
-	channelID, ts, err := b.api.PostMessageContext(ctx, b.channel,
+	// Build message options.
+	msgOpts := []slack.MsgOption{
 		slack.MsgOptionText(fmt.Sprintf("Decision needed: %s", question), false),
 		slack.MsgOptionBlocks(blocks...),
-	)
+	}
+
+	// Thread under predecessor if present and tracked.
+	var predecessorThreadTS string
+	if predecessorID != "" {
+		if ref, ok := b.lookupMessage(predecessorID); ok && ref.ChannelID == b.channel {
+			predecessorThreadTS = ref.Timestamp
+			msgOpts = append(msgOpts, slack.MsgOptionTS(predecessorThreadTS))
+		}
+	}
+
+	// Post the message.
+	channelID, ts, err := b.api.PostMessageContext(ctx, b.channel, msgOpts...)
 	if err != nil {
 		return fmt.Errorf("post decision to Slack: %w", err)
 	}
@@ -810,8 +834,14 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		})
 	}
 
+	// Mark predecessor as superseded if we threaded under it.
+	if predecessorThreadTS != "" {
+		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, b.channel, predecessorThreadTS)
+	}
+
 	b.logger.Info("posted decision to Slack",
-		"bead", bead.ID, "channel", channelID, "ts", ts)
+		"bead", bead.ID, "channel", channelID, "ts", ts,
+		"predecessor", predecessorID)
 	return nil
 }
 
@@ -821,6 +851,44 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 func (b *Bot) UpdateDecision(ctx context.Context, beadID, chosen string) error {
 	b.updateMessageResolved(ctx, beadID, chosen, "", "", "")
 	return nil
+}
+
+// lookupMessage finds a tracked decision message by bead ID.
+// Checks hot cache first, then falls back to state manager.
+func (b *Bot) lookupMessage(beadID string) (MessageRef, bool) {
+	b.mu.Lock()
+	ts, ok := b.messages[beadID]
+	b.mu.Unlock()
+	if ok {
+		return MessageRef{ChannelID: b.channel, Timestamp: ts}, true
+	}
+	if b.state != nil {
+		return b.state.GetDecisionMessage(beadID)
+	}
+	return MessageRef{}, false
+}
+
+// markDecisionSuperseded replaces the predecessor decision message with a
+// "Superseded" notice linking to the new follow-up decision.
+func (b *Bot) markDecisionSuperseded(ctx context.Context, predecessorID, newDecisionID, channelID, messageTS string) {
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("*Superseded*\n\nA follow-up decision (`%s`) has been posted in this thread.\n_Please refer to the latest decision in the thread below._", newDecisionID),
+				false, false),
+			nil, nil),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("Original decision: `%s`", predecessorID), false, false)),
+	}
+
+	_, _, _, err := b.api.UpdateMessageContext(ctx, channelID, messageTS,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to mark decision as superseded",
+			"predecessor", predecessorID, "successor", newDecisionID, "error", err)
+	}
 }
 
 // Ensure Bot implements Notifier.
