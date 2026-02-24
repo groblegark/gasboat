@@ -180,7 +180,7 @@ func TestDecisions_HandleCreated(t *testing.T) {
 	d := &Decisions{
 		notifier:  &mockNotifier{},
 		logger:    slog.Default(),
-		escalated: make(map[string]bool),
+		escalated: make(map[string]time.Time),
 	}
 
 	// Non-decision bead should be ignored.
@@ -290,7 +290,7 @@ func TestDecisions_HandleClosed_NoAssignee(t *testing.T) {
 	d := &Decisions{
 		notifier:  &mockNotifier{},
 		logger:    slog.Default(),
-		escalated: make(map[string]bool),
+		escalated: make(map[string]time.Time),
 	}
 
 	// Decision closed without assignee — should log warning but not panic.
