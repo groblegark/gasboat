@@ -152,6 +152,19 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 	return rigs, nil
 }
 
+// ListDecisionBeads queries the daemon for active decision beads (type=decision).
+func (c *Client) ListDecisionBeads(ctx context.Context) ([]*BeadDetail, error) {
+	resp, err := c.listBeads(ctx, []string{"decision"}, activeStatuses)
+	if err != nil {
+		return nil, fmt.Errorf("listing decision beads: %w", err)
+	}
+	beads := make([]*BeadDetail, 0, len(resp.Beads))
+	for _, b := range resp.Beads {
+		beads = append(beads, b.toDetail())
+	}
+	return beads, nil
+}
+
 // BeadDetail represents a full bead returned by the daemon.
 type BeadDetail struct {
 	ID       string            `json:"id"`

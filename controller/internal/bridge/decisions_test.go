@@ -61,6 +61,35 @@ func (m *mockDaemon) CloseBead(_ context.Context, beadID string, fields map[stri
 	return nil
 }
 
+func (m *mockDaemon) ListDecisionBeads(_ context.Context) ([]*beadsapi.BeadDetail, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*beadsapi.BeadDetail
+	for _, b := range m.beads {
+		if b.Type == "decision" {
+			result = append(result, b)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockDaemon) ListAgentBeads(_ context.Context) ([]beadsapi.AgentBead, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []beadsapi.AgentBead
+	for _, b := range m.beads {
+		if b.Type == "agent" {
+			result = append(result, beadsapi.AgentBead{
+				ID:      b.ID,
+				Project: b.Fields["project"],
+				Mode:    "crew",
+				Role:    b.Fields["role"],
+			})
+		}
+	}
+	return result, nil
+}
+
 func (m *mockDaemon) getClosed() []closeCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -431,5 +460,91 @@ func TestDecisions_HandleUpdated_EscalationDedup(t *testing.T) {
 	escalated := notif.getEscalated()
 	if len(escalated) != 1 {
 		t.Fatalf("expected exactly 1 escalation (dedup), got %d", len(escalated))
+	}
+}
+
+func TestMockDaemon_ListDecisionBeads(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.beads["dec-10"] = &beadsapi.BeadDetail{
+		ID:   "dec-10",
+		Type: "decision",
+		Fields: map[string]string{
+			"question": "Deploy?",
+		},
+	}
+	daemon.beads["agent-1"] = &beadsapi.BeadDetail{
+		ID:   "agent-1",
+		Type: "agent",
+	}
+	daemon.beads["dec-11"] = &beadsapi.BeadDetail{
+		ID:       "dec-11",
+		Type:     "decision",
+		Assignee: "test-bot",
+		Labels:   []string{"escalated"},
+		Fields: map[string]string{
+			"question": "Rollback?",
+		},
+	}
+
+	decisions, err := daemon.ListDecisionBeads(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decisions) != 2 {
+		t.Fatalf("expected 2 decisions, got %d", len(decisions))
+	}
+
+	// Verify only decision beads returned.
+	ids := map[string]bool{}
+	for _, d := range decisions {
+		ids[d.ID] = true
+		if d.Type != "decision" {
+			t.Errorf("expected type=decision, got %s", d.Type)
+		}
+	}
+	if !ids["dec-10"] || !ids["dec-11"] {
+		t.Errorf("expected dec-10 and dec-11, got %v", ids)
+	}
+}
+
+func TestMockDaemon_ListAgentBeads(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.beads["agent-a"] = &beadsapi.BeadDetail{
+		ID:   "agent-a",
+		Type: "agent",
+		Fields: map[string]string{
+			"role":    "crew",
+			"project": "gasboat",
+		},
+	}
+	daemon.beads["dec-1"] = &beadsapi.BeadDetail{
+		ID:   "dec-1",
+		Type: "decision",
+	}
+
+	agents, err := daemon.ListAgentBeads(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(agents))
+	}
+	if agents[0].ID != "agent-a" {
+		t.Errorf("expected agent-a, got %s", agents[0].ID)
+	}
+	if agents[0].Project != "gasboat" {
+		t.Errorf("expected project=gasboat, got %s", agents[0].Project)
+	}
+}
+
+func TestMockDaemon_ListDecisionBeads_Empty(t *testing.T) {
+	daemon := newMockDaemon()
+
+	decisions, err := daemon.ListDecisionBeads(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decisions) != 0 {
+		t.Fatalf("expected 0 decisions, got %d", len(decisions))
 	}
 }
