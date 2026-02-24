@@ -88,7 +88,7 @@ func TestGetBead_ParsesResponse(t *testing.T) {
 			Notes:  "key: value",
 			Fields: json.RawMessage(`{"priority":"high","component":"api"}`),
 		}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
@@ -132,7 +132,7 @@ func TestGetBead_HandlesEmptyFields(t *testing.T) {
 			Type:   "issue",
 			Status: "open",
 		}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 
@@ -151,7 +151,7 @@ func TestGetBead_EscapesBeadID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRawPath = r.URL.RawPath
 		bead := beadJSON{ID: "has/slash"}
-		json.NewEncoder(w).Encode(bead)
+		_ = json.NewEncoder(w).Encode(bead)
 	}))
 	defer srv.Close()
 

@@ -632,7 +632,9 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.RemoveDecisionMessage(beadID)
+		if err := b.state.RemoveDecisionMessage(beadID); err != nil {
+			b.logger.Error("failed to remove decision message from state", "bead", beadID, "error", err)
+		}
 	}
 }
 
@@ -977,11 +979,13 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.SetDecisionMessage(bead.ID, MessageRef{
+		if err := b.state.SetDecisionMessage(bead.ID, MessageRef{
 			ChannelID: channelID,
 			Timestamp: ts,
 			Agent:     agent,
-		})
+		}); err != nil {
+			b.logger.Error("failed to persist decision message to state", "bead", bead.ID, "error", err)
+		}
 	}
 
 	// Mark predecessor as superseded if we threaded under it.
@@ -1112,7 +1116,9 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 	b.mu.Unlock()
 
 	if b.state != nil {
-		b.state.RemoveDecisionMessage(beadID)
+		if err := b.state.RemoveDecisionMessage(beadID); err != nil {
+			b.logger.Error("failed to remove decision message from state", "bead", beadID, "error", err)
+		}
 	}
 
 	b.logger.Info("dismissed decision from Slack",
