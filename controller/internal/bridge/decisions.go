@@ -53,6 +53,9 @@ type Notifier interface {
 	DismissDecision(ctx context.Context, beadID string) error
 }
 
+// escalationTTL is the maximum age of entries in the escalated dedup map.
+const escalationTTL = 1 * time.Hour
+
 // Decisions watches the kbeads SSE event stream for decision bead lifecycle events.
 type Decisions struct {
 	daemon     BeadClient
@@ -61,7 +64,7 @@ type Decisions struct {
 	httpClient *http.Client // reused for nudge requests
 
 	escalatedMu sync.Mutex
-	escalated   map[string]bool // bead ID → already notified (dedup)
+	escalated   map[string]time.Time // bead ID → notification time (dedup with TTL)
 }
 
 // DecisionsConfig holds configuration for the Decisions watcher.
@@ -78,7 +81,7 @@ func NewDecisions(cfg DecisionsConfig) *Decisions {
 		notifier:   cfg.Notifier,
 		logger:     cfg.Logger,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
-		escalated:  make(map[string]bool),
+		escalated:  make(map[string]time.Time),
 	}
 }
 
@@ -189,13 +192,14 @@ func (d *Decisions) handleUpdated(ctx context.Context, data []byte) {
 		return
 	}
 
-	// Deduplicate escalation notifications.
+	// Deduplicate escalation notifications (with periodic TTL cleanup).
 	d.escalatedMu.Lock()
-	if d.escalated[bead.ID] {
+	d.cleanupEscalatedLocked()
+	if _, seen := d.escalated[bead.ID]; seen {
 		d.escalatedMu.Unlock()
 		return
 	}
-	d.escalated[bead.ID] = true
+	d.escalated[bead.ID] = time.Now()
 	d.escalatedMu.Unlock()
 
 	d.logger.Info("decision escalated",
@@ -207,6 +211,17 @@ func (d *Decisions) handleUpdated(ctx context.Context, data []byte) {
 	if d.notifier != nil {
 		if err := d.notifier.NotifyEscalation(ctx, *bead); err != nil {
 			d.logger.Error("failed to notify escalation", "id", bead.ID, "error", err)
+		}
+	}
+}
+
+// cleanupEscalatedLocked removes entries older than escalationTTL.
+// Caller must hold d.escalatedMu.
+func (d *Decisions) cleanupEscalatedLocked() {
+	now := time.Now()
+	for id, t := range d.escalated {
+		if now.Sub(t) > escalationTTL {
+			delete(d.escalated, id)
 		}
 	}
 }
