@@ -87,7 +87,7 @@ spec:
             - name: BEADS_GRPC_ADDR
               value: {{ include "gasboat.beads.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ include "gasboat.beads.port" . }}
             - name: BEADS_HTTP_ADDR
-              value: {{ include "gasboat.beads.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ include "gasboat.beads.httpPort" . }}
+              value: http://{{ include "gasboat.beads.host" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ include "gasboat.beads.httpPort" . }}
             - name: COOP_IMAGE
               value: "{{ .Values.agents.agentImage.repository }}:{{ .Values.agents.agentImage.tag }}"
             {{- if .Values.agents.claudeOAuthSecret }}
