@@ -25,6 +25,7 @@ type Bot struct {
 	socket *socketmode.Client
 	state  *StateManager
 	daemon BeadClient
+	router *Router
 	logger *slog.Logger
 
 	channel   string // default channel ID
@@ -46,6 +47,7 @@ type BotConfig struct {
 	Channel   string
 	Daemon    BeadClient
 	State     *StateManager
+	Router    *Router // optional channel router; nil = all to Channel
 	Logger    *slog.Logger
 	Debug     bool
 }
@@ -67,6 +69,7 @@ func NewBot(cfg BotConfig) *Bot {
 		socket:   socket,
 		state:    cfg.State,
 		daemon:   cfg.Daemon,
+		router:   cfg.Router,
 		logger:   cfg.Logger,
 		channel:  cfg.Channel,
 		messages: make(map[string]string),
@@ -806,17 +809,20 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		slack.MsgOptionBlocks(blocks...),
 	}
 
+	// Resolve target channel for this agent.
+	targetChannel := b.resolveChannel(agent)
+
 	// Thread under predecessor if present and tracked.
 	var predecessorThreadTS string
 	if predecessorID != "" {
-		if ref, ok := b.lookupMessage(predecessorID); ok && ref.ChannelID == b.channel {
+		if ref, ok := b.lookupMessage(predecessorID); ok && ref.ChannelID == targetChannel {
 			predecessorThreadTS = ref.Timestamp
 			msgOpts = append(msgOpts, slack.MsgOptionTS(predecessorThreadTS))
 		}
 	}
 
 	// Post the message.
-	channelID, ts, err := b.api.PostMessageContext(ctx, b.channel, msgOpts...)
+	channelID, ts, err := b.api.PostMessageContext(ctx, targetChannel, msgOpts...)
 	if err != nil {
 		return fmt.Errorf("post decision to Slack: %w", err)
 	}
@@ -836,7 +842,7 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 
 	// Mark predecessor as superseded if we threaded under it.
 	if predecessorThreadTS != "" {
-		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, b.channel, predecessorThreadTS)
+		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, targetChannel, predecessorThreadTS)
 	}
 
 	b.logger.Info("posted decision to Slack",
@@ -851,6 +857,18 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 func (b *Bot) UpdateDecision(ctx context.Context, beadID, chosen string) error {
 	b.updateMessageResolved(ctx, beadID, chosen, "", "", "")
 	return nil
+}
+
+// resolveChannel returns the target Slack channel for an agent.
+// Uses the router if configured, otherwise falls back to the default channel.
+func (b *Bot) resolveChannel(agent string) string {
+	if b.router != nil && agent != "" {
+		result := b.router.Resolve(agent)
+		if result.ChannelID != "" {
+			return result.ChannelID
+		}
+	}
+	return b.channel
 }
 
 // lookupMessage finds a tracked decision message by bead ID.
