@@ -909,5 +909,54 @@ func (b *Bot) markDecisionSuperseded(ctx context.Context, predecessorID, newDeci
 	}
 }
 
-// Ensure Bot implements Notifier.
+// NotifyAgentCrash posts a crash alert to the agent's resolved Slack channel.
+func (b *Bot) NotifyAgentCrash(ctx context.Context, bead BeadEvent) error {
+	agent := bead.Assignee
+	if agent == "" {
+		agent = bead.Title
+	}
+	name := agent
+	if name == "" {
+		name = bead.ID
+	}
+
+	text := fmt.Sprintf(":warning: *Agent crashed: %s*", name)
+
+	// Add reason from fields.
+	reason := bead.Fields["agent_state"]
+	podPhase := bead.Fields["pod_phase"]
+	podName := bead.Fields["pod_name"]
+	if podPhase == "failed" && reason != "failed" {
+		text += fmt.Sprintf("\n> Pod phase: `%s`", podPhase)
+	}
+	if podName != "" {
+		text += fmt.Sprintf("\n> Pod: `%s`", podName)
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", text, false, false),
+			nil, nil),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("Agent: `%s` | Bead: `%s`", name, bead.ID), false, false)),
+	}
+
+	targetChannel := b.resolveChannel(agent)
+
+	_, _, err := b.api.PostMessageContext(ctx, targetChannel,
+		slack.MsgOptionText(fmt.Sprintf("Agent crashed: %s", name), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return fmt.Errorf("post agent crash to Slack: %w", err)
+	}
+
+	b.logger.Info("posted agent crash to Slack",
+		"agent", name, "bead", bead.ID, "channel", targetChannel)
+	return nil
+}
+
+// Ensure Bot implements Notifier and AgentNotifier.
 var _ Notifier = (*Bot)(nil)
+var _ AgentNotifier = (*Bot)(nil)

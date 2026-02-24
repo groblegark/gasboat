@@ -136,10 +136,10 @@ func main() {
 		}()
 	}
 
-	// Create SSE event stream for decisions and mail watchers.
+	// Create SSE event stream for decisions, mail, and agents watchers.
 	sseStream := bridge.NewSSEStream(bridge.SSEStreamConfig{
 		BeadsHTTPAddr: cfg.beadsHTTPAddr,
-		Topics:        []string{"beads.bead.created", "beads.bead.closed"},
+		Topics:        []string{"beads.bead.created", "beads.bead.closed", "beads.bead.updated"},
 		Logger:        logger,
 	})
 
@@ -158,7 +158,18 @@ func main() {
 	})
 	mail.RegisterHandlers(sseStream)
 
-	// Start the shared SSE stream (delivers events to both watchers).
+	// Register agents watcher for crash notifications.
+	var agentNotifier bridge.AgentNotifier
+	if bot != nil {
+		agentNotifier = bot
+	}
+	agents := bridge.NewAgents(bridge.AgentsConfig{
+		Notifier: agentNotifier,
+		Logger:   logger,
+	})
+	agents.RegisterHandlers(sseStream)
+
+	// Start the shared SSE stream (delivers events to all watchers).
 	go func() {
 		if err := sseStream.Start(ctx); err != nil && ctx.Err() == nil {
 			logger.Error("SSE event stream stopped", "error", err)
