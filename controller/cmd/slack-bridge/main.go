@@ -57,8 +57,17 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
+	// State persistence for Slack message tracking.
+	state, err := bridge.NewStateManager(cfg.statePath)
+	if err != nil {
+		logger.Error("failed to load state", "path", cfg.statePath, "error", err)
+		os.Exit(1)
+	}
+	logger.Info("state manager loaded", "path", cfg.statePath)
+
 	// Slack notifier (optional — decisions still tracked even without Slack).
 	var notifier bridge.Notifier
+	var bot *bridge.Bot
 	mux := http.NewServeMux()
 
 	// Health endpoints — always available regardless of Slack config.
@@ -68,10 +77,29 @@ func main() {
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if bot != nil && !bot.IsConnected() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"status":"not_ready","reason":"socket_mode_disconnected"}`)
+			return
+		}
 		fmt.Fprintf(w, `{"status":"ok"}`)
 	})
 
-	if cfg.slackBotToken != "" {
+	if cfg.slackBotToken != "" && cfg.slackAppToken != "" {
+		// Socket Mode: real-time WebSocket connection for events, interactions, slash commands.
+		bot = bridge.NewBot(bridge.BotConfig{
+			BotToken: cfg.slackBotToken,
+			AppToken: cfg.slackAppToken,
+			Channel:  cfg.slackChannel,
+			Daemon:   daemon,
+			State:    state,
+			Logger:   logger,
+			Debug:    cfg.debug,
+		})
+		notifier = bot
+		logger.Info("Slack Socket Mode bot enabled", "channel", cfg.slackChannel)
+	} else if cfg.slackBotToken != "" {
+		// Webhook fallback: raw HTTP Slack notifier with interaction webhook handler.
 		slack := bridge.NewSlackNotifier(
 			cfg.slackBotToken,
 			cfg.slackSigningSecret,
@@ -80,15 +108,13 @@ func main() {
 			logger,
 		)
 		notifier = slack
-
-		// Register Slack interaction handler on the shared mux.
 		mux.HandleFunc("/slack/interactions", slack.HandleInteraction)
-		logger.Info("Slack notifier enabled", "channel", cfg.slackChannel)
+		logger.Info("Slack webhook notifier enabled", "channel", cfg.slackChannel)
 	} else {
-		logger.Warn("SLACK_BOAT_TOKEN not set — running without Slack notifications")
+		logger.Warn("SLACK_BOT_TOKEN not set — running without Slack notifications")
 	}
 
-	// Start HTTP server (always — serves health endpoints + optional Slack handler).
+	// Start HTTP server (always — serves health endpoints + optional webhook handler).
 	srv := &http.Server{
 		Addr:              cfg.listenAddr,
 		Handler:           mux,
@@ -100,6 +126,15 @@ func main() {
 			logger.Error("HTTP server failed", "error", err)
 		}
 	}()
+
+	// Start Socket Mode bot if configured.
+	if bot != nil {
+		go func() {
+			if err := bot.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.Error("Socket Mode bot stopped", "error", err)
+			}
+		}()
+	}
 
 	// Create SSE event stream for decisions and mail watchers.
 	sseStream := bridge.NewSSEStream(bridge.SSEStreamConfig{
@@ -130,7 +165,9 @@ func main() {
 		}
 	}()
 
-	logger.Info("slack-bridge ready")
+	logger.Info("slack-bridge ready",
+		"socket_mode", bot != nil,
+		"webhook_mode", bot == nil && notifier != nil)
 
 	// Block until shutdown signal.
 	<-ctx.Done()
@@ -148,20 +185,26 @@ func main() {
 type config struct {
 	beadsHTTPAddr      string
 	slackBotToken      string
+	slackAppToken      string
 	slackSigningSecret string
 	slackChannel       string
 	listenAddr         string
 	logLevel           string
+	statePath          string
+	debug              bool
 }
 
 func parseConfig() *config {
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
-		slackBotToken:      os.Getenv("SLACK_BOAT_TOKEN"),
+		slackBotToken:      os.Getenv("SLACK_BOT_TOKEN"),
+		slackAppToken:      os.Getenv("SLACK_APP_TOKEN"),
 		slackSigningSecret: os.Getenv("SLACK_SIGNING_SECRET"),
 		slackChannel:       os.Getenv("SLACK_CHANNEL"),
 		listenAddr:         envOrDefault("SLACK_LISTEN_ADDR", ":8090"),
 		logLevel:           envOrDefault("LOG_LEVEL", "info"),
+		statePath:          envOrDefault("STATE_PATH", "/tmp/slack-bridge-state.json"),
+		debug:              os.Getenv("DEBUG") == "true",
 	}
 }
 
