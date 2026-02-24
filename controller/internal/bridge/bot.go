@@ -37,7 +37,7 @@ type Bot struct {
 
 	// In-memory decision tracking (augments StateManager).
 	mu       sync.Mutex
-	messages map[string]string // bead ID → Slack message ts (hot cache)
+	messages map[string]MessageRef // bead ID → Slack message ref (hot cache)
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
@@ -72,13 +72,13 @@ func NewBot(cfg BotConfig) *Bot {
 		router:       cfg.Router,
 		logger:       cfg.Logger,
 		channel:      cfg.Channel,
-		messages:     make(map[string]string),
+		messages:     make(map[string]MessageRef),
 	}
 
 	// Hydrate hot cache from persisted state.
 	if cfg.State != nil {
 		for id, ref := range cfg.State.AllDecisionMessages() {
-			b.messages[id] = ref.Timestamp
+			b.messages[id] = ref
 		}
 	}
 
@@ -586,9 +586,9 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	// Try hot cache first.
 	if messageTS == "" {
 		b.mu.Lock()
-		if ts, ok := b.messages[beadID]; ok {
-			messageTS = ts
-			channelID = b.channel
+		if ref, ok := b.messages[beadID]; ok {
+			messageTS = ref.Timestamp
+			channelID = ref.ChannelID
 		}
 		b.mu.Unlock()
 	}
@@ -973,7 +973,11 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 
 	// Track the message and update pending count.
 	b.mu.Lock()
-	b.messages[bead.ID] = ts
+	b.messages[bead.ID] = MessageRef{
+		ChannelID: channelID,
+		Timestamp: ts,
+		Agent:     agent,
+	}
 	b.mu.Unlock()
 
 	if b.state != nil {
@@ -1019,10 +1023,10 @@ func (b *Bot) resolveChannel(agent string) string {
 // Checks hot cache first, then falls back to state manager.
 func (b *Bot) lookupMessage(beadID string) (MessageRef, bool) {
 	b.mu.Lock()
-	ts, ok := b.messages[beadID]
+	ref, ok := b.messages[beadID]
 	b.mu.Unlock()
 	if ok {
-		return MessageRef{ChannelID: b.channel, Timestamp: ts}, true
+		return ref, true
 	}
 	if b.state != nil {
 		return b.state.GetDecisionMessage(beadID)
