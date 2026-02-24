@@ -169,6 +169,17 @@ func main() {
 	})
 	agents.RegisterHandlers(sseStream)
 
+	// Register jacks watcher for jack lifecycle notifications.
+	var jackNotifier bridge.JackNotifier
+	if bot != nil {
+		jackNotifier = bot
+	}
+	jacks := bridge.NewJacks(bridge.JacksConfig{
+		Notifier: jackNotifier,
+		Logger:   logger,
+	})
+	jacks.RegisterHandlers(sseStream)
+
 	// Start the shared SSE stream (delivers events to all watchers).
 	go func() {
 		if err := sseStream.Start(ctx); err != nil && ctx.Err() == nil {
