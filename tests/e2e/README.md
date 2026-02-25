@@ -4,18 +4,18 @@ Integration tests for the gasboat/kbeads stack.
 
 ## Prerequisites
 
-- `kubectl` context pointing at `america-e2e-eks`
+- `kubectl` context pointing at the target cluster
 - `gb` binary from `~/gasboat/controller` (orchestration: bus emit, decision, gate)
 - `kd` binary from `~/kbeads` (CRUD: create, close, list, show)
 - `jq` and `python3` installed
-- `gasboat-e2e` namespace deployed (see `fics-helm-chart/charts/gasboat/values/gasboat-e2e.yaml`)
+- A gasboat namespace deployed (`gasboat-rwx` for RWX, or `gasboat-e2e` for legacy EKS)
 
 ## Gate System Tests (`test-gate-system.sh`)
 
 Tests `gb bus emit --hook=Stop` gate enforcement from the `bd-pe028` epic.
 
 **Requires** `gb` binary (from `~/gasboat/controller`) and a kbeads server with gate system support.
-The `gasboat-e2e` namespace must be running kbeads at commit `8c92e4e` or later.
+The target namespace must be running kbeads at commit `8c92e4e` or later.
 
 ### Quick run (port-forward auto-setup):
 
@@ -87,25 +87,25 @@ BEADS_HTTP_URL=http://localhost:19091 \
 
 ## CI/CD
 
-E2E tests run automatically via `.github/workflows/e2e.yml`:
+E2E tests run via `.rwx/e2e.yml` (RWX-native):
 
-- **Trigger**: after CI workflow succeeds on `main`, or via `workflow_dispatch`
-- **Cluster**: `america-e2e-eks` / `gasboat-e2e` namespace
-- **Secrets**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+- **Trigger**: `rwx dispatch gasboat-e2e` or `rwx run .rwx/e2e.yml` (CLI)
+- **Cluster**: `gasboat-rwx` namespace (default), configurable via `namespace` param
+- **Secrets**: `E2E_AWS_ACCESS_KEY_ID`, `E2E_AWS_SECRET_ACCESS_KEY`, `E2E_EKS_CLUSTER`
+
+The legacy `.github/workflows/e2e.yml` (EKS `america-e2e-eks` / `gasboat-e2e`) is retired.
 
 Run locally with `make e2e` (requires port-forward or `BEADS_HTTP_URL` set).
 
-## Deploying gasboat-e2e namespace
+## Deploying gasboat-rwx namespace
 
 ```bash
-cd ~/book/fics-helm-chart/charts/gasboat
-helm upgrade --install gasboat-e2e ./ -n gasboat-e2e --create-namespace \
-  --values values/gasboat.yaml \
-  --values values/gasboat-e2e.yaml
+helm upgrade --install gasboat-rwx helm/gasboat/ -n gasboat-rwx --create-namespace \
+  --values helm/gasboat/values.yaml
 ```
 
 Port-forward for local testing:
 ```bash
-kubectl -n gasboat-e2e port-forward svc/gasboat-e2e-beads 19090:8080
+kubectl -n gasboat-rwx port-forward svc/gasboat-rwx-beads 19090:8080
 # Then: BEADS_HTTP_URL=http://localhost:19090 kd list
 ```
