@@ -131,10 +131,19 @@ func (d *Decisions) handleClosed(ctx context.Context, data []byte) {
 	chosen := bead.Fields["chosen"]
 
 	// SSE close events may not include close-time fields (chosen, rationale).
-	// Fetch the full bead if chosen is missing.
+	// Fetch the full bead when chosen is missing so nudgeAgent has complete data.
 	if chosen == "" {
 		if detail, err := d.daemon.GetBead(ctx, bead.ID); err == nil {
-			chosen = detail.Fields["chosen"]
+			if bead.Fields == nil {
+				bead.Fields = make(map[string]string)
+			}
+			if v := detail.Fields["chosen"]; v != "" {
+				bead.Fields["chosen"] = v
+				chosen = v
+			}
+			if v := detail.Fields["rationale"]; v != "" {
+				bead.Fields["rationale"] = v
+			}
 			if bead.Assignee == "" {
 				bead.Assignee = detail.Assignee
 			}
