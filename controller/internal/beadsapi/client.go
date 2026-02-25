@@ -220,6 +220,7 @@ type BeadDetail struct {
 	Description string            `json:"description"`
 	CreatedBy   string            `json:"created_by"`
 	DueAt       string            `json:"due_at,omitempty"`
+	UpdatedAt   time.Time         `json:"updated_at,omitempty"`
 }
 
 // GetBead fetches a single bead by ID from the daemon.
@@ -337,6 +338,7 @@ type beadJSON struct {
 	Description string          `json:"description"`
 	CreatedBy   string          `json:"created_by"`
 	DueAt       string          `json:"due_at,omitempty"`
+	UpdatedAt   string          `json:"updated_at,omitempty"`
 }
 
 // ParseFieldsJSON decodes a raw JSON object into a map[string]string.
@@ -378,6 +380,27 @@ func (b *beadJSON) fieldsMap() map[string]string {
 	return ParseFieldsJSON(b.Fields)
 }
 
+// updatedAtFormats lists timestamp formats the daemon may use, in preference order.
+var updatedAtFormats = []string{
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+}
+
+// parseTimestamp parses a timestamp string using common formats.
+// Returns zero time if the string is empty or cannot be parsed.
+func parseTimestamp(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range updatedAtFormats {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 // toDetail converts a beadJSON to a BeadDetail.
 func (b *beadJSON) toDetail() *BeadDetail {
 	return &BeadDetail{
@@ -392,6 +415,7 @@ func (b *beadJSON) toDetail() *BeadDetail {
 		Description: b.Description,
 		CreatedBy:   b.CreatedBy,
 		DueAt:       b.DueAt,
+		UpdatedAt:   parseTimestamp(b.UpdatedAt),
 	}
 }
 

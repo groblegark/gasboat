@@ -127,10 +127,14 @@ func filterOutAssignee(beads []*beadsapi.BeadDetail, actorName string) []*beadsa
 }
 
 func filterRecentlyClosed(beads []*beadsapi.BeadDetail, window time.Duration) []*beadsapi.BeadDetail {
-	// BeadDetail doesn't have timestamps — return all (server already sorted by -updated_at).
-	// In the future, we could add updated_at to BeadDetail to enable client-side filtering.
-	_ = window
-	return beads
+	cutoff := time.Now().Add(-window)
+	var filtered []*beadsapi.BeadDetail
+	for _, b := range beads {
+		if b.UpdatedAt.IsZero() || b.UpdatedAt.After(cutoff) {
+			filtered = append(filtered, b)
+		}
+	}
+	return filtered
 }
 
 var noiseTypes = map[string]bool{

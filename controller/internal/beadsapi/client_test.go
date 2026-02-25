@@ -375,3 +375,62 @@ func TestDoJSON_NoContentTypeForGET(t *testing.T) {
 func TestClient_ImplementsBeadLister(t *testing.T) {
 	var _ BeadLister = (*Client)(nil)
 }
+
+// --- parseTimestamp tests ---
+
+func TestParseTimestamp_RFC3339(t *testing.T) {
+	ts := parseTimestamp("2026-02-25T08:29:35Z")
+	if ts.IsZero() {
+		t.Fatal("expected non-zero time for RFC3339 input")
+	}
+	if ts.Year() != 2026 || ts.Month() != 2 || ts.Day() != 25 {
+		t.Errorf("unexpected date: %v", ts)
+	}
+}
+
+func TestParseTimestamp_SpaceSeparated(t *testing.T) {
+	ts := parseTimestamp("2026-02-25 08:29:35")
+	if ts.IsZero() {
+		t.Fatal("expected non-zero time for space-separated input")
+	}
+	if ts.Year() != 2026 || ts.Month() != 2 || ts.Day() != 25 {
+		t.Errorf("unexpected date: %v", ts)
+	}
+}
+
+func TestParseTimestamp_Empty(t *testing.T) {
+	ts := parseTimestamp("")
+	if !ts.IsZero() {
+		t.Errorf("expected zero time for empty input, got %v", ts)
+	}
+}
+
+func TestParseTimestamp_Invalid(t *testing.T) {
+	ts := parseTimestamp("not-a-date")
+	if !ts.IsZero() {
+		t.Errorf("expected zero time for invalid input, got %v", ts)
+	}
+}
+
+func TestToDetail_ParsesUpdatedAt(t *testing.T) {
+	b := beadJSON{
+		ID:        "bd-ts",
+		Title:     "Timestamp bead",
+		UpdatedAt: "2026-02-25T08:29:35Z",
+	}
+	detail := b.toDetail()
+	if detail.UpdatedAt.IsZero() {
+		t.Fatal("expected UpdatedAt to be set")
+	}
+	if detail.UpdatedAt.Year() != 2026 {
+		t.Errorf("expected year 2026, got %d", detail.UpdatedAt.Year())
+	}
+}
+
+func TestToDetail_ZeroUpdatedAtWhenMissing(t *testing.T) {
+	b := beadJSON{ID: "bd-no-ts", Title: "No timestamp"}
+	detail := b.toDetail()
+	if !detail.UpdatedAt.IsZero() {
+		t.Errorf("expected zero UpdatedAt when not set, got %v", detail.UpdatedAt)
+	}
+}
