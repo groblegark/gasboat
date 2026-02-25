@@ -111,7 +111,7 @@ Both `kd` and `gb` read them. Renaming is future work.
 
 ## Gasboat Binary Layout (after port)
 
-```
+```ignore
 gasboat/
 ├── controller/
 │   ├── cmd/
