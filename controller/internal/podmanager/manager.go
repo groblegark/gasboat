@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -635,8 +636,8 @@ git config user.email "%s@gasboat"
 	// the workspace to the agent UID/GID so the main container can write.
 	script += fmt.Sprintf("chown -R %d:%d \"%s/%s\"\n", AgentUID, AgentGID, MountWorkspace, spec.Project)
 
-	// Prepend git credential helper setup if credentials are available.
-	// This allows cloning private repos in the init container.
+	// Insert git credential helper setup after apk installs git.
+	// Must come after "apk add" so git binary is available for git config.
 	if spec.GitCredentialsSecret != "" {
 		credSetup := `# Configure git credentials for private repos
 if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
@@ -645,7 +646,7 @@ if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
   git config --global credential.helper 'store --file=/tmp/.git-credentials'
 fi
 `
-		script = credSetup + script
+		script = strings.Replace(script, "apk add --no-cache git\n", "apk add --no-cache git\n"+credSetup, 1)
 	}
 
 	// Build env vars for the init container.
