@@ -279,7 +279,7 @@ func parseConfig() *config {
 
 	threadingMode := os.Getenv("SLACK_THREADING_MODE")
 	if threadingMode == "" {
-		threadingMode = "flat"
+		threadingMode = "agent"
 	}
 
 	return &config{

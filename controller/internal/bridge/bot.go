@@ -56,7 +56,7 @@ type BotConfig struct {
 	BotToken       string
 	AppToken       string
 	Channel        string
-	ThreadingMode  string // "flat" (default) or "agent" — controls decision threading
+	ThreadingMode  string // "agent" (default) or "flat" — controls decision threading
 	Daemon         BeadClient
 	State          *StateManager
 	Router         *Router // optional channel router; nil = all to Channel
@@ -736,10 +736,10 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 		return
 	}
 
-	// Clean up tracking and update agent card.
+	// Decrement agent pending count and update card, but keep the message
+	// ref so that PostReport can still thread under the resolved decision.
 	b.mu.Lock()
 	ref, hadRef := b.messages[beadID]
-	delete(b.messages, beadID)
 	if hadRef && b.agentThreadingEnabled() && ref.Agent != "" {
 		if b.agentPending[ref.Agent] > 0 {
 			b.agentPending[ref.Agent]--
@@ -747,10 +747,6 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	}
 	agent := ref.Agent
 	b.mu.Unlock()
-
-	if b.state != nil {
-		_ = b.state.RemoveDecisionMessage(beadID)
-	}
 
 	if hadRef && b.agentThreadingEnabled() && agent != "" {
 		b.updateAgentCard(ctx, agent)

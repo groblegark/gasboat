@@ -322,13 +322,32 @@ func (d *Decisions) handleReportClosed(ctx context.Context, data []byte) {
 	}
 
 	decisionID := bead.Fields["decision_id"]
+	reportType := bead.Fields["report_type"]
+	content := bead.Fields["content"]
+
+	// SSE close events may strip large fields. Fetch the full bead when
+	// content or decision_id is missing so the report can still be posted.
+	if (content == "" || decisionID == "") && d.daemon != nil {
+		if detail, err := d.daemon.GetBead(ctx, bead.ID); err == nil {
+			if bead.Fields == nil {
+				bead.Fields = make(map[string]string)
+			}
+			if v := detail.Fields["decision_id"]; v != "" && decisionID == "" {
+				decisionID = v
+			}
+			if v := detail.Fields["report_type"]; v != "" && reportType == "" {
+				reportType = v
+			}
+			if v := detail.Fields["content"]; v != "" && content == "" {
+				content = v
+			}
+		}
+	}
+
 	if decisionID == "" {
 		d.logger.Debug("report bead has no decision_id", "id", bead.ID)
 		return
 	}
-
-	reportType := bead.Fields["report_type"]
-	content := bead.Fields["content"]
 
 	d.logger.Info("report bead closed",
 		"id", bead.ID, "decision_id", decisionID, "report_type", reportType)
