@@ -257,8 +257,8 @@ if [ "${MATERIALIZED}" = "0" ]; then
       {
         "matcher": "",
         "hooks": [
-          {"type": "command", "command": "/hooks/prime.sh 2>/dev/null || true"},
-          {"type": "command", "command": "/hooks/check-mail.sh 2>/dev/null || true"}
+          {"type": "command", "command": "gb hook prime 2>/dev/null || true"},
+          {"type": "command", "command": "gb hook check-mail 2>/dev/null || true"}
         ]
       }
     ],
@@ -266,7 +266,7 @@ if [ "${MATERIALIZED}" = "0" ]; then
       {
         "matcher": "",
         "hooks": [
-          {"type": "command", "command": "/hooks/prime.sh 2>/dev/null || true"}
+          {"type": "command", "command": "gb hook prime 2>/dev/null || true"}
         ]
       }
     ],
@@ -274,15 +274,7 @@ if [ "${MATERIALIZED}" = "0" ]; then
       {
         "matcher": "",
         "hooks": [
-          {"type": "command", "command": "/hooks/check-mail.sh 2>/dev/null || true"}
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {"type": "command", "command": "/hooks/drain-queue.sh --quiet 2>/dev/null || true"}
+          {"type": "command", "command": "gb hook check-mail 2>/dev/null || true"}
         ]
       }
     ],
@@ -290,7 +282,7 @@ if [ "${MATERIALIZED}" = "0" ]; then
       {
         "matcher": "",
         "hooks": [
-          {"type": "command", "command": "/hooks/stop-gate.sh"}
+          {"type": "command", "command": "gb hook stop-gate"}
         ]
       }
     ]

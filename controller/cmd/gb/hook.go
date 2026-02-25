@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"gasboat/controller/internal/beadsapi"
@@ -65,6 +66,17 @@ var hookPrimeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentID := resolvePrimeAgentFromEnv(actor)
 		outputPrimeForHook(os.Stdout, agentID)
+		// Show this agent's assignment bead (BOAT_AGENT_BEAD_ID set by controller).
+		beadID := os.Getenv("BOAT_AGENT_BEAD_ID")
+		if beadID == "" {
+			beadID, _ = resolveAgentID("")
+		}
+		if beadID != "" {
+			out, err := exec.CommandContext(cmd.Context(), "kd", "show", beadID).Output()
+			if err == nil && len(out) > 0 {
+				fmt.Printf("<system-reminder>\n## Assignment\n\n%s</system-reminder>\n", out)
+			}
+		}
 		return nil
 	},
 }

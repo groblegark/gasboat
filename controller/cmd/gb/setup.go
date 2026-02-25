@@ -17,8 +17,9 @@ var setupCmd = &cobra.Command{
 	GroupID: "session",
 }
 
-// gbHookCommand is the command prefix for gb bus emit hooks.
-const gbHookCommand = "gb bus emit --hook="
+// gbHookPrefixes are command prefixes that indicate gb hook installations.
+// Both the legacy gb bus emit style and the newer gb hook style are recognised.
+var gbHookPrefixes = []string{"gb hook ", "gb bus emit --hook="}
 
 var setupClaudeCmd = &cobra.Command{
 	Use:   "claude",
@@ -77,24 +78,40 @@ func init() {
 	setupCmd.AddCommand(setupClaudeCmd)
 }
 
-func defaultHookSettings() map[string]any {
-	hookTypes := []string{"SessionStart", "PreCompact", "Stop", "PreToolUse", "PostToolUse"}
-	hooks := make(map[string]any, len(hookTypes))
-	for _, ht := range hookTypes {
-		hooks[ht] = []any{
-			map[string]any{
-				"matcher": "",
-				"hooks": []any{
-					map[string]any{
-						"type":    "command",
-						"command": gbHookCommand + ht,
-					},
-				},
-			},
-		}
-	}
+// hookEntry creates a single hook entry for a Claude Code settings.json hooks array.
+func hookEntry(command string) map[string]any {
 	return map[string]any{
-		"hooks": hooks,
+		"matcher": "",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": command,
+			},
+		},
+	}
+}
+
+func defaultHookSettings() map[string]any {
+	return map[string]any{
+		"hooks": map[string]any{
+			// SessionStart: prime context + check mail.
+			"SessionStart": []any{
+				hookEntry("gb hook prime 2>/dev/null || true"),
+				hookEntry("gb hook check-mail 2>/dev/null || true"),
+			},
+			// PreCompact: re-prime so context survives compaction.
+			"PreCompact": []any{
+				hookEntry("gb hook prime 2>/dev/null || true"),
+			},
+			// UserPromptSubmit: check mail on every human message.
+			"UserPromptSubmit": []any{
+				hookEntry("gb hook check-mail 2>/dev/null || true"),
+			},
+			// Stop: gate check — exit code 2 blocks the agent.
+			"Stop": []any{
+				hookEntry("gb hook stop-gate"),
+			},
+		},
 	}
 }
 
@@ -149,6 +166,16 @@ func runSetupClaudeCheck(workspace string) error {
 	return nil
 }
 
+// isGBHookCommand returns true if the command string is a gb hook command.
+func isGBHookCommand(cmd string) bool {
+	for _, prefix := range gbHookPrefixes {
+		if strings.HasPrefix(cmd, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func hookContainsGB(hooks map[string]any, hookType string) bool {
 	arr, ok := hooks[hookType].([]any)
 	if !ok {
@@ -169,7 +196,7 @@ func hookContainsGB(hooks map[string]any, hookType string) bool {
 				continue
 			}
 			cmd, _ := hMap["command"].(string)
-			if strings.HasPrefix(cmd, gbHookCommand) {
+			if isGBHookCommand(cmd) {
 				return true
 			}
 		}
@@ -220,7 +247,7 @@ func runSetupClaudeRemove(workspace string) error {
 					continue
 				}
 				cmd, _ := hMap["command"].(string)
-				if strings.HasPrefix(cmd, gbHookCommand) {
+				if isGBHookCommand(cmd) {
 					hasGB = true
 					break
 				}
