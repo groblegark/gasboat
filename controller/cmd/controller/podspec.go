@@ -59,7 +59,7 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 
 	// Mock mode: override BOAT_COMMAND to run claudeless with a scenario file.
 	if scenario := metadata["mock_scenario"]; scenario != "" {
-		spec.Env["BOAT_COMMAND"] = fmt.Sprintf("claudeless run /scenarios/%s.toml", scenario)
+		spec.Env["BOAT_COMMAND"] = fmt.Sprintf("claudeless --scenario /scenarios/%s.toml --dangerously-skip-permissions", scenario)
 	}
 
 	return spec
@@ -102,7 +102,7 @@ func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.Ag
 
 	// Mock mode: override BOAT_COMMAND to run claudeless with a scenario file.
 	if scenario := event.Metadata["mock_scenario"]; scenario != "" {
-		spec.Env["BOAT_COMMAND"] = fmt.Sprintf("claudeless run /scenarios/%s.toml", scenario)
+		spec.Env["BOAT_COMMAND"] = fmt.Sprintf("claudeless --scenario /scenarios/%s.toml --dangerously-skip-permissions", scenario)
 	}
 
 	// Apply common config (credentials, daemon token, coop, NATS).
