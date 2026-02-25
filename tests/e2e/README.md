@@ -5,16 +5,16 @@ Integration tests for the gasboat/kbeads stack.
 ## Prerequisites
 
 - `kubectl` context pointing at `america-e2e-eks`
-- `kd` binary from `~/kbeads` (built with gate system: `bd-pe028`)
+- `gb` binary from `~/gasboat/controller` (or `kd` from `~/kbeads` for CRUD commands)
 - `jq` and `python3` installed
 - `gasboat-e2e` namespace deployed (see `fics-helm-chart/charts/gasboat/values/gasboat-e2e.yaml`)
 
 ## Gate System Tests (`test-gate-system.sh`)
 
-Tests `kd bus emit --hook=Stop` gate enforcement from the `bd-pe028` epic.
+Tests `gb bus emit --hook=Stop` gate enforcement from the `bd-pe028` epic.
 
-**Requires** a kd server built from `~/kbeads` at commit `8c92e4e` or later (gate system).
-The `gasboat-e2e` namespace must be running this version.
+**Requires** `gb` binary (from `~/gasboat/controller`) and a kbeads server with gate system support.
+The `gasboat-e2e` namespace must be running kbeads at commit `8c92e4e` or later.
 
 ### Quick run (port-forward auto-setup):
 
@@ -38,7 +38,7 @@ BEADS_HTTP_URL=http://localhost:19090 \
 3. **Decision closed (responded)** → gate satisfied → Stop allowed → exit 0
 4. **No agent identity** → fails open → exit 0
 5. **Dirty git tree** → commit-push soft warning → exit 0 with `<system-reminder>`
-6. **Gate status transitions** — pending → satisfied → pending via `kd gate status/mark/clear`
+6. **Gate status transitions** — pending → satisfied → pending via `gb gate status/mark/clear`
 
 ### Claudeless scenarios (`claudeless/`)
 
