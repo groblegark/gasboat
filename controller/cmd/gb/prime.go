@@ -131,18 +131,17 @@ func outputWorkflowContext(w io.Writer) {
 - ` + "`kd show <id>`" + ` - Detailed issue view with dependencies
 
 ### Creating & Updating
-- ` + "`kd create --title=\"...\" --type=task|bug|feature --priority=2`" + ` - New issue
+- ` + "`kd create \"...\" --type=task|bug|feature --priority=2`" + ` - New issue (title is positional)
   - Priority: 0-4 or P0-P4 (0=critical, 2=medium, 4=backlog). NOT "high"/"medium"/"low"
 - ` + "`kd claim <id>`" + ` - Claim work (sets assignee + status=in_progress)
 - ` + "`kd update <id> --assignee=username`" + ` - Assign to someone
 - ` + "`kd close <id>`" + ` - Mark complete
-- ` + "`kd close <id> --reason=\"explanation\"`" + ` - Close with reason
 - **WARNING**: Do NOT use ` + "`kd edit`" + ` - it opens $EDITOR (vim/nano) which blocks agents
 
 ### Dependencies & Blocking
 - ` + "`kd dep add <issue> <depends-on>`" + ` - Add dependency
-- ` + "`kd blocked`" + ` - Show all blocked issues
-- ` + "`kd show <id>`" + ` - See what's blocking/blocked by this issue
+- ` + "`kd dep list <id>`" + ` - List dependencies of a bead
+- ` + "`kd show <id>`" + ` - See what's blocking/blocked by this issue (shows deps inline)
 
 ### Project Health
 - ` + "`kd list --status=open | wc -l`" + ` - Count open issues
@@ -166,8 +165,8 @@ git add <files> && git commit -m "..." && git push
 
 **Creating dependent work:**
 ` + "```bash" + `
-kd create --title="Implement feature X" --type=feature
-kd create --title="Write tests for X" --type=task
+kd create "Implement feature X" --type=feature
+kd create "Write tests for X" --type=task
 kd dep add <tests-id> <feature-id>  # Tests depend on Feature
 ` + "```" + `
 
