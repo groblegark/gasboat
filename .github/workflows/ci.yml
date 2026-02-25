@@ -306,7 +306,7 @@ jobs:
           done <<< "${{ steps.meta.outputs.tags }}"
 
   agent:
-    name: Agent (${{ matrix.arch }})
+    name: Agent (${{ matrix.target }}/${{ matrix.arch }})
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -350,7 +350,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=agent-omnibus-${{ matrix.arch }}
 
   agent-manifest:
-    name: Agent manifest
+    name: Agent manifest (${{ matrix.target }})
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     needs: [agent]
     runs-on: ubuntu-latest

@@ -122,6 +122,29 @@ func configs() map[string]any {
 			},
 		},
 
+		"type:task": TypeConfig{
+			Kind: "data",
+			Fields: []FieldDef{
+				{Name: "jira_key", Type: "string"},
+				{Name: "jira_project", Type: "string"},
+				{Name: "jira_type", Type: "string"},
+				{Name: "jira_status", Type: "string"},
+				{Name: "jira_url", Type: "string"},
+				{Name: "jira_epic", Type: "string"},
+				{Name: "jira_reporter", Type: "string"},
+				{Name: "mr_url", Type: "string"},
+			},
+		},
+		"type:report": TypeConfig{
+			Kind: "data",
+			Fields: []FieldDef{
+				{Name: "decision_id", Type: "string"},
+				{Name: "report_type", Type: "string"},
+				{Name: "content", Type: "string"},
+				{Name: "format", Type: "string"},
+			},
+		},
+
 		// --- views -----------------------------------------------------------
 		//
 		// Core views used by the controller and by context templates.
