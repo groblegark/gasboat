@@ -12,8 +12,8 @@ FROM ubuntu:24.04 AS slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_VERSION=24
-ARG COOP_VERSION=2026.221.0
-ARG BEADS_VERSION=v0.3.1
+ARG COOP_VERSION=2026.224.0
+ARG BEADS_VERSION=v0.3.6
 ARG TARGETARCH
 
 # ── System packages (minimal) ─────────────────────────────────────
@@ -148,11 +148,11 @@ RUN case "${TARGETARCH}" in arm64) AWS_ARCH=aarch64 ;; *) AWS_ARCH=x86_64 ;; esa
     rm -rf /tmp/awscli.zip /tmp/aws
 
 # ── Claudeless (Claude CLI simulator for E2E testing) ────────────
-RUN CLAUDELESS_VERSION=$(curl -fsSL "https://api.github.com/repos/alfredjeanlab/claudeless/releases/latest" | jq -r .tag_name) && \
-    case "${TARGETARCH}" in arm64) CL_ARCH=aarch64 ;; *) CL_ARCH=x86_64 ;; esac && \
+ARG CLAUDELESS_VERSION=v0.4.0
+RUN case "${TARGETARCH}" in arm64) CL_ARCH=aarch64 ;; *) CL_ARCH=x86_64 ;; esac && \
     curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/${CLAUDELESS_VERSION}/claudeless-linux-${CL_ARCH}.tar.gz" \
       | tar -xz -C /usr/local/bin claudeless && \
-    chmod +x /usr/local/bin claudeless
+    chmod +x /usr/local/bin/claudeless
 
 # ── uv (Python package manager) ───────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh && \
