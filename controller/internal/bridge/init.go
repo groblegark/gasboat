@@ -97,9 +97,8 @@ func configs() map[string]any {
 		"type:decision": TypeConfig{
 			Kind: "data",
 			Fields: []FieldDef{
-				{Name: "question", Type: "string"},
-				{Name: "prompt", Type: "string"},
-				{Name: "options", Type: "json", Required: true},
+				{Name: "prompt", Type: "string", Required: true},
+				{Name: "options", Type: "json"},
 				{Name: "chosen", Type: "string"},
 				{Name: "rationale", Type: "string"},
 				{Name: "session", Type: "string"},
@@ -109,6 +108,8 @@ func configs() map[string]any {
 				{Name: "responded_by", Type: "string"},
 				{Name: "responded_at", Type: "string"},
 				{Name: "response_text", Type: "string"},
+				{Name: "required_artifact", Type: "string"},
+				{Name: "artifact_status", Type: "enum", Values: []string{"pending", "submitted", "accepted"}},
 			},
 		},
 		"type:project": TypeConfig{

@@ -9,11 +9,21 @@ import (
 	"github.com/slack-go/slack"
 )
 
+// decisionQuestion returns the question text from a decision bead's fields.
+// Prefers the canonical "prompt" field, falling back to the legacy "question"
+// field for backwards compatibility with older beads.
+func decisionQuestion(fields map[string]string) string {
+	if v := fields["prompt"]; v != "" {
+		return v
+	}
+	return fields["question"]
+}
+
 // NotifyDecision posts a Block Kit message to Slack for a new decision.
 // Layout matches the beads implementation: each option is a Section block
 // with numbered label, description, and right-aligned accessory button.
 func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
-	question := bead.Fields["question"]
+	question := decisionQuestion(bead.Fields)
 	optionsRaw := bead.Fields["options"]
 	agent := bead.Assignee
 
@@ -235,7 +245,7 @@ func (b *Bot) UpdateDecision(ctx context.Context, beadID, chosen string) error {
 
 // NotifyEscalation posts a highlighted notification for an escalated decision.
 func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
-	question := bead.Fields["question"]
+	question := decisionQuestion(bead.Fields)
 	agent := bead.Assignee
 
 	displayID := bead.ID
@@ -449,7 +459,7 @@ func (b *Bot) openResolveModal(ctx context.Context, beadID, chosen string, callb
 	question := beadID // fallback
 	bead, err := b.daemon.GetBead(ctx, beadID)
 	if err == nil {
-		if q, ok := bead.Fields["question"]; ok {
+		if q := decisionQuestion(bead.Fields); q != "" {
 			question = q
 		}
 	}
@@ -509,7 +519,7 @@ func (b *Bot) openOtherModal(ctx context.Context, beadID string, callback slack.
 	question := beadID
 	bead, err := b.daemon.GetBead(ctx, beadID)
 	if err == nil {
-		if q, ok := bead.Fields["question"]; ok {
+		if q := decisionQuestion(bead.Fields); q != "" {
 			question = q
 		}
 	}

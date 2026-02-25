@@ -619,6 +619,25 @@ func TestMockDaemon_ListAgentBeads(t *testing.T) {
 	}
 }
 
+func TestDecisionQuestion(t *testing.T) {
+	// "prompt" field is preferred over "question".
+	if got := decisionQuestion(map[string]string{"prompt": "Deploy?"}); got != "Deploy?" {
+		t.Errorf("expected prompt value, got %q", got)
+	}
+	// Fallback to legacy "question" field.
+	if got := decisionQuestion(map[string]string{"question": "Rollback?"}); got != "Rollback?" {
+		t.Errorf("expected question value, got %q", got)
+	}
+	// "prompt" takes precedence when both are set.
+	if got := decisionQuestion(map[string]string{"prompt": "A", "question": "B"}); got != "A" {
+		t.Errorf("expected prompt to take precedence, got %q", got)
+	}
+	// Empty fields returns empty string.
+	if got := decisionQuestion(map[string]string{}); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
 func TestMockDaemon_ListDecisionBeads_Empty(t *testing.T) {
 	daemon := newMockDaemon()
 
