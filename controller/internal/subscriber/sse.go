@@ -343,10 +343,14 @@ func (w *SSEWatcher) buildEvent(eventType EventType, bead beadData) (Event, bool
 		return Event{}, false
 	}
 
-	meta := map[string]string{
-		"namespace": w.cfg.Namespace,
+	// Start with bead fields as metadata base, then overlay controller config.
+	// This passes through custom fields like mock_scenario, image overrides, etc.
+	meta := make(map[string]string, len(bead.Fields)+3)
+	for k, v := range bead.Fields {
+		meta[k] = v
 	}
-	if w.cfg.CoopImage != "" {
+	meta["namespace"] = w.cfg.Namespace
+	if w.cfg.CoopImage != "" && meta["image"] == "" {
 		meta["image"] = w.cfg.CoopImage
 	}
 	if w.cfg.BeadsGRPCAddr != "" {

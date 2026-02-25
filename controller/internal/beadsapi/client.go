@@ -105,6 +105,16 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 		if role == "" || name == "" {
 			continue
 		}
+		// Merge bead fields and notes into metadata. Fields provide custom
+		// overrides (e.g., mock_scenario, image); notes provide runtime state
+		// (e.g., coop_url, pod_name). Notes take precedence over fields.
+		meta := make(map[string]string, len(fields))
+		for k, v := range fields {
+			meta[k] = v
+		}
+		for k, v := range ParseNotes(b.Notes) {
+			meta[k] = v
+		}
 		beads = append(beads, AgentBead{
 			ID:         b.ID,
 			Project:    project,
@@ -113,7 +123,7 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 			AgentName:  name,
 			AgentState: fields["agent_state"],
 			PodPhase:   fields["pod_phase"],
-			Metadata:   ParseNotes(b.Notes),
+			Metadata:   meta,
 		})
 	}
 
