@@ -641,7 +641,7 @@ git config user.email "%s@gasboat"
 		credSetup := `# Configure git credentials for private repos
 if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
   git config --global credential.helper store
-  echo "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com" > /tmp/.git-credentials
+  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com\nhttps://${GIT_USERNAME}:${GIT_TOKEN}@gitlab.com\n" > /tmp/.git-credentials
   git config --global credential.helper 'store --file=/tmp/.git-credentials'
 fi
 `
