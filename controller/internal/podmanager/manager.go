@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -138,6 +139,11 @@ type AgentPodSpec struct {
 	// The "username" and "token" keys are injected as env vars in the init-clone
 	// container for authenticated git clone of private repositories.
 	GitCredentialsSecret string
+
+	// GitlabTokenSecret is the K8s Secret name containing a GitLab access token.
+	// The "token" key is injected as GITLAB_TOKEN in the init-clone container
+	// for authenticated clone of private GitLab repositories.
+	GitlabTokenSecret string
 }
 
 // WorkspaceStorageSpec configures a PVC-backed workspace volume.
@@ -635,17 +641,22 @@ git config user.email "%s@gasboat"
 	// the workspace to the agent UID/GID so the main container can write.
 	script += fmt.Sprintf("chown -R %d:%d \"%s/%s\"\n", AgentUID, AgentGID, MountWorkspace, spec.Project)
 
-	// Prepend git credential helper setup if credentials are available.
-	// This allows cloning private repos in the init container.
-	if spec.GitCredentialsSecret != "" {
+	// Insert git credential helper setup after apk installs git.
+	// Must come after "apk add" so git binary is available for git config.
+	if spec.GitCredentialsSecret != "" || spec.GitlabTokenSecret != "" {
 		credSetup := `# Configure git credentials for private repos
+git config --global credential.helper 'store --file=/tmp/.git-credentials'
+touch /tmp/.git-credentials
 if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
-  git config --global credential.helper store
-  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com\nhttps://${GIT_USERNAME}:${GIT_TOKEN}@gitlab.com\n" > /tmp/.git-credentials
-  git config --global credential.helper 'store --file=/tmp/.git-credentials'
+  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com\n" >> /tmp/.git-credentials
+fi
+if [ -n "$GITLAB_TOKEN" ]; then
+  printf "https://oauth2:${GITLAB_TOKEN}@gitlab.com\n" >> /tmp/.git-credentials
+elif [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
+  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@gitlab.com\n" >> /tmp/.git-credentials
 fi
 `
-		script = credSetup + script
+		script = strings.Replace(script, "apk add --no-cache git\n", "apk add --no-cache git\n"+credSetup, 1)
 	}
 
 	// Build env vars for the init container.
@@ -666,6 +677,19 @@ fi
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitCredentialsSecret},
+						Key:                  "token",
+					},
+				},
+			},
+		)
+	}
+	if spec.GitlabTokenSecret != "" {
+		initEnv = append(initEnv,
+			corev1.EnvVar{
+				Name: "GITLAB_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitlabTokenSecret},
 						Key:                  "token",
 					},
 				},
