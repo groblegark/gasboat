@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"gasboat/controller/internal/beadsapi"
 
@@ -181,23 +180,6 @@ func printMailDetail(b *beadsapi.BeadDetail) {
 	fmt.Printf("To:      %s\n", b.Assignee)
 	fmt.Printf("Subject: %s\n", b.Title)
 	fmt.Printf("ID:      %s\n", b.ID)
-}
-
-func formatAge(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	default:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	}
 }
 
 func init() {
