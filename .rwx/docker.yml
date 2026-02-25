@@ -17,6 +17,8 @@
 # OPTIMIZATIONS:
 # - Filter directives on Go mod downloads (cached by go.mod/go.sum)
 # - Parallel builds with filter caching for dependency stability
+# - Agent omnibus split into 6 parallel cached install tasks + 1 assembly task
+#   Cached by .rwx/agent-versions.lock — change versions there to bust cache
 
 on:
   github:
@@ -333,33 +335,23 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
-  # ── Push agent (omnibus: full dev toolchain) ─────────────────────────
-  # Single image with everything an agent needs: git, Node, Claude Code,
-  # Go, Rust, CLIs, dev tools, gb, coop, kd. No separate slim variant.
-  - key: push-agent
-    use: [code, build-gb, download-coop, download-kd]
-    if: ${{ init.ref-name != 'pr' }}
-    cache: false
-    timeout: 30m
+  # ═══════════════════════════════════════════════════════════════════════
+  # Agent omnibus — 6 parallel cached install tasks + 1 assembly task.
+  # All install tasks filter on .rwx/agent-versions.lock so they're
+  # cache hits when tool versions haven't changed. ~15min → ~2min.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── System packages: apt-get + dpkg copy + shared libs ──────────────
+  - key: agent-install-syspackages
+    timeout: 10m
+    filter:
+      - .rwx/agent-versions.lock
     run: |
       set -e
-      TAG="${REF_NAME#refs/tags/}"
-      TAG="${TAG#refs/heads/}"
       export DEBIAN_FRONTEND=noninteractive
+      OUT=/tmp/syspackages
+      mkdir -p $OUT/usr/local/bin $OUT/usr/bin $OUT/etc
 
-      # Install crane
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-
-      # Login to GHCR
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
-
-      LAYER=/tmp/layer
-      mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/usr/bin $LAYER/etc
-
-      # ── System packages (install on build VM, copy to layer) ─────────
-      echo "=== Installing system packages ==="
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
         curl git git-lfs jq xz-utils ca-certificates screen \
@@ -371,7 +363,6 @@ tasks:
         libcurl3t64-gnutls libicu74 libicu-dev \
         postgresql-client shellcheck
 
-      echo "=== Copying package files to layer ==="
       for pkg in git git-man git-lfs curl jq screen ca-certificates xz-utils \
           openssh-client sudo libapparmor1 \
           python3 python3-minimal python3.12 python3.12-minimal \
@@ -387,114 +378,349 @@ tasks:
           postgresql-client libpq5; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -f "$f" ] || continue
-          dir="$LAYER$(dirname "$f")"
-          mkdir -p "$dir"
-          cp "$f" "$LAYER${f}" 2>/dev/null || true
+          mkdir -p "$OUT$(dirname "$f")"
+          cp "$f" "$OUT${f}" 2>/dev/null || true
         done || true
       done
 
-      echo "=== Copying shared libs ==="
       for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen \
           /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc \
           /usr/bin/sudo /usr/bin/psql; do
         [ -f "$bin" ] || continue
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
-          dir="$LAYER$(dirname "$lib")"
-          mkdir -p "$dir"
-          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+          mkdir -p "$OUT$(dirname "$lib")"
+          cp -n "$lib" "$OUT${lib}" 2>/dev/null || true
         done || true
       done
 
-      echo "=== Copying gcc internals ==="
+      # gcc internals
       find /usr/libexec/gcc -name 'cc1*' -o -name 'lto1' 2>/dev/null | while read -r bin; do
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
-          dir="$LAYER$(dirname "$lib")"
-          mkdir -p "$dir"
-          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+          mkdir -p "$OUT$(dirname "$lib")"
+          cp -n "$lib" "$OUT${lib}" 2>/dev/null || true
         done || true
       done || true
 
-      echo "=== Copying ICU, headers, misc libs ==="
-      # ICU data and libs
+      # ICU, headers, misc libs
       find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
-        dir="$LAYER$(dirname "$f")"
-        mkdir -p "$dir"
-        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
+        mkdir -p "$OUT$(dirname "$f")" && cp -a "$f" "$OUT${f}" 2>/dev/null || true
       done || true
-      # ICU development headers
-      if [ -d /usr/include/unicode ]; then
-        mkdir -p $LAYER/usr/include/unicode
-        cp -a /usr/include/unicode/* $LAYER/usr/include/unicode/ 2>/dev/null || true
-      fi
-      # C++ standard library headers (needed by ICU regex)
+      [ -d /usr/include/unicode ] && mkdir -p $OUT/usr/include/unicode && cp -a /usr/include/unicode/* $OUT/usr/include/unicode/ 2>/dev/null || true
       for d in /usr/include/c++/14 /usr/include/c++/13; do
         if [ -d "$d" ]; then
-          mkdir -p "$LAYER$d"
-          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
-          target_dir="/usr/include/x86_64-linux-gnu/c++/$(basename $d)"
-          if [ -d "$target_dir" ]; then
-            mkdir -p "$LAYER$target_dir"
-            cp -a "$target_dir"/* "$LAYER$target_dir/" 2>/dev/null || true
-          fi
+          mkdir -p "$OUT$d" && cp -a "$d"/* "$OUT$d/" 2>/dev/null || true
+          td="/usr/include/x86_64-linux-gnu/c++/$(basename $d)"
+          [ -d "$td" ] && mkdir -p "$OUT$td" && cp -a "$td"/* "$OUT$td/" 2>/dev/null || true
           break
         fi
       done
-      # ICU pkg-config files
       find /usr/lib/x86_64-linux-gnu/pkgconfig -name 'icu*.pc' 2>/dev/null | while read -r f; do
-        dir="$LAYER$(dirname "$f")"
-        mkdir -p "$dir"
-        cp "$f" "$LAYER${f}" 2>/dev/null || true
+        mkdir -p "$OUT$(dirname "$f")" && cp "$f" "$OUT${f}" 2>/dev/null || true
       done || true
-      # git-core helpers (git-remote-https, etc.)
-      cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
-      # gcc internal executables
-      if [ -d /usr/libexec/gcc ]; then
-        mkdir -p $LAYER/usr/libexec
-        cp -r /usr/libexec/gcc $LAYER/usr/libexec/ 2>/dev/null || true
-      fi
-      # binutils (as, ld, ar, nm)
+      cp -r /usr/lib/git-core $OUT/usr/lib/ 2>/dev/null || true
+      [ -d /usr/libexec/gcc ] && mkdir -p $OUT/usr/libexec && cp -r /usr/libexec/gcc $OUT/usr/libexec/ 2>/dev/null || true
       for bin in /usr/bin/x86_64-linux-gnu-as /usr/bin/x86_64-linux-gnu-ld /usr/bin/as /usr/bin/ld; do
         [ -f "$bin" ] || continue
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
-          dir="$LAYER$(dirname "$lib")"
-          mkdir -p "$dir"
-          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+          mkdir -p "$OUT$(dirname "$lib")" && cp -n "$lib" "$OUT${lib}" 2>/dev/null || true
         done || true
       done
-      # glibc linker scripts reference /lib/ paths but files live in /usr/lib/
       for script in /usr/lib/x86_64-linux-gnu/libc.so /usr/lib/x86_64-linux-gnu/libm.so; do
         [ -f "$script" ] || continue
         grep -oP '/lib/x86_64-linux-gnu/\S+' "$script" 2>/dev/null | tr -d ')' | while read -r ref; do
-          [ -f "$LAYER$ref" ] && continue
-          src="/usr${ref}"
-          [ -f "$src" ] || src="$ref"
-          [ -f "$src" ] || continue
-          mkdir -p "$LAYER$(dirname "$ref")"
-          cp "$src" "$LAYER$ref" 2>/dev/null || true
+          [ -f "$OUT$ref" ] && continue
+          src="/usr${ref}"; [ -f "$src" ] || src="$ref"; [ -f "$src" ] || continue
+          mkdir -p "$OUT$(dirname "$ref")" && cp "$src" "$OUT$ref" 2>/dev/null || true
         done || true
       done
-      # gcc support libraries (crtbegin.o, libgcc.a, etc.)
       for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
-        if [ -d "$d" ]; then
-          mkdir -p "$LAYER$d"
-          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
-          break
-        fi
+        [ -d "$d" ] && mkdir -p "$OUT$d" && cp -a "$d"/* "$OUT$d/" 2>/dev/null && break || true
       done
-      # libcurl-gnutls symlinks (git-remote-https)
       find /usr/lib/x86_64-linux-gnu -name 'libcurl-gnutls*' 2>/dev/null | while read -r f; do
-        dir="$LAYER$(dirname "$f")"
-        mkdir -p "$dir"
-        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
+        mkdir -p "$OUT$(dirname "$f")" && cp -a "$f" "$OUT${f}" 2>/dev/null || true
       done || true
-      # sudo helper libraries
-      mkdir -p $LAYER/usr/libexec/sudo
-      cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
-      # Python symlink
-      ln -sf python3 $LAYER/usr/bin/python
+      mkdir -p $OUT/usr/libexec/sudo && cp /usr/libexec/sudo/*.so* $OUT/usr/libexec/sudo/ 2>/dev/null || true
+      ln -sf python3 $OUT/usr/bin/python
+
+      sudo tar -cf /tmp/syspackages.tar -C $OUT .
+    outputs:
+      artifacts:
+        - key: syspackages-tar
+          path: /tmp/syspackages.tar
+
+  # ── Node.js + Claude Code + Playwright + Chromium ───────────────────
+  - key: agent-install-node
+    timeout: 10m
+    filter:
+      - .rwx/agent-versions.lock
+    run: |
+      set -e
+      export DEBIAN_FRONTEND=noninteractive
+      OUT=/tmp/node-layer
+      mkdir -p $OUT/usr/local
+
+      # Node.js
+      NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" \
+        | jq -r '[.[] | select(.version | startswith("v24."))][0].version')
+      [ "${NODE_FULL}" != "null" ] && [ -n "${NODE_FULL}" ] && \
+      curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
+        | tar -xJ --strip-components=1 -C $OUT/usr/local
+
+      # Claude Code
+      PATH="$OUT/usr/local/bin:$PATH" npm install -g --prefix $OUT/usr/local @anthropic-ai/claude-code
+
+      # Playwright + Chromium
+      PLAYWRIGHT_VERSION=1.50.1
+      PATH="$OUT/usr/local/bin:$PATH" npm install -g --prefix $OUT/usr/local playwright@${PLAYWRIGHT_VERSION}
+
+      # Playwright system deps
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+        libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+        libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
+        libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+        libxrandr2 fonts-noto-color-emoji libfontconfig1 libfreetype6
+      for pkg in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+          libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+          libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
+          libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+          libxrandr2 libfontconfig1 libfreetype6 fonts-noto-color-emoji; do
+        dpkg -L "$pkg" 2>/dev/null | while read -r f; do
+          [ -f "$f" ] || continue
+          mkdir -p "$OUT$(dirname "$f")" && cp "$f" "$OUT${f}" 2>/dev/null || true
+        done || true
+      done
+      for bin in /usr/lib/x86_64-linux-gnu/libcairo.so* /usr/lib/x86_64-linux-gnu/libpango*.so* \
+          /usr/lib/x86_64-linux-gnu/libgdk*.so* /usr/lib/x86_64-linux-gnu/libgtk*.so*; do
+        [ -f "$bin" ] || continue
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          mkdir -p "$OUT$(dirname "$lib")" && cp -n "$lib" "$OUT${lib}" 2>/dev/null || true
+        done || true
+      done
+      PATH="$OUT/usr/local/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH=$OUT/ms-playwright npx playwright install chromium
+      chmod -R 777 $OUT/ms-playwright
+
+      tar -cf /tmp/node-layer.tar -C $OUT .
+    outputs:
+      artifacts:
+        - key: node-tar
+          path: /tmp/node-layer.tar
+
+  # ── Go + gopls + golangci-lint + Task CLI ───────────────────────────
+  - key: agent-install-go
+    timeout: 10m
+    filter:
+      - .rwx/agent-versions.lock
+    run: |
+      set -e
+      OUT=/tmp/go-layer
+      mkdir -p $OUT/usr/local/bin
+
+      GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" \
+        | jq -r '[.[] | select(.version | startswith("go1.25"))][0].version')
+      curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $OUT/usr/local -xz
+
+      GOROOT=$OUT/usr/local/go GOPATH=/tmp/gopath $OUT/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
+      cp /tmp/gopath/bin/gopls $OUT/usr/local/go/bin/ 2>/dev/null || true
+
+      GOROOT=$OUT/usr/local/go GOPATH=/tmp/gopath $OUT/usr/local/go/bin/go install github.com/go-task/task/v3/cmd/task@latest
+      mv /tmp/gopath/bin/task $OUT/usr/local/bin/task
+      chmod -R u+w /tmp/gopath 2>/dev/null || true
+      rm -rf /tmp/gopath
+
+      ln -sf /usr/local/go/bin/go $OUT/usr/local/bin/go
+      ln -sf /usr/local/go/bin/gofmt $OUT/usr/local/bin/gofmt
+      ln -sf /usr/local/go/bin/gopls $OUT/usr/local/bin/gopls
+
+      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+        | sh -s -- -b $OUT/usr/local/bin "v1.64.8"
+
+      tar -cf /tmp/go-layer.tar -C $OUT .
+    outputs:
+      artifacts:
+        - key: go-tar
+          path: /tmp/go-layer.tar
+
+  # ── Rust + rust-analyzer + quench ───────────────────────────────────
+  - key: agent-install-rust
+    timeout: 15m
+    filter:
+      - .rwx/agent-versions.lock
+    run: |
+      set -e
+      OUT=/tmp/rust-layer
+      mkdir -p $OUT/usr/local/bin
+
+      export RUSTUP_HOME=$OUT/usr/local/rustup CARGO_HOME=$OUT/usr/local/cargo
+      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile default \
+            --component rust-analyzer
+      chmod -R a+rw $OUT/usr/local/rustup $OUT/usr/local/cargo
+
+      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
+        | gunzip > $OUT/usr/local/bin/rust-analyzer
+      chmod +x $OUT/usr/local/bin/rust-analyzer
+
+      # quench needs gcc — install it temporarily
+      sudo apt-get -y update && sudo apt-get -y install --no-install-recommends gcc libc6-dev pkg-config libssl-dev
+      PATH="$OUT/usr/local/cargo/bin:$PATH" cargo install quench \
+        --git https://github.com/alfredjeanlab/quench --root /tmp/quench-out
+      cp /tmp/quench-out/bin/quench $OUT/usr/local/bin/quench
+      rm -rf /tmp/quench-out
+
+      tar -cf /tmp/rust-layer.tar -C $OUT .
+    outputs:
+      artifacts:
+        - key: rust-tar
+          path: /tmp/rust-layer.tar
+
+  # ── CLI tools (all small binary downloads) ──────────────────────────
+  - key: agent-install-clis
+    timeout: 10m
+    filter:
+      - .rwx/agent-versions.lock
+    run: |
+      set -e
+      OUT=/tmp/cli-layer
+      mkdir -p $OUT/usr/local/bin $OUT/opt
+
+      # kubectl
+      KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o $OUT/usr/local/bin/kubectl
+      chmod +x $OUT/usr/local/bin/kubectl
+
+      # GitHub CLI
+      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" | jq -r .tag_name | sed "s/^v//")
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz --strip-components=2 -C $OUT/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
+
+      # GitLab CLI
+      GLAB_VERSION=$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases" | jq -r '.[0].tag_name | ltrimstr("v")')
+      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz --strip-components=1 -C $OUT/usr/local/bin bin/glab
+
+      # Docker CLI
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" \
+        | tar -xz --strip-components=1 -C $OUT/usr/local/bin docker/docker
+
+      # AWS CLI
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
+      mkdir -p $OUT/opt/aws-cli
+      cp -r /tmp/aws-install/* $OUT/opt/aws-cli/
+      rm -rf $OUT/opt/aws-cli/v2/current
+      AWS_VER=$(ls $OUT/opt/aws-cli/v2/ | head -1)
+      ln -sf "$AWS_VER" $OUT/opt/aws-cli/v2/current
+      rm -rf $OUT/opt/aws-cli/bin
+      mkdir -p $OUT/opt/aws-cli/bin
+      ln -sf /opt/aws-cli/v2/current/bin/aws $OUT/opt/aws-cli/bin/aws
+      ln -sf /opt/aws-cli/v2/current/bin/aws_completer $OUT/opt/aws-cli/bin/aws_completer
+      ln -sf /opt/aws-cli/v2/current/bin/aws $OUT/usr/local/bin/aws
+
+      # RWX CLI
+      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" -o $OUT/usr/local/bin/rwx
+      chmod +x $OUT/usr/local/bin/rwx
+
+      # Claudeless
+      curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" \
+        | tar -xz -C $OUT/usr/local/bin claudeless
+      chmod +x $OUT/usr/local/bin/claudeless
+
+      # uv
+      curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
+      mv ~/.local/bin/uv $OUT/usr/local/bin/uv
+      mv ~/.local/bin/uvx $OUT/usr/local/bin/uvx
+
+      # Bun
+      BUN_INSTALL=$OUT/usr/local/bun curl -fsSL https://bun.sh/install | bash
+      ln -sf /usr/local/bun/bin/bun $OUT/usr/local/bin/bun
+      ln -sf /usr/local/bun/bin/bunx $OUT/usr/local/bin/bunx
+
+      # Helm + plugins
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
+      cp /usr/local/bin/helm $OUT/usr/local/bin/helm
+      mkdir -p $OUT/usr/local/share
+      HELM_DATA_HOME=$OUT/usr/local/share/helm helm plugin install https://github.com/helm-unittest/helm-unittest
+      HELM_DATA_HOME=$OUT/usr/local/share/helm helm plugin install https://github.com/chartmuseum/helm-push
+
+      # Terraform + Terragrunt
+      curl -fsSL "https://releases.hashicorp.com/terraform/1.11.3/terraform_1.11.3_linux_amd64.zip" -o /tmp/terraform.zip
+      unzip -q /tmp/terraform.zip -d $OUT/usr/local/bin && rm /tmp/terraform.zip
+      curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.77.11/terragrunt_linux_amd64" -o $OUT/usr/local/bin/terragrunt
+      chmod +x $OUT/usr/local/bin/terragrunt
+
+      # yq
+      YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
+      curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o $OUT/usr/local/bin/yq
+      chmod +x $OUT/usr/local/bin/yq
+
+      # stern
+      curl -fsSL "https://github.com/stern/stern/releases/download/v1.30.0/stern_1.30.0_linux_amd64.tar.gz" \
+        | tar -xz -C $OUT/usr/local/bin stern
+
+      # hadolint
+      curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" -o $OUT/usr/local/bin/hadolint
+      chmod +x $OUT/usr/local/bin/hadolint
+
+      tar -cf /tmp/cli-layer.tar -C $OUT .
+    outputs:
+      artifacts:
+        - key: clis-tar
+          path: /tmp/cli-layer.tar
+
+  # ── Assembly: merge all layers + project binaries → push ────────────
+  - key: push-agent
+    use: [code, build-gb, download-coop, download-kd, agent-install-syspackages, agent-install-node, agent-install-go, agent-install-rust, agent-install-clis]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    timeout: 10m
+    run: |
+      set -e
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      LAYER=/tmp/layer
+      mkdir -p $LAYER
+
+      # Unpack all cached install layers
+      echo "=== Unpacking cached layers ==="
+      sudo tar -xf ${{ tasks.agent-install-syspackages.artifacts.syspackages-tar }} -C $LAYER
+      tar -xf ${{ tasks.agent-install-node.artifacts.node-tar }} -C $LAYER
+      tar -xf ${{ tasks.agent-install-go.artifacts.go-tar }} -C $LAYER
+      tar -xf ${{ tasks.agent-install-rust.artifacts.rust-tar }} -C $LAYER
+      tar -xf ${{ tasks.agent-install-clis.artifacts.clis-tar }} -C $LAYER
+
+      # Project binaries (gb, coop, kd)
+      echo "=== Adding project binaries ==="
+      cp ${{ tasks.build-gb.artifacts.gb-binary }} $LAYER/usr/local/bin/gb
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
+      cp ${{ tasks.download-kd.artifacts.kd-binaries }}/kd $LAYER/usr/local/bin/kd
+      chmod +x $LAYER/usr/local/bin/gb $LAYER/usr/local/bin/coop $LAYER/usr/local/bin/kd
+
+      # Hook scripts, scenarios, entrypoint
+      mkdir -p $LAYER/hooks $LAYER/scenarios
+      cp images/agent/hooks/*.sh $LAYER/hooks/
+      chmod +x $LAYER/hooks/*.sh
+      cp images/agent/scenarios/*.toml $LAYER/scenarios/
+      cp images/agent/entrypoint.sh $LAYER/entrypoint.sh
+      chmod +x $LAYER/entrypoint.sh
+
+      # CA certs + version metadata
+      mkdir -p $LAYER/etc/ssl/certs
+      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
+      echo "${TAG}" > $LAYER/etc/gasboat-version
 
       # Sudoers config
       sudo mkdir -p $LAYER/etc/sudoers.d
@@ -504,210 +730,7 @@ tasks:
       sudo chmod 0440 $LAYER/etc/sudoers.d/agent
       sudo cp /etc/sudo.conf $LAYER/etc/sudo.conf 2>/dev/null || true
 
-      echo "=== Installing Node.js ==="
-      # ── Node.js v24 ──────────────────────────────────────────────────
-      NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" \
-        | jq -r '[.[] | select(.version | startswith("v24."))][0].version')
-      [ "${NODE_FULL}" != "null" ] && [ -n "${NODE_FULL}" ] && \
-      curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
-        | tar -xJ --strip-components=1 -C $LAYER/usr/local
-
-      # ── Claude Code ──────────────────────────────────────────────────
-      PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local @anthropic-ai/claude-code
-
-      # ── kubectl ──────────────────────────────────────────────────────
-      KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
-      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-        -o $LAYER/usr/local/bin/kubectl
-      chmod +x $LAYER/usr/local/bin/kubectl
-
-      echo "=== Installing Go + gopls ==="
-      # ── Go + gopls ──────────────────────────────────────────────────
-      GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" \
-        | jq -r '[.[] | select(.version | startswith("go1.25"))][0].version')
-      curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $LAYER/usr/local -xz
-      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
-      cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
-      chmod -R u+w /tmp/gopath 2>/dev/null || true
-      rm -rf /tmp/gopath
-      ln -sf /usr/local/go/bin/go $LAYER/usr/local/bin/go
-      ln -sf /usr/local/go/bin/gofmt $LAYER/usr/local/bin/gofmt
-      ln -sf /usr/local/go/bin/gopls $LAYER/usr/local/bin/gopls
-
-      echo "=== Installing Rust toolchain ==="
-      # ── Rust toolchain ──────────────────────────────────────────────
-      export RUSTUP_HOME=$LAYER/usr/local/rustup CARGO_HOME=$LAYER/usr/local/cargo
-      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile default \
-            --component rust-analyzer
-      chmod -R a+rw $LAYER/usr/local/rustup $LAYER/usr/local/cargo
-
-      # ── Rust Analyzer (standalone LSP) ──────────────────────────────
-      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
-        | gunzip > $LAYER/usr/local/bin/rust-analyzer
-      chmod +x $LAYER/usr/local/bin/rust-analyzer
-
-      # ── GitHub CLI ──────────────────────────────────────────────────
-      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" \
-        | jq -r .tag_name | sed "s/^v//")
-      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
-        | tar -xz --strip-components=2 -C $LAYER/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
-
-      # ── GitLab CLI ──────────────────────────────────────────────────
-      GLAB_VERSION=$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases" \
-        | jq -r '.[0].tag_name | ltrimstr("v")')
-      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" \
-        | tar -xz --strip-components=1 -C $LAYER/usr/local/bin bin/glab
-
-      # ── Docker CLI (client only) ────────────────────────────────────
-      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" \
-        | tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
-
-      # ── AWS CLI ─────────────────────────────────────────────────────
-      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
-      unzip -q /tmp/awscli.zip -d /tmp
-      /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
-      mkdir -p $LAYER/opt/aws-cli
-      cp -r /tmp/aws-install/* $LAYER/opt/aws-cli/
-      rm -rf $LAYER/opt/aws-cli/v2/current
-      AWS_VER=$(ls $LAYER/opt/aws-cli/v2/ | head -1)
-      ln -sf "$AWS_VER" $LAYER/opt/aws-cli/v2/current
-      rm -rf $LAYER/opt/aws-cli/bin
-      mkdir -p $LAYER/opt/aws-cli/bin
-      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/opt/aws-cli/bin/aws
-      ln -sf /opt/aws-cli/v2/current/bin/aws_completer $LAYER/opt/aws-cli/bin/aws_completer
-      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/usr/local/bin/aws
-      rm -rf /tmp/awscli.zip /tmp/aws /tmp/aws-install /tmp/aws-bin
-
-      # ── RWX CLI ─────────────────────────────────────────────────────
-      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
-        -o $LAYER/usr/local/bin/rwx
-      chmod +x $LAYER/usr/local/bin/rwx
-
-      # ── Claudeless (Claude CLI simulator) ───────────────────────────
-      curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" \
-        | tar -xz -C $LAYER/usr/local/bin claudeless
-      chmod +x $LAYER/usr/local/bin/claudeless
-
-      # ── uv (Python package manager) ─────────────────────────────────
-      curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
-      mv ~/.local/bin/uv $LAYER/usr/local/bin/uv
-      mv ~/.local/bin/uvx $LAYER/usr/local/bin/uvx
-
-      # ── Bun ─────────────────────────────────────────────────────────
-      BUN_INSTALL=$LAYER/usr/local/bun curl -fsSL https://bun.sh/install | bash
-      ln -sf /usr/local/bun/bin/bun $LAYER/usr/local/bin/bun
-      ln -sf /usr/local/bun/bin/bunx $LAYER/usr/local/bin/bunx
-
-      # ── Task CLI (Taskfile runner) ──────────────────────────────────
-      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install github.com/go-task/task/v3/cmd/task@latest
-      mv /tmp/gopath/bin/task $LAYER/usr/local/bin/task
-      chmod -R u+w /tmp/gopath 2>/dev/null || true
-      rm -rf /tmp/gopath
-
-      # ── Helm + plugins ──────────────────────────────────────────────
-      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
-      cp /usr/local/bin/helm $LAYER/usr/local/bin/helm
-      HELM_DATA_HOME=$LAYER/usr/local/share/helm helm plugin install https://github.com/helm-unittest/helm-unittest
-      HELM_DATA_HOME=$LAYER/usr/local/share/helm helm plugin install https://github.com/chartmuseum/helm-push
-
-      # ── Terraform + Terragrunt ──────────────────────────────────────
-      TERRAFORM_VERSION=1.11.3
-      TERRAGRUNT_VERSION=0.77.11
-      curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-        -o /tmp/terraform.zip
-      unzip -q /tmp/terraform.zip -d $LAYER/usr/local/bin
-      rm /tmp/terraform.zip
-      curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
-        -o $LAYER/usr/local/bin/terragrunt
-      chmod +x $LAYER/usr/local/bin/terragrunt
-
-      # ── golangci-lint ───────────────────────────────────────────────
-      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
-        | sh -s -- -b $LAYER/usr/local/bin "v1.64.8"
-
-      # ── quench (code quality checker) ───────────────────────────────
-      PATH="$LAYER/usr/local/cargo/bin:$PATH" cargo install quench \
-        --git https://github.com/alfredjeanlab/quench --root /tmp/quench-out
-      cp /tmp/quench-out/bin/quench $LAYER/usr/local/bin/quench
-      rm -rf /tmp/quench-out
-
-      # ── yq (YAML processor) ─────────────────────────────────────────
-      YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
-      curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
-        -o $LAYER/usr/local/bin/yq
-      chmod +x $LAYER/usr/local/bin/yq
-
-      # ── stern (K8s log streaming) ───────────────────────────────────
-      STERN_VERSION=1.30.0
-      curl -fsSL "https://github.com/stern/stern/releases/download/v${STERN_VERSION}/stern_${STERN_VERSION}_linux_amd64.tar.gz" \
-        | tar -xz -C $LAYER/usr/local/bin stern
-
-      # ── hadolint (Dockerfile linter) ────────────────────────────────
-      curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" \
-        -o $LAYER/usr/local/bin/hadolint
-      chmod +x $LAYER/usr/local/bin/hadolint
-
-      echo "=== Installing Playwright + Chromium ==="
-      # ── Playwright + Chromium ───────────────────────────────────────
-      # Install playwright system deps on build VM first
-      sudo apt-get -y install --no-install-recommends \
-        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
-        libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
-        libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
-        libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
-        libxrandr2 fonts-noto-color-emoji libfontconfig1 libfreetype6
-      # Copy playwright system libs to layer
-      for pkg in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
-          libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
-          libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
-          libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
-          libxrandr2 libfontconfig1 libfreetype6 fonts-noto-color-emoji; do
-        dpkg -L "$pkg" 2>/dev/null | while read -r f; do
-          [ -f "$f" ] || continue
-          dir="$LAYER$(dirname "$f")"
-          mkdir -p "$dir"
-          cp "$f" "$LAYER${f}" 2>/dev/null || true
-        done || true
-      done
-      # Copy shared libs for Playwright graphics stack
-      for bin in /usr/lib/x86_64-linux-gnu/libcairo.so* /usr/lib/x86_64-linux-gnu/libpango*.so* \
-          /usr/lib/x86_64-linux-gnu/libgdk*.so* /usr/lib/x86_64-linux-gnu/libgtk*.so*; do
-        [ -f "$bin" ] || continue
-        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
-          [ -f "$lib" ] || continue
-          dir="$LAYER$(dirname "$lib")"
-          mkdir -p "$dir"
-          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
-        done || true
-      done
-      # Install Playwright + browser to layer
-      PLAYWRIGHT_VERSION=1.50.1
-      PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local playwright@${PLAYWRIGHT_VERSION}
-      PATH="$LAYER/usr/local/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH=$LAYER/ms-playwright npx playwright install chromium
-      chmod -R 777 $LAYER/ms-playwright
-
-      echo "=== Installing project binaries + metadata ==="
-      # ── Project binaries (gb, coop, kd) ─────────────────────────────
-      cp ${{ tasks.build-gb.artifacts.gb-binary }} $LAYER/usr/local/bin/gb
-      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
-      cp ${{ tasks.download-kd.artifacts.kd-binaries }}/kd $LAYER/usr/local/bin/kd
-      chmod +x $LAYER/usr/local/bin/gb $LAYER/usr/local/bin/coop $LAYER/usr/local/bin/kd
-
-      # ── Hook scripts, scenarios, entrypoint ─────────────────────────
-      mkdir -p $LAYER/hooks $LAYER/scenarios
-      cp images/agent/hooks/*.sh $LAYER/hooks/
-      chmod +x $LAYER/hooks/*.sh
-      cp images/agent/scenarios/*.toml $LAYER/scenarios/
-      cp images/agent/entrypoint.sh $LAYER/entrypoint.sh
-      chmod +x $LAYER/entrypoint.sh
-
-      # ── CA certs + version metadata ─────────────────────────────────
-      mkdir -p $LAYER/etc/ssl/certs
-      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
-      echo "${TAG}" > $LAYER/etc/gasboat-version
-
-      # ── Agent user (rename ubuntu→agent, UID 1000) ──────────────────
+      # Agent user (rename ubuntu→agent, UID 1000)
       cp /etc/passwd $LAYER/etc/passwd
       sed -i "s/^ubuntu:/agent:/" $LAYER/etc/passwd
       sed -i "s|/home/ubuntu|/home/agent|" $LAYER/etc/passwd
@@ -716,15 +739,15 @@ tasks:
       sed -i "s/^ubuntu:/agent:/" $LAYER/etc/group
       mkdir -p $LAYER/home/agent/workspace
 
-      # ── Fix ownership ───────────────────────────────────────────────
+      # Fix ownership
       sudo chown root:root $LAYER/usr/bin/sudo 2>/dev/null || true
       sudo chmod 4755 $LAYER/usr/bin/sudo 2>/dev/null || true
       sudo chown root:root $LAYER/etc/sudoers $LAYER/etc/sudoers.d 2>/dev/null || true
       sudo chown root:root $LAYER/etc/sudo.conf 2>/dev/null || true
       sudo chown -R 1000:1000 $LAYER/home/agent
 
-      echo "=== Creating tar and pushing ==="
-      # ── Create tar and push ─────────────────────────────────────────
+      # Create tar and push
+      echo "=== Pushing image ==="
       sudo tar -cf /tmp/layer.tar -C $LAYER .
 
       REPO="ghcr.io/groblegark/gasboat/agent"
