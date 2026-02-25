@@ -683,7 +683,7 @@ tasks:
       # Install Playwright + browser to layer
       PLAYWRIGHT_VERSION=1.50.1
       PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local playwright@${PLAYWRIGHT_VERSION}
-      PLAYWRIGHT_BROWSERS_PATH=$LAYER/ms-playwright $LAYER/usr/local/bin/npx playwright install chromium
+      PATH="$LAYER/usr/local/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH=$LAYER/ms-playwright npx playwright install chromium
       chmod -R 777 $LAYER/ms-playwright
 
       echo "=== Installing project binaries + metadata ==="
