@@ -26,7 +26,7 @@ func TestJiraSync_MRLink(t *testing.T) {
 		switch {
 		case r.Method == "POST" && r.URL.Path == "/rest/api/3/issue/PE-7001/comment":
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if doc, ok := body["body"].(map[string]any); ok {
 				if content, ok := doc["content"].([]any); ok && len(content) > 0 {
 					if para, ok := content[0].(map[string]any); ok {
@@ -43,7 +43,7 @@ func TestJiraSync_MRLink(t *testing.T) {
 			fmt.Fprint(w, `{"id":"1"}`)
 		case r.Method == "POST" && r.URL.Path == "/rest/api/3/issue/PE-7001/remotelink":
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if obj, ok := body["object"].(map[string]any); ok {
 				linkURL, _ = obj["url"].(string)
 			}
@@ -110,7 +110,7 @@ func TestJiraSync_Closed(t *testing.T) {
 				{"id": "41", "name": "Review", "to": map[string]string{"name": "Review"}},
 			}}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == "POST" && r.URL.Path == "/rest/api/3/issue/DEVOPS-42/transitions":
 			transitionCalls++
 			w.WriteHeader(http.StatusNoContent)
