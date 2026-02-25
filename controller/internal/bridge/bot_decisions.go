@@ -144,7 +144,7 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn",
-					"*Other*\n_None of the above? Provide your own response._", false, false),
+					"*Other*\n_None of the above? Provide a custom response and choose the required artifact type._", false, false),
 				nil,
 				slack.NewAccessory(
 					slack.NewButtonBlockElement(
@@ -524,6 +524,17 @@ func (b *Bot) openOtherModal(ctx context.Context, beadID string, callback slack.
 		}
 	}
 
+	// Build artifact_type select options: "none" plus all valid types.
+	artifactTypeOpts := []*slack.OptionBlockObject{
+		slack.NewOptionBlockObject("none",
+			slack.NewTextBlockObject("plain_text", "None (no artifact required)", false, false), nil),
+	}
+	for _, at := range []string{"report", "plan", "checklist", "diff-summary", "epic", "bug"} {
+		artifactTypeOpts = append(artifactTypeOpts,
+			slack.NewOptionBlockObject(at,
+				slack.NewTextBlockObject("plain_text", at, false, false), nil))
+	}
+
 	blocks := slack.Blocks{
 		BlockSet: []slack.Block{
 			slack.NewSectionBlock(
@@ -541,6 +552,17 @@ func (b *Bot) openOtherModal(ctx context.Context, beadID string, callback slack.
 					Multiline:   true,
 					Placeholder: slack.NewTextBlockObject("plain_text", "Type your response...", false, false),
 				},
+			),
+			slack.NewInputBlock(
+				"artifact_type",
+				slack.NewTextBlockObject("plain_text", "Required Artifact Type", false, false),
+				slack.NewTextBlockObject("plain_text", "What artifact will you produce?", false, false),
+				slack.NewOptionsSelectBlockElement(
+					slack.OptTypeStatic,
+					slack.NewTextBlockObject("plain_text", "Choose artifact type...", false, false),
+					"artifact_type_input",
+					artifactTypeOpts...,
+				),
 			),
 		},
 	}
@@ -674,6 +696,15 @@ func (b *Bot) handleOtherSubmission(ctx context.Context, callback slack.Interact
 		"chosen":    response,
 		"rationale": rationale,
 	}
+
+	// Extract artifact_type from the dropdown; set required_artifact if not "none".
+	if v, ok := callback.View.State.Values["artifact_type"]["artifact_type_input"]; ok {
+		if at := v.SelectedOption.Value; at != "" && at != "none" {
+			fields["required_artifact"] = at
+			fields["artifact_status"] = "pending"
+		}
+	}
+
 	if err := b.daemon.CloseBead(ctx, beadID, fields); err != nil {
 		b.logger.Error("failed to resolve decision from other modal",
 			"bead", beadID, "error", err)
