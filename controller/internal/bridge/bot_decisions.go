@@ -387,16 +387,27 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 		}
 	}
 
-	// Append the full report content — Slack will render "Show more" automatically.
-	reportHeader := fmt.Sprintf("%s *Report (%s)*", emoji, reportType)
+	// Structured report using Block Kit best practices:
+	// - Divider separates report from the resolved header
+	// - Section block for report title
+	// - Context block for metadata (type, decision link)
+	// - Section block with content in a code block — Slack auto-collapses
+	//   long code blocks with "Show more"
 	blocks = append(blocks, slack.NewDividerBlock())
 	blocks = append(blocks,
 		slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", reportHeader, false, false),
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("%s *Report (%s)*", emoji, reportType), false, false),
 			nil, nil))
 	blocks = append(blocks,
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("Decision `%s` · %s", decisionID, reportType), false, false)))
+	// Wrap content in a code block so Slack collapses it with "Show more".
+	blocks = append(blocks,
 		slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", content, false, false),
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("```\n%s\n```", content), false, false),
 			nil, nil))
 
 	_, _, _, updateErr := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
