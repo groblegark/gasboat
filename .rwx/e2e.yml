@@ -1,0 +1,274 @@
+on:
+  dispatch:
+    - key: gasboat-e2e
+      init:
+        commit-sha: ${{ event.git.sha }}
+        namespace: ${{ event.dispatch.params.namespace }}
+        keep: ${{ event.dispatch.params.keep }}
+        only: ${{ event.dispatch.params.only }}
+        skip: ${{ event.dispatch.params.skip }}
+      params:
+        - key: namespace
+          name: K8s namespace
+          description: K8s namespace for E2E tests (default gasboat-e2e)
+          default: "gasboat-e2e"
+          required: false
+        - key: keep
+          name: Keep namespace
+          description: Keep namespace after tests (for debugging)
+          default: "false"
+          required: false
+        - key: only
+          name: Only module
+          description: Run only this test module (e.g. decisions-yield, gate-system)
+          default: ""
+          required: false
+        - key: skip
+          name: Skip modules
+          description: Comma-separated modules to skip
+          default: ""
+          required: false
+      title: E2E Tests
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+      namespace: "gasboat-e2e"
+      keep: "false"
+      only: ""
+      skip: ""
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  - key: system-deps
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y curl unzip jq python3
+    filter:
+      - .rwx/e2e-system-deps.lock
+
+  - key: code
+    use: system-deps
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/gasboat.git
+      ref: ${{ init.commit-sha }}
+
+  - key: go
+    call: golang/install 1.2.0
+    with:
+      go-version: "1.25"
+
+  - key: aws-cli
+    run: |
+      curl -sSf "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+      unzip -q /tmp/awscliv2.zip -d /tmp
+      sudo /tmp/aws/install
+      aws --version
+    filter:
+      - .rwx/e2e-system-deps.lock
+
+  - key: kubectl-setup
+    run: |
+      KUBE_VERSION=$(curl -sSfL https://dl.k8s.io/release/stable.txt)
+      echo "Installing kubectl $KUBE_VERSION"
+      curl -sSfL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+      kubectl version --client
+    filter:
+      - .rwx/e2e-system-deps.lock
+
+  - key: kubeconfig
+    use: [aws-cli, kubectl-setup]
+    run: |
+      aws eks update-kubeconfig --name "$EKS_CLUSTER" --region us-east-1
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
+
+  # ── Build gb from source ─────────────────────────────────────────────
+  - key: go-deps
+    use: [code, go]
+    run: cd controller && go mod download
+    filter:
+      - controller/go.mod
+      - controller/go.sum
+
+  - key: build-gb
+    use: go-deps
+    run: |
+      cd controller
+      CGO_ENABLED=0 go build -o /usr/local/bin/gb ./cmd/gb/
+      gb --version || true
+    filter:
+      - "controller/cmd/gb/**/*.go"
+      - "controller/internal/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+
+  # ── Install kd from kbeads release ───────────────────────────────────
+  - key: install-kd
+    use: code
+    run: |
+      BEADS_VERSION=$(grep '^ARG BEADS_VERSION=' images/agent/Dockerfile | cut -d= -f2)
+      echo "Installing kd ${BEADS_VERSION}"
+      curl -fsSL "https://github.com/groblegark/kbeads/releases/download/${BEADS_VERSION}/kd-linux-x86_64.tar.gz" \
+        | tar -xz -C /usr/local/bin kd
+      kd --version
+    filter:
+      - images/agent/Dockerfile
+
+  # ── Verify cluster access ────────────────────────────────────────────
+  - key: verify-cluster
+    use: [kubeconfig, install-kd]
+    run: |
+      NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+      echo "Verifying cluster access in namespace: $NAMESPACE"
+      kubectl -n "$NAMESPACE" get svc gasboat-e2e-beads
+      echo "Cluster access verified"
+    env:
+      NAMESPACE: ${{ init.namespace }}
+
+  # ── Load beads token from K8s secret ─────────────────────────────────
+  - key: load-token
+    use: verify-cluster
+    run: |
+      NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+      TOKEN=$(kubectl -n "$NAMESPACE" get secret kd-beads-token \
+        -o jsonpath='{.data.token}' | base64 -d)
+      if [ -z "$TOKEN" ]; then
+        echo "ERROR: Could not load beads token from secret kd-beads-token"
+        exit 1
+      fi
+      echo "Token loaded from kd-beads-token secret"
+      # Write token to file for downstream tasks
+      echo "$TOKEN" > /tmp/beads-token
+    env:
+      NAMESPACE: ${{ init.namespace }}
+
+  # ── Port-forward beads daemon ────────────────────────────────────────
+  - key: port-forward
+    use: verify-cluster
+    run: |
+      NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+      kubectl -n "$NAMESPACE" port-forward svc/gasboat-e2e-beads 19090:8080 &
+      echo $! > /tmp/pf-pid
+      sleep 3
+      # Quick health check
+      curl -sf http://localhost:19090/ >/dev/null 2>&1 || echo "Warning: health check returned non-zero (may be expected)"
+      echo "Port-forward established on :19090"
+    env:
+      NAMESPACE: ${{ init.namespace }}
+
+  # ── E2E test runner ──────────────────────────────────────────────────
+  - key: e2e
+    use: [build-gb, install-kd, load-token, port-forward]
+    timeout: 30m
+    run: |
+      NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+      BEADS_TOKEN=$(cat /tmp/beads-token)
+      export BEADS_TOKEN
+      export BEADS_HTTP_URL="http://localhost:19090"
+      export GB_BIN="gb"
+      export KD_BIN="kd"
+      export KD_ACTOR="e2e-rwx"
+      export NAMESPACE
+
+      JUNIT_DIR="$PWD/junit-results"
+      mkdir -p "$JUNIT_DIR"
+
+      TESTS_PASSED=0
+      TESTS_FAILED=0
+
+      run_module() {
+        local name="$1"
+        local script="$2"
+        echo ""
+        echo "════════════════════════════════════════════════════"
+        echo " Module: $name"
+        echo "════════════════════════════════════════════════════"
+        local rc=0
+        bash "$script" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+          echo "MODULE PASSED: $name"
+          TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+          echo "MODULE FAILED: $name (exit $rc)"
+          TESTS_FAILED=$((TESTS_FAILED + 1))
+        fi
+        return "$rc"
+      }
+
+      # Parse module selection
+      ONLY="${ONLY:-}"
+      SKIP="${SKIP:-}"
+
+      should_run() {
+        local name="$1"
+        # If --only is set, only run that module
+        if [ -n "$ONLY" ] && [ "$name" != "$ONLY" ]; then
+          echo "SKIP (--only=$ONLY): $name"
+          return 1
+        fi
+        # If --skip contains this module, skip it
+        if [ -n "$SKIP" ]; then
+          IFS=',' read -ra SKIP_MODULES <<< "$SKIP"
+          for mod in "${SKIP_MODULES[@]}"; do
+            mod=$(echo "$mod" | xargs)
+            if [ "$mod" = "$name" ]; then
+              echo "SKIP (--skip): $name"
+              return 1
+            fi
+          done
+        fi
+        return 0
+      }
+
+      MODULE_RC=0
+
+      if should_run "decisions-yield"; then
+        run_module "decisions-yield" "./tests/e2e/scripts/test-decisions-yield.sh" || MODULE_RC=1
+      fi
+
+      if should_run "gate-system"; then
+        run_module "gate-system" "./tests/e2e/scripts/test-gate-system.sh" || MODULE_RC=1
+      fi
+
+      # Generate JUnit XML summary
+      cat > "$JUNIT_DIR/e2e-summary.xml" <<XMLEOF
+      <?xml version="1.0" encoding="UTF-8"?>
+      <testsuites tests="$((TESTS_PASSED + TESTS_FAILED))" failures="$TESTS_FAILED">
+        <testsuite name="gasboat-e2e" tests="$((TESTS_PASSED + TESTS_FAILED))" failures="$TESTS_FAILED">
+          <testcase name="decisions-yield" classname="gasboat.e2e" />
+          <testcase name="gate-system" classname="gasboat.e2e" />
+        </testsuite>
+      </testsuites>
+      XMLEOF
+
+      echo ""
+      echo "════════════════════════════════════════════════════"
+      echo " E2E Summary: $TESTS_PASSED passed, $TESTS_FAILED failed"
+      echo "════════════════════════════════════════════════════"
+
+      # Cleanup port-forward
+      if [ -f /tmp/pf-pid ]; then
+        kill "$(cat /tmp/pf-pid)" 2>/dev/null || true
+      fi
+
+      exit "$MODULE_RC"
+    env:
+      NAMESPACE: ${{ init.namespace }}
+      KEEP: ${{ init.keep }}
+      ONLY: ${{ init.only }}
+      SKIP: ${{ init.skip }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+    outputs:
+      artifacts:
+        - key: junit-results
+          path: junit-results
