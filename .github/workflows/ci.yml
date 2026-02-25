@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 4 * * *'   # 04:00 UTC daily — rebuild images with latest upstream deps
   workflow_dispatch: {}
 
 permissions:
@@ -257,7 +259,8 @@ jobs:
             type=raw,value=nightly-${{ matrix.target }}-${{ matrix.arch }},enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
-          context: images/agent
+          context: .
+          file: images/agent/Dockerfile
           target: ${{ matrix.target }}
           platforms: ${{ matrix.platform }}
           push: true
