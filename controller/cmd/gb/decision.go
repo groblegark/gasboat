@@ -283,9 +283,13 @@ func waitForDecision(cmd *cobra.Command, id string) error {
 				return waitDecisionPoll(ctx, id)
 			}
 			var data map[string]any
-			if json.Unmarshal(evt.Data, &data) == nil {
-				if beadID, _ := data["bead_id"].(string); beadID == id {
-					return printDecisionResult(id)
+			if json.Unmarshal(evt.Data, &data) == nil && evt.Event == "beads.bead.closed" {
+				// BeadClosed payload: {"bead": {"id": "...", ...}, "closed_by": "..."}
+				// (not "bead_id" which is only used by BeadDeleted events)
+				if bead, ok := data["bead"].(map[string]any); ok {
+					if beadID, _ := bead["id"].(string); beadID == id {
+						return printDecisionResult(id)
+					}
 				}
 			}
 		case <-ctx.Done():

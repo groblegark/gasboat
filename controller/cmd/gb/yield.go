@@ -79,12 +79,19 @@ func yieldSSE(ctx context.Context, pending []*beadsapi.BeadDetail) error {
 			}
 			var data map[string]any
 			if json.Unmarshal(evt.Data, &data) == nil {
-				beadID, _ := data["bead_id"].(string)
-				if pendingIDs[beadID] {
+				// BeadClosed/BeadCreated/BeadUpdated: id and type are nested under "bead".
+				// BeadDeleted: id is at top-level "bead_id".
+				var beadID, beadType string
+				if bead, ok := data["bead"].(map[string]any); ok {
+					beadID, _ = bead["id"].(string)
+					beadType, _ = bead["type"].(string)
+				} else {
+					beadID, _ = data["bead_id"].(string)
+				}
+				if pendingIDs[beadID] && evt.Event == "beads.bead.closed" {
 					return printYieldResult(beadID)
 				}
-				beadType, _ := data["type"].(string)
-				if beadType == "message" || beadType == "mail" {
+				if evt.Event == "beads.bead.created" && (beadType == "message" || beadType == "mail") {
 					fmt.Printf("Mail received: %s\n", beadID)
 					return nil
 				}
