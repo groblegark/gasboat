@@ -29,6 +29,7 @@ type Reconciler struct {
 	logger         *slog.Logger
 	specBuilder    SpecBuilder
 	mu             sync.Mutex // prevent concurrent reconciles
+	digestTracker  *ImageDigestTracker
 	upgradeTracker *UpgradeTracker
 }
 
@@ -46,8 +47,15 @@ func New(
 		cfg:            cfg,
 		logger:         logger,
 		specBuilder:    specBuilder,
+		digestTracker:  NewImageDigestTracker(logger),
 		upgradeTracker: NewUpgradeTracker(logger),
 	}
+}
+
+// DigestTracker returns the image digest tracker for external callers
+// (e.g., periodic registry refresh from the main loop).
+func (r *Reconciler) DigestTracker() *ImageDigestTracker {
+	return r.digestTracker
 }
 
 // Reconcile performs a single reconciliation pass:
@@ -136,7 +144,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 		desiredSpec := r.specBuilder(r.cfg, bead.Project, bead.Mode, bead.Role, bead.AgentName, bead.Metadata)
 		desiredSpec.BeadID = bead.ID
-		reason := podDriftReason(desiredSpec, &pod)
+		reason := podDriftReason(desiredSpec, &pod, r.digestTracker)
 		if reason != "" {
 			driftReasons[name] = reason
 			r.upgradeTracker.RegisterDrift(name, bead.Mode)
@@ -208,6 +216,10 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		if err := r.pods.CreateAgentPod(ctx, spec); err != nil {
 			return fmt.Errorf("creating pod %s: %w", name, err)
 		}
+		// Mark the image as deployed so digest drift is cleared.
+		if r.digestTracker != nil && spec.Image != "" {
+			r.digestTracker.MarkDeployed(spec.Image)
+		}
 		created++
 		activePods++
 	}
@@ -223,12 +235,16 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 // podDriftReason returns a non-empty string describing why the pod needs
 // recreation, or "" if the pod matches the desired spec.
-// Only compares image tags — digest-level enforcement is intentionally omitted
-// because registry manifest digests (manifest list vs platform image) don't
-// match pod-observed digests, causing false-positive restart loops.
-func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod) string {
+func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod, tracker *ImageDigestTracker) string {
+	// Tag changed (e.g., nightly → v1.0.0).
 	if agentChanged(desired.Image, actual) {
 		return fmt.Sprintf("agent image changed: %s", desired.Image)
+	}
+	// Same tag, but registry digest changed (tag was re-pushed).
+	// Compares registry-to-registry, never registry-to-pod, to avoid
+	// manifest list vs platform digest mismatches.
+	if tracker != nil && desired.Image != "" && tracker.HasDrift(desired.Image) {
+		return fmt.Sprintf("image digest updated in registry: %s", desired.Image)
 	}
 	return ""
 }

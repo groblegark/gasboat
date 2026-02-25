@@ -523,7 +523,105 @@ func TestReconcile_NoDrift_WhenImageMatches(t *testing.T) {
 	}
 }
 
-// --- Rolling upgrade tests ---
+// --- Digest drift / rolling upgrade tests ---
+
+func TestReconcile_DigestDrift_TriggersRecreate(t *testing.T) {
+	image := "ghcr.io/org/agent:nightly"
+	lister := &mockLister{
+		beads: []beadsapi.AgentBead{
+			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
+		},
+	}
+
+	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod.Spec.Containers[0].Image = image // same tag — no tag drift
+
+	mgr := &mockManager{pods: []corev1.Pod{pod}}
+
+	r := New(lister, mgr, testConfig("ns"), testLogger(), simpleSpecBuilder(image))
+
+	// Simulate: tag was deployed at digest A, registry now has digest B.
+	r.digestTracker.Seed(image, "sha256:aaa111")
+	// Confirm digest B twice (meets threshold).
+	r.digestTracker.RecordRegistryDigest(image, "sha256:bbb222")
+	r.digestTracker.RecordRegistryDigest(image, "sha256:bbb222")
+
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mgr.deleted) != 1 {
+		t.Fatalf("expected 1 deletion for digest drift, got %d", len(mgr.deleted))
+	}
+	if len(mgr.created) != 1 {
+		t.Fatalf("expected 1 creation after digest drift, got %d", len(mgr.created))
+	}
+}
+
+func TestReconcile_DigestDrift_NoFalsePositiveOnFirstSeen(t *testing.T) {
+	image := "ghcr.io/org/agent:nightly"
+	lister := &mockLister{
+		beads: []beadsapi.AgentBead{
+			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
+		},
+	}
+
+	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod.Spec.Containers[0].Image = image
+
+	mgr := &mockManager{pods: []corev1.Pod{pod}}
+
+	r := New(lister, mgr, testConfig("ns"), testLogger(), simpleSpecBuilder(image))
+
+	// Seed with a digest — deployed and current are the same. No drift.
+	r.digestTracker.Seed(image, "sha256:aaa111")
+
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mgr.deleted) != 0 {
+		t.Errorf("expected 0 deletions (no drift on first seen), got %d", len(mgr.deleted))
+	}
+}
+
+func TestReconcile_DigestDrift_ClearedAfterUpgrade(t *testing.T) {
+	image := "ghcr.io/org/agent:nightly"
+	lister := &mockLister{
+		beads: []beadsapi.AgentBead{
+			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
+		},
+	}
+
+	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod.Spec.Containers[0].Image = image
+
+	mgr := &mockManager{pods: []corev1.Pod{pod}}
+
+	r := New(lister, mgr, testConfig("ns"), testLogger(), simpleSpecBuilder(image))
+
+	// Set up drift: deployed=A, current=B.
+	r.digestTracker.Seed(image, "sha256:aaa111")
+	r.digestTracker.RecordRegistryDigest(image, "sha256:bbb222")
+	r.digestTracker.RecordRegistryDigest(image, "sha256:bbb222")
+
+	// First reconcile should delete+create (handling drift).
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(mgr.created) != 1 {
+		t.Fatalf("expected 1 creation on first reconcile, got %d", len(mgr.created))
+	}
+
+	// After upgrade, MarkDeployed should have been called.
+	// Verify no more drift.
+	if r.digestTracker.HasDrift(image) {
+		t.Error("expected no drift after pod recreation (MarkDeployed should clear it)")
+	}
+}
 
 func TestReconcile_RollingUpgrade_OnlyOnePerMode(t *testing.T) {
 	lister := &mockLister{
@@ -754,7 +852,7 @@ func TestPodDriftReason_NoChange(t *testing.T) {
 			Containers: []corev1.Container{{Name: "agent", Image: "img:v1"}},
 		},
 	}
-	reason := podDriftReason(spec, pod)
+	reason := podDriftReason(spec, pod, nil)
 	if reason != "" {
 		t.Errorf("expected no drift, got: %s", reason)
 	}
@@ -767,7 +865,7 @@ func TestPodDriftReason_ImageTagChanged(t *testing.T) {
 			Containers: []corev1.Container{{Name: "agent", Image: "img:v1"}},
 		},
 	}
-	reason := podDriftReason(spec, pod)
+	reason := podDriftReason(spec, pod, nil)
 	if reason == "" {
 		t.Error("expected drift reason for image tag change")
 	}
@@ -780,7 +878,7 @@ func TestPodDriftReason_EmptyDesiredImage(t *testing.T) {
 			Containers: []corev1.Container{{Name: "agent", Image: "img:v1"}},
 		},
 	}
-	reason := podDriftReason(spec, pod)
+	reason := podDriftReason(spec, pod, nil)
 	if reason != "" {
 		t.Errorf("expected no drift when desired image is empty, got: %s", reason)
 	}
@@ -793,7 +891,7 @@ func TestPodDriftReason_NoAgentContainer(t *testing.T) {
 			Containers: []corev1.Container{{Name: "sidecar", Image: "other:v1"}},
 		},
 	}
-	reason := podDriftReason(spec, pod)
+	reason := podDriftReason(spec, pod, nil)
 	if reason != "" {
 		t.Errorf("expected no drift when no agent container, got: %s", reason)
 	}
