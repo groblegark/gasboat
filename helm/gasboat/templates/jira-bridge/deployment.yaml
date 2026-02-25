@@ -1,0 +1,130 @@
+{{- if .Values.jiraBridge.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gasboat.fullname" . }}-jira-bridge
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jira-bridge
+spec:
+  replicas: {{ .Values.jiraBridge.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "gasboat.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: jira-bridge
+  template:
+    metadata:
+      labels:
+        {{- include "gasboat.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: jira-bridge
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: jira-bridge
+          image: "{{ .Values.jiraBridge.image.repository }}:{{ .Values.jiraBridge.image.tag }}"
+          imagePullPolicy: {{ .Values.jiraBridge.image.pullPolicy | default "Always" }}
+          ports:
+            - name: http
+              containerPort: 8091
+              protocol: TCP
+          env:
+            # Beads daemon connection
+            - name: BEADS_HTTP_ADDR
+              value: "http://{{ include "gasboat.beads.host" . }}:{{ include "gasboat.beads.httpPort" . }}"
+            # NATS connection
+            {{- if .Values.jiraBridge.natsURL }}
+            - name: NATS_URL
+              value: {{ .Values.jiraBridge.natsURL | quote }}
+            {{- else if .Values.nats.enabled }}
+            - name: NATS_URL
+              value: {{ include "gasboat.natsURL" . | quote }}
+            {{- end }}
+            {{- if .Values.agents.natsTokenSecret }}
+            - name: NATS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agents.natsTokenSecret }}
+                  key: token
+                  optional: true
+            {{- end }}
+            # JIRA connection
+            {{- if .Values.jiraBridge.jira.baseURL }}
+            - name: JIRA_BASE_URL
+              value: {{ .Values.jiraBridge.jira.baseURL | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.email }}
+            - name: JIRA_EMAIL
+              value: {{ .Values.jiraBridge.jira.email | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.apiToken }}
+            - name: JIRA_API_TOKEN
+              value: {{ .Values.jiraBridge.jira.apiToken | quote }}
+            {{- else if .Values.jiraBridge.jira.secretName }}
+            - name: JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jiraBridge.jira.secretName }}
+                  key: api-token
+            {{- end }}
+            # JIRA polling config
+            {{- if .Values.jiraBridge.jira.projects }}
+            - name: JIRA_PROJECTS
+              value: {{ .Values.jiraBridge.jira.projects | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.statuses }}
+            - name: JIRA_STATUSES
+              value: {{ .Values.jiraBridge.jira.statuses | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.issueTypes }}
+            - name: JIRA_ISSUE_TYPES
+              value: {{ .Values.jiraBridge.jira.issueTypes | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.pollInterval }}
+            - name: JIRA_POLL_INTERVAL
+              value: {{ .Values.jiraBridge.jira.pollInterval | quote }}
+            {{- end }}
+            - name: JIRA_LISTEN_ADDR
+              value: ":8091"
+            - name: STATE_PATH
+              value: "/data/jira-bridge-state.json"
+            {{- if .Values.jiraBridge.logLevel }}
+            - name: LOG_LEVEL
+              value: {{ .Values.jiraBridge.logLevel | quote }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          volumeMounts:
+            - name: state
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.jiraBridge.resources | nindent 12 }}
+      volumes:
+        - name: state
+          emptyDir: {}
+      {{- with .Values.jiraBridge.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.jiraBridge.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.jiraBridge.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

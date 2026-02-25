@@ -438,6 +438,8 @@ slackBridge:
     channel: ""
     # K8s secret name with keys: bot-token, app-token, signing-secret (for production)
     secretName: ""
+    # Decision threading mode: "flat" (default) or "agent" (thread under per-agent cards)
+    threadingMode: ""
 
   # Live agent activity dashboard — pinned Slack message updated periodically.
   dashboard:
@@ -448,6 +450,63 @@ slackBridge:
   service:
     type: ClusterIP
     port: 8090
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# JIRA Bridge — standalone beads→JIRA sync bridge
+# Polls JIRA for new tickets, creates task beads, and syncs MR links/status
+# back to JIRA. Runs independently from the agent controller.
+# =============================================================================
+jiraBridge:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/gasboat/jira-bridge
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Log level: debug, info, warn, error
+  logLevel: ""
+
+  # NATS URL override (auto-wired when nats.enabled=true)
+  natsURL: ""
+
+  # JIRA connection and polling config
+  jira:
+    # JIRA instance URL (required)
+    baseURL: ""
+    # JIRA user email for API auth (required)
+    email: ""
+    # Direct API token (for dev/testing)
+    apiToken: ""
+    # K8s secret name with key: api-token (for production)
+    secretName: ""
+    # Comma-separated project keys to poll (e.g., "PE,DEVOPS")
+    projects: "PE,DEVOPS"
+    # Comma-separated JIRA statuses to ingest
+    statuses: "To Do,Ready for Development"
+    # Comma-separated issue types to ingest
+    issueTypes: "Bug,Task,Story"
+    # Polling interval (e.g., "60s", "5m")
+    pollInterval: "60s"
+
+  service:
+    type: ClusterIP
+    port: 8091
 
   resources:
     requests:
