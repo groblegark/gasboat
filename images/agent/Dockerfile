@@ -87,6 +87,9 @@ RUN sed -i 's/^ubuntu:/agent:/' /etc/passwd && \
 COPY images/agent/hooks/ /hooks/
 RUN chmod +x /hooks/*.sh
 
+# ── Claudeless mock scenarios ────────────────────────────────────
+COPY images/agent/scenarios/ /scenarios/
+
 # ── kubectl ──────────────────────────────────────────────────────
 RUN KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) && \
     curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" \

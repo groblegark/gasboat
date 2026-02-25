@@ -24,6 +24,14 @@ MODE="${BOAT_MODE:-crew}"
 AGENT="${BOAT_AGENT:-unknown}"
 WORKSPACE="/home/agent/workspace"
 SESSION_RESUME="${BOAT_SESSION_RESUME:-1}"
+BOAT_COMMAND="${BOAT_COMMAND:-claude --dangerously-skip-permissions}"
+
+# Detect mock mode: BOAT_COMMAND contains "claudeless"
+MOCK_MODE=0
+if echo "${BOAT_COMMAND}" | grep -q "claudeless"; then
+    MOCK_MODE=1
+    echo "[entrypoint] Mock mode enabled (command: ${BOAT_COMMAND})"
+fi
 
 # Export platform version for version commands
 if [ -f /etc/platform-version ]; then
@@ -144,9 +152,12 @@ fi
 # (3) CLAUDE_CODE_OAUTH_TOKEN env var (coop auto-writes .credentials.json),
 # (4) ANTHROPIC_API_KEY env var (API key mode — no credentials file needed),
 # (5) coopmux distribute endpoint (fetch from centralized credential manager).
+# Mock mode: skip credential provisioning entirely (claudeless doesn't need credentials).
 CREDS_STAGING="/tmp/claude-credentials/credentials.json"
 CREDS_PVC="${CLAUDE_STATE}/.credentials.json"
-if [ -f "${CREDS_PVC}" ]; then
+if [ "${MOCK_MODE}" = "1" ]; then
+    echo "[entrypoint] Mock mode — skipping credential provisioning"
+elif [ -f "${CREDS_PVC}" ]; then
     echo "[entrypoint] Using existing PVC credentials (preserved from refresh)"
 elif [ -f "${CREDS_STAGING}" ]; then
     cp "${CREDS_STAGING}" "${CREDS_PVC}"
@@ -192,6 +203,14 @@ fi
 #
 # User-level settings (permissions + LSP plugins) written to ~/.claude/settings.json.
 # LSP plugins are always enabled — gopls and rust-analyzer are in the omnibus image.
+# Mock mode: skip Claude settings entirely (claudeless doesn't use them).
+
+if [ "${MOCK_MODE}" = "1" ]; then
+    echo "[entrypoint] Mock mode — skipping Claude settings materialization"
+    # Write minimal workspace settings so hooks still work with claudeless.
+    mkdir -p "${WORKSPACE}/.claude"
+    echo '{}' > "${CLAUDE_DIR}/settings.json"
+else
 
 # Start with base settings JSON (permissions + LSP plugins).
 SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}'
@@ -342,6 +361,8 @@ fi
 
 printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark","bypassPermissionsModeAccepted":true}\n' > "${HOME}/.claude.json"
 
+fi  # end of MOCK_MODE != 1 (Claude settings block)
+
 # ── Start coop + Claude ──────────────────────────────────────────────────
 #
 # We keep bash as PID 1 (no exec) so the pod survives if Claude/coop exit.
@@ -460,6 +481,11 @@ OAUTH_CLIENT_ID="9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CREDS_FILE="${CLAUDE_STATE}/.credentials.json"
 
 refresh_credentials() {
+    # Skip refresh in mock mode — claudeless doesn't use OAuth.
+    if [ "${MOCK_MODE}" = "1" ]; then
+        echo "[entrypoint] Mock mode — skipping OAuth refresh loop"
+        return 0
+    fi
     # Skip refresh entirely when using API key mode — no OAuth credentials to refresh.
     if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ ! -f "${CREDS_FILE}" ]; then
         echo "[entrypoint] API key mode — skipping OAuth refresh loop"
@@ -677,7 +703,7 @@ while true; do
 
     if [ -n "${RESUME_FLAG}" ]; then
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
-        ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
+        ${COOP_CMD} ${RESUME_FLAG} -- ${BOAT_COMMAND} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
@@ -691,7 +717,7 @@ while true; do
         fi
     else
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
-        ${COOP_CMD} -- claude --dangerously-skip-permissions &
+        ${COOP_CMD} -- ${BOAT_COMMAND} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
