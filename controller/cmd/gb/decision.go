@@ -503,7 +503,6 @@ Content can be provided via --content flag or piped from stdin.`,
 			"prompt":       nextPrompt,
 			"options":      json.RawMessage(nextOptionsJSON),
 			"requested_by": actor,
-			"report_id":    reportID,
 		}
 		if agentID, _ := resolveAgentID(""); agentID != "" {
 			nextFields["requesting_agent_bead_id"] = agentID
