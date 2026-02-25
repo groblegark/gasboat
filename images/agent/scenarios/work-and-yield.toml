@@ -3,17 +3,16 @@
 # Claudeless scenario: Simulates a full agent work cycle
 #
 # This scenario exercises the complete agent lifecycle:
-#   1. Agent receives initial nudge, runs `gb ready`
-#   2. Agent does some "work" (creates a file, runs a command)
-#   3. Agent creates a decision checkpoint via `gb decision create`
-#   4. Agent calls `gb yield` to block for human response
-#   5. On resume, agent acknowledges the decision and continues
+#   1. Agent receives initial nudge, checks workflow
+#   2. Agent does some "work"
+#   3. Agent creates a decision checkpoint
+#   4. Agent yields for human response
 #
 # Use for E2E testing of the decision gate system, mux integration,
 # and the full stop-hook → yield → resume flow.
 
 [claude]
-session_id = "mock-work-yield-001"
+session_id = "00000000-0000-4000-a000-000000000002"
 username = "mock-agent"
 permission_mode = "accept-edits"
 trusted = true
@@ -25,59 +24,22 @@ hook_timeout_ms = 15000
 # ── Initial nudge: check workflow ───────────────────────────────────
 [[responses]]
 on = { contains = "gb ready" }
-say = "Let me check my workflow and start working."
-[[responses.tools]]
-call = "Bash"
-[responses.tools.input]
-command = "gb ready"
-[responses.tools.result]
-stdout = "1. Review assigned bead\n2. Implement changes\n3. Create decision checkpoint"
-stderr = ""
-exit_code = 0
+say = "Let me check my workflow and start working. Running gb ready... Steps: 1. Review assigned bead 2. Implement changes 3. Create decision checkpoint"
 
 # ── Do some work ────────────────────────────────────────────────────
 [[responses]]
 on = { contains = "Implement" }
-say = "I'll create a test file to simulate work."
-[[responses.tools]]
-call = "Bash"
-[responses.tools.input]
-command = "echo 'mock work output' > /tmp/mock-work.txt && echo 'done'"
-[responses.tools.result]
-stdout = "done"
-stderr = ""
-exit_code = 0
+say = "I'll create a test file to simulate work. Work output saved to /tmp/mock-work.txt."
 
 # ── Create decision and yield ───────────────────────────────────────
 [[responses]]
 on = { contains = "decision" }
-say = "Work complete. Creating a decision checkpoint."
-[[responses.tools]]
-call = "Bash"
-[responses.tools.input]
-command = "gb decision create --no-wait --prompt='Mock work done. What next?' --options='[{\"id\":\"continue\",\"short\":\"Continue\",\"label\":\"Continue to next task\"},{\"id\":\"stop\",\"short\":\"Stop\",\"label\":\"Stop and review\"}]'"
-[responses.tools.result]
-stdout = "Decision created: kd-mock-decision-001"
-stderr = ""
-exit_code = 0
-
-# ── Yield ───────────────────────────────────────────────────────────
-[[responses]]
-on = { contains = "yield" }
-say = "Decision created. Yielding for human response."
-[[responses.tools]]
-call = "Bash"
-[responses.tools.input]
-command = "gb yield"
-[responses.tools.result]
-stdout = "Resumed: continue"
-stderr = ""
-exit_code = 0
+say = "Work complete. Creating a decision checkpoint and yielding for human response."
 
 # ── Post-yield acknowledgment ───────────────────────────────────────
 [[responses]]
 on = "*"
-say = "Received decision response. Continuing with next task."
+say = "Received instruction. Continuing with next task."
 
 [default]
 say = "Mock agent ready for next instruction."
