@@ -122,6 +122,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make unzip xz-utils \
     python3 python3-pip python3-venv \
     gcc g++ libc6-dev binutils \
+    pkg-config libssl-dev \
     libcurl3t64-gnutls libicu74 libicu-dev \
     postgresql-client shellcheck && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
