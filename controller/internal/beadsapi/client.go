@@ -186,7 +186,7 @@ func (c *Client) ListDecisionBeads(ctx context.Context) ([]*BeadDetail, error) {
 // CreateBeadRequest contains the fields for creating a new bead.
 type CreateBeadRequest struct {
 	Title       string          `json:"title"`
-	Type        string          `json:"issue_type"`
+	Type        string          `json:"type"`
 	Kind        string          `json:"kind,omitempty"`
 	Description string          `json:"description,omitempty"`
 	Assignee    string          `json:"assignee,omitempty"`
