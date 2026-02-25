@@ -242,6 +242,10 @@ tasks:
         run_module "gate-system" "./tests/e2e/scripts/test-gate-system.sh" || MODULE_RC=1
       fi
 
+      if should_run "decision-reports"; then
+        run_module "decision-reports" "./tests/e2e/scripts/test-decision-reports.sh" || MODULE_RC=1
+      fi
+
       # Generate JUnit XML summary
       cat > "$JUNIT_DIR/e2e-summary.xml" <<XMLEOF
       <?xml version="1.0" encoding="UTF-8"?>
@@ -249,6 +253,7 @@ tasks:
         <testsuite name="gasboat-e2e" tests="$((TESTS_PASSED + TESTS_FAILED))" failures="$TESTS_FAILED">
           <testcase name="decisions-yield" classname="gasboat.e2e" />
           <testcase name="gate-system" classname="gasboat.e2e" />
+          <testcase name="decision-reports" classname="gasboat.e2e" />
         </testsuite>
       </testsuites>
       XMLEOF
