@@ -247,13 +247,20 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		})
 	}
 
-	// GitLab token for glab CLI and git clone/push to GitLab inside agent pods.
+	// GitLab token for glab CLI (GLAB_TOKEN) and git clone/push (GITLAB_TOKEN).
 	if cfg.GitlabTokenSecret != "" {
-		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
-			EnvName:    "GITLAB_TOKEN",
-			SecretName: cfg.GitlabTokenSecret,
-			SecretKey:  "token",
-		})
+		spec.SecretEnv = append(spec.SecretEnv,
+			podmanager.SecretEnvSource{
+				EnvName:    "GLAB_TOKEN",
+				SecretName: cfg.GitlabTokenSecret,
+				SecretKey:  "token",
+			},
+			podmanager.SecretEnvSource{
+				EnvName:    "GITLAB_TOKEN",
+				SecretName: cfg.GitlabTokenSecret,
+				SecretKey:  "token",
+			},
+		)
 	}
 }
 
