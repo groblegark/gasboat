@@ -175,10 +175,18 @@ func printYieldResult(id string) error {
 	}
 	chosen := bead.Fields["chosen"]
 	responseText := bead.Fields["response_text"]
-	if chosen != "" {
-		fmt.Printf("Decision %s resolved: %s\n", id, chosen)
-	} else if responseText != "" {
-		fmt.Printf("Decision %s resolved: %s\n", id, responseText)
+	rationale := bead.Fields["rationale"]
+
+	result := chosen
+	if result == "" {
+		result = responseText
+	}
+	if result != "" {
+		if rationale != "" {
+			fmt.Printf("Decision %s resolved: %s — %s\n", id, result, rationale)
+		} else {
+			fmt.Printf("Decision %s resolved: %s\n", id, result)
+		}
 	} else {
 		fmt.Printf("Decision %s closed\n", id)
 	}

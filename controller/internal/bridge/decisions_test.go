@@ -302,6 +302,68 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 	}
 }
 
+// TestDecisions_HandleClosed_RationaleFromFetch verifies that when the SSE close
+// event omits rationale (common in practice), it is fetched from the full bead
+// and included in the nudge message sent to the LLM.
+func TestDecisions_HandleClosed_RationaleFromFetch(t *testing.T) {
+	var nudgeReceived sync.Mutex
+	var nudgeMessage string
+	coopServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/agent/nudge" {
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			nudgeReceived.Lock()
+			nudgeMessage = body["message"]
+			nudgeReceived.Unlock()
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer coopServer.Close()
+
+	daemon := newMockDaemon()
+	daemon.beads["agent-x"] = &beadsapi.BeadDetail{
+		ID:    "agent-x",
+		Notes: "coop_url: " + coopServer.URL,
+	}
+	// Full bead has both chosen and rationale; SSE event only has chosen.
+	daemon.beads["dec-rat"] = &beadsapi.BeadDetail{
+		ID: "dec-rat",
+		Fields: map[string]string{
+			"chosen":    "proceed",
+			"rationale": "looks good to me",
+		},
+	}
+
+	d := &Decisions{
+		daemon:     daemon,
+		notifier:   &mockNotifier{},
+		logger:     slog.Default(),
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+		escalated:  make(map[string]time.Time),
+	}
+
+	// SSE event carries neither chosen nor rationale — both must come from the fetch.
+	closedEvent := marshalSSEBeadPayload(BeadEvent{
+		ID:       "dec-rat",
+		Type:     "decision",
+		Assignee: "agent-x",
+		Fields:   map[string]string{},
+	})
+	d.handleClosed(context.Background(), closedEvent)
+
+	time.Sleep(50 * time.Millisecond)
+	nudgeReceived.Lock()
+	msg := nudgeMessage
+	nudgeReceived.Unlock()
+
+	want := "Decision resolved: proceed \u2014 looks good to me"
+	if msg != want {
+		t.Errorf("nudge message = %q, want %q", msg, want)
+	}
+}
+
 func TestDecisions_HandleClosed_NoAssignee(t *testing.T) {
 	d := &Decisions{
 		notifier:  &mockNotifier{},
