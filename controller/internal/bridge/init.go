@@ -86,6 +86,9 @@ func configs() map[string]any {
 				{Name: "pod_ready", Type: "boolean"},
 				{Name: "coop_url", Type: "string"},
 				{Name: "coop_token", Type: "string"},
+				// Per-agent overrides (optional).
+				{Name: "image", Type: "string"},
+				{Name: "mock_scenario", Type: "string"},
 			},
 		},
 		"type:mail": TypeConfig{
