@@ -249,46 +249,9 @@ if command -v gb &>/dev/null; then
 fi
 
 if [ "${MATERIALIZED}" = "0" ]; then
-    echo "[entrypoint] No config beads found, writing static hooks"
-    cat > "${WORKSPACE}/.claude/settings.json" <<'HOOKS'
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {"type": "command", "command": "gb hook prime 2>/dev/null || true"},
-          {"type": "command", "command": "gb hook check-mail 2>/dev/null || true"}
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {"type": "command", "command": "gb hook prime 2>/dev/null || true"}
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "matcher": "",
-        "hooks": [
-          {"type": "command", "command": "gb hook check-mail 2>/dev/null || true"}
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {"type": "command", "command": "gb hook stop-gate"}
-        ]
-      }
-    ]
-  }
-}
-HOOKS
+    echo "[entrypoint] No config beads found, installing default gb hooks"
+    gb setup claude --defaults --workspace="${WORKSPACE}" 2>&1 || \
+        echo "[entrypoint] WARNING: gb setup --defaults failed, no hooks installed"
 fi
 
 # Write CLAUDE.md with role context if not already present.
