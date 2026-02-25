@@ -100,7 +100,7 @@ func TestJiraPoller_CreateBead(t *testing.T) {
 			"total": 1,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer jiraServer.Close()
 
@@ -170,7 +170,7 @@ func TestJiraPoller_Dedup(t *testing.T) {
 			"total": 1,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer jiraServer.Close()
 
