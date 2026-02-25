@@ -4,12 +4,12 @@
 #
 # This scenario simulates a Claude Code session where:
 #   1. Agent starts without a decision → Stop hook blocks
-#   2. Agent creates a decision (kd decision create)
+#   2. Agent creates a decision (gb decision create)
 #   3. Human responds to the decision
 #   4. Agent can now exit cleanly (Stop hook allows)
 #
-# The hook calls (kd bus emit --hook=Stop) are configured in
-# .claude/settings.json hooks. The kd binary must be in PATH and
+# The hook calls (gb bus emit --hook=Stop) are configured in
+# .claude/settings.json hooks. The gb binary must be in PATH and
 # KD_AGENT_ID must be set to a claimed bead ID.
 #
 # Run via: tests/e2e/scripts/test-gate-system.sh
@@ -31,7 +31,7 @@ say = "I'll create a decision point now."
 [[responses.tools]]
 call = "Bash"
 [responses.tools.input]
-command = "kd decision create --prompt='What next?' --options='[{\"id\":\"a\",\"label\":\"Continue\"}]' --no-wait"
+command = "gb decision create --prompt='What next?' --options='[{\"id\":\"a\",\"label\":\"Continue\"}]' --no-wait"
 [responses.tools.result]
 stdout = "Decision created: kd-decision-001"
 stderr = ""

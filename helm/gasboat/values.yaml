@@ -68,7 +68,7 @@ agents:
 
   # --- Agent pods ---
 
-  # Image used for agent pods spawned by the controller
+  # Image used for agent pods spawned by the controller (includes gb + kd CLIs)
   agentImage:
     repository: ghcr.io/groblegark/gasboat/agent
     tag: "latest"

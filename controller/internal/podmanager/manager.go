@@ -430,7 +430,7 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 	// All agents get BEADS_ACTOR, GIT_AUTHOR_NAME, BEADS_AGENT_NAME, and
 	// BOAT_AGENT_BEAD_ID (the agent's own bead, used by prime.sh to look up
 	// hook_bead and instructions without a list+filter round-trip).
-	// KD_AGENT_ID and KD_ACTOR are used by `kd bus emit` for gate identity.
+	// KD_AGENT_ID and KD_ACTOR are used by gb (and kd) for gate identity.
 	envVars = append(envVars,
 		corev1.EnvVar{Name: "BEADS_ACTOR", Value: spec.AgentName},
 		corev1.EnvVar{Name: "KD_ACTOR", Value: spec.AgentName},
@@ -580,7 +580,7 @@ func (m *K8sManager) buildVolumeMounts(spec AgentPodSpec) []corev1.VolumeMount {
 		})
 	}
 
-	// Claude credentials: mount secret to staging dir; entrypoint copies to PVC.
+	// Claude credentials: mount secret to staging dir; entrypoint/gb copies to PVC.
 	if spec.CredentialsSecret != "" {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      VolumeClaudeCreds,

@@ -33,7 +33,7 @@ if echo "${BOAT_COMMAND}" | grep -q "claudeless"; then
     echo "[entrypoint] Mock mode enabled (command: ${BOAT_COMMAND})"
 fi
 
-# Export platform version for kd version commands
+# Export platform version for version commands
 if [ -f /etc/platform-version ]; then
     export BEADS_PLATFORM_VERSION
     BEADS_PLATFORM_VERSION=$(cat /etc/platform-version)
@@ -105,7 +105,7 @@ else
 fi
 
 # ── Daemon connection ────────────────────────────────────────────────────
-# Configure .beads/config.yaml so kd CLI can talk to the remote daemon.
+# Configure .beads/config.yaml so kd/gb CLIs can talk to the remote daemon.
 
 if [ -n "${BEADS_DAEMON_HOST:-}" ]; then
     DAEMON_HTTP_PORT="${BEADS_DAEMON_HTTP_PORT:-9080}"
@@ -238,9 +238,9 @@ echo "${SETTINGS_JSON}" | jq . > "${CLAUDE_DIR}/settings.json"
 mkdir -p "${WORKSPACE}/.claude"
 MATERIALIZED=0
 
-if command -v kd &>/dev/null; then
+if command -v gb &>/dev/null; then
     echo "[entrypoint] Materializing hooks from config beads (role: ${ROLE})"
-    if kd setup claude --workspace="${WORKSPACE}" --role="${ROLE}" 2>&1; then
+    if gb setup claude --workspace="${WORKSPACE}" --role="${ROLE}" 2>&1; then
         if grep -q '"hooks"' "${WORKSPACE}/.claude/settings.json" 2>/dev/null; then
             MATERIALIZED=1
             echo "[entrypoint] Hooks materialized from config beads"
@@ -309,8 +309,8 @@ Agent name: ${AGENT}
 
 ## Quick Reference
 
-- \`kd ready\` — See your workflow steps
-- \`kd mail inbox\` — Check messages
+- \`gb ready\` — See your workflow steps
+- \`gb mail inbox\` — Check messages
 - \`kd show <issue>\` — View specific issue details
 
 ## Checkpoint Protocol (Stop Hook)
@@ -320,12 +320,12 @@ When you hit a Stop hook block, you MUST create a decision checkpoint:
 1. Review what you accomplished
 2. Create a decision:
    \`\`\`bash
-   kd decision create --no-wait \\
+   gb decision create --no-wait \\
      --prompt="<what you did and why these options>" \\
      --options='[{"id":"opt1","short":"Option 1","label":"Full description"}]'
    \`\`\`
-3. Run \`kd yield\` — blocks until human responds
-4. When \`kd yield\` returns, act on the response
+3. Run \`gb yield\` — blocks until human responds
+4. When \`gb yield\` returns, act on the response
 CLAUDEMD
 fi
 
@@ -460,7 +460,7 @@ inject_initial_prompt() {
         fi
     done
 
-    local nudge_msg="Check \`kd ready\` for your workflow steps and begin working."
+    local nudge_msg="Check \`gb ready\` for your workflow steps and begin working."
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
     response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \

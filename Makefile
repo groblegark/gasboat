@@ -9,6 +9,9 @@ REGISTRY ?= ghcr.io/groblegark/gasboat
 build:
 	$(MAKE) -C controller build
 
+build-gb:
+	cd controller && go build -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/gb ./cmd/gb/
+
 build-bridge:
 	cd controller && go build -ldflags="-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/slack-bridge ./cmd/slack-bridge/
 
