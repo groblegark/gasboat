@@ -134,7 +134,12 @@ spec:
             {{- toYaml .Values.slackBridge.resources | nindent 12 }}
       volumes:
         - name: state
+          {{- if .Values.slackBridge.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "gasboat.fullname" . }}-slack-bridge-state
+          {{- else }}
           emptyDir: {}
+          {{- end }}
       {{- with .Values.slackBridge.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

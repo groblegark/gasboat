@@ -462,6 +462,13 @@ slackBridge:
       cpu: 200m
       memory: 128Mi
 
+  # State persistence — survives pod restarts, preserves Slack message refs.
+  # When disabled (default), an emptyDir is used (state lost on restart).
+  persistence:
+    enabled: false
+    size: 100Mi
+    storageClass: ""
+
   # Pod scheduling
   nodeSelector: {}
   tolerations: []
