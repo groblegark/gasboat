@@ -26,7 +26,7 @@
 on:
   github:
     push:
-      if: ${{ event.git.branch == 'main' || starts-with(event.git.tag, 'v') }}
+      if: ${{ event.git.branch == 'main' || starts-with(event.git.tag, '20') }}
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
@@ -58,12 +58,12 @@ on:
           required: false
         - key: coop-version
           name: Coop version
-          description: Coop release tag to pin (e.g. v0.11.20). Defaults to latest.
+          description: Coop release tag to pin (e.g. 2026.056.0). Defaults to latest.
           default: latest
           required: false
         - key: kd-version
           name: Beads/kd version
-          description: Beads release tag to pin (e.g. v0.3.11). Defaults to latest.
+          description: Beads release tag to pin (e.g. 2026.056.0). Defaults to latest.
           default: latest
           required: false
       title: Agent rebuild (${{ init.ref-name }})
@@ -252,7 +252,7 @@ tasks:
 
       # Configure image metadata
       jq -n '["/controller"]' > $RWX_IMAGE/entrypoint.json
-      echo "65534" > $RWX_IMAGE/user
+      echo "nobody" > $RWX_IMAGE/user
 
   # ── Slack bridge image (minimal static binary) ─────────────────────
   - key: image-slack-bridge
@@ -265,7 +265,7 @@ tasks:
 
       # Configure image metadata
       jq -n '["/slack-bridge"]' > $RWX_IMAGE/entrypoint.json
-      echo "65534" > $RWX_IMAGE/user
+      echo "nobody" > $RWX_IMAGE/user
 
   # ── JIRA bridge image (minimal static binary) ──────────────────────
   - key: image-jira-bridge
@@ -278,7 +278,7 @@ tasks:
 
       # Configure image metadata
       jq -n '["/jira-bridge"]' > $RWX_IMAGE/entrypoint.json
-      echo "65534" > $RWX_IMAGE/user
+      echo "nobody" > $RWX_IMAGE/user
 
   # ── Agent slim image (ubuntu + Node.js + Claude Code + coop + kd + gb) ──
   - key: image-agent-slim
