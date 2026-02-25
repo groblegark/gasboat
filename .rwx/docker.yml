@@ -341,7 +341,7 @@ tasks:
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
-      set -ex
+      set -e
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
       export DEBIAN_FRONTEND=noninteractive
@@ -358,6 +358,7 @@ tasks:
       mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/usr/bin $LAYER/etc
 
       # ── System packages (install on build VM, copy to layer) ─────────
+      echo "=== Installing system packages ==="
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
         curl git git-lfs jq xz-utils ca-certificates screen \
@@ -369,7 +370,7 @@ tasks:
         libcurl3t64-gnutls libicu74 libicu-dev \
         postgresql-client shellcheck
 
-      # Extract installed package file lists and copy into layer.
+      echo "=== Copying package files to layer ==="
       for pkg in git git-man git-lfs curl jq screen ca-certificates xz-utils \
           openssh-client sudo libapparmor1 \
           python3 python3-minimal python3.12 python3.12-minimal \
@@ -391,34 +392,36 @@ tasks:
         done || true
       done
 
-      # Copy shared libs that key binaries link against
+      echo "=== Copying shared libs ==="
       for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen \
           /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc \
           /usr/bin/sudo /usr/bin/psql; do
+        [ -f "$bin" ] || continue
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
-        done
+        done || true
       done
 
-      # gcc internal executables (cc1, cc1plus, lto1) need extra libs
+      echo "=== Copying gcc internals ==="
       find /usr/libexec/gcc -name 'cc1*' -o -name 'lto1' 2>/dev/null | while read -r bin; do
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
-        done
-      done
+        done || true
+      done || true
 
+      echo "=== Copying ICU, headers, misc libs ==="
       # ICU data and libs
       find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
         cp -a "$f" "$LAYER${f}" 2>/dev/null || true
-      done
+      done || true
       # ICU development headers
       if [ -d /usr/include/unicode ]; then
         mkdir -p $LAYER/usr/include/unicode
@@ -442,7 +445,7 @@ tasks:
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
         cp "$f" "$LAYER${f}" 2>/dev/null || true
-      done
+      done || true
       # git-core helpers (git-remote-https, etc.)
       cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
       # gcc internal executables
@@ -458,7 +461,7 @@ tasks:
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
-        done
+        done || true
       done
       # glibc linker scripts reference /lib/ paths but files live in /usr/lib/
       for script in /usr/lib/x86_64-linux-gnu/libc.so /usr/lib/x86_64-linux-gnu/libm.so; do
@@ -470,7 +473,7 @@ tasks:
           [ -f "$src" ] || continue
           mkdir -p "$LAYER$(dirname "$ref")"
           cp "$src" "$LAYER$ref" 2>/dev/null || true
-        done
+        done || true
       done
       # gcc support libraries (crtbegin.o, libgcc.a, etc.)
       for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
@@ -485,7 +488,7 @@ tasks:
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
         cp -a "$f" "$LAYER${f}" 2>/dev/null || true
-      done
+      done || true
       # sudo helper libraries
       mkdir -p $LAYER/usr/libexec/sudo
       cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
@@ -500,6 +503,7 @@ tasks:
       sudo chmod 0440 $LAYER/etc/sudoers.d/agent
       sudo cp /etc/sudo.conf $LAYER/etc/sudo.conf 2>/dev/null || true
 
+      echo "=== Installing Node.js ==="
       # ── Node.js v24 ──────────────────────────────────────────────────
       NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" \
         | jq -r '[.[] | select(.version | startswith("v24."))][0].version')
@@ -516,6 +520,7 @@ tasks:
         -o $LAYER/usr/local/bin/kubectl
       chmod +x $LAYER/usr/local/bin/kubectl
 
+      echo "=== Installing Go + gopls ==="
       # ── Go + gopls ──────────────────────────────────────────────────
       GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" \
         | jq -r '[.[] | select(.version | startswith("go1.25"))][0].version')
@@ -528,6 +533,7 @@ tasks:
       ln -sf /usr/local/go/bin/gofmt $LAYER/usr/local/bin/gofmt
       ln -sf /usr/local/go/bin/gopls $LAYER/usr/local/bin/gopls
 
+      echo "=== Installing Rust toolchain ==="
       # ── Rust toolchain ──────────────────────────────────────────────
       export RUSTUP_HOME=$LAYER/usr/local/rustup CARGO_HOME=$LAYER/usr/local/cargo
       curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -640,6 +646,7 @@ tasks:
         -o $LAYER/usr/local/bin/hadolint
       chmod +x $LAYER/usr/local/bin/hadolint
 
+      echo "=== Installing Playwright + Chromium ==="
       # ── Playwright + Chromium ───────────────────────────────────────
       # Install playwright system deps on build VM first
       sudo apt-get -y install --no-install-recommends \
@@ -670,7 +677,7 @@ tasks:
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
-        done
+        done || true
       done
       # Install Playwright + browser to layer
       PLAYWRIGHT_VERSION=1.50.1
@@ -678,6 +685,7 @@ tasks:
       PLAYWRIGHT_BROWSERS_PATH=$LAYER/ms-playwright $LAYER/usr/local/bin/npx playwright install chromium
       chmod -R 777 $LAYER/ms-playwright
 
+      echo "=== Installing project binaries + metadata ==="
       # ── Project binaries (gb, coop, kd) ─────────────────────────────
       cp ${{ tasks.build-gb.artifacts.gb-binary }} $LAYER/usr/local/bin/gb
       cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
@@ -713,6 +721,7 @@ tasks:
       sudo chown root:root $LAYER/etc/sudo.conf 2>/dev/null || true
       sudo chown -R 1000:1000 $LAYER/home/agent
 
+      echo "=== Creating tar and pushing ==="
       # ── Create tar and push ─────────────────────────────────────────
       sudo tar -cf /tmp/layer.tar -C $LAYER .
 
