@@ -277,6 +277,11 @@ func parseConfig() *config {
 		dashEnabled = true
 	}
 
+	threadingMode := os.Getenv("SLACK_THREADING_MODE")
+	if threadingMode == "" {
+		threadingMode = "flat"
+	}
+
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
 		slackBotToken:      os.Getenv("SLACK_BOT_TOKEN"),
@@ -287,6 +292,8 @@ func parseConfig() *config {
 		logLevel:           envOrDefault("LOG_LEVEL", "info"),
 		statePath:          envOrDefault("STATE_PATH", "/tmp/slack-bridge-state.json"),
 		debug:              os.Getenv("DEBUG") == "true" || os.Getenv("LOG_LEVEL") == "debug",
+
+		threadingMode: threadingMode,
 
 		dashboardEnabled:  dashEnabled,
 		dashboardChannel:  dashChannel,
