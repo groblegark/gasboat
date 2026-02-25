@@ -1,0 +1,76 @@
+# Helm chart CI/CD — auto-publishes on v* tags, manual lint via CLI.
+# Lint manually: rwx run .rwx/helm.yml --init commit-sha=$(git rev-parse HEAD) --wait
+on:
+  github:
+    push:
+      if: ${{ starts-with(event.git.tag, 'v') }}
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: ${{ event.git.ref }}
+      status-checks:
+        name: Helm
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+      ref-name: cli
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/gasboat.git
+      ref: ${{ init.commit-sha }}
+
+  # ── Helm installation (cached until version changes) ────────────────
+  - key: helm-setup
+    run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    filter:
+      - .rwx/helm-version.lock
+
+  # ── GHCR login (needed to push charts to oci://ghcr.io) ────────────
+  - key: helm-login
+    use: helm-setup
+    run: |
+      echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Helm lint (only when charts change) ─────────────────────────────
+  - key: helm-lint
+    use: [code, helm-setup]
+    run: |
+      for chart in helm/*/; do
+        if [ -f "$chart/Chart.yaml" ]; then
+          echo "=== Linting $chart ==="
+          helm lint "$chart"
+          helm template "$(basename $chart)" "$chart" > /dev/null
+        fi
+      done
+    filter:
+      - helm/*/Chart.yaml
+      - helm/*/values.yaml
+      - helm/*/templates/**
+
+  # ── Helm package & publish (tag pushes only) ────────────────────────
+  - key: helm-publish
+    use: [helm-lint, helm-login]
+    if: ${{ init.ref-name != 'cli' }}
+    run: |
+      for chart in helm/*/; do
+        if [ -f "$chart/Chart.yaml" ]; then
+          name=$(basename "$chart")
+          version=$(grep '^version:' "$chart/Chart.yaml" | awk '{print $2}')
+          echo "Publishing $name v$version..."
+          helm package "$chart" --destination /tmp/helm-packages
+          helm push "/tmp/helm-packages/${name}-${version}.tgz" "oci://ghcr.io/groblegark/charts"
+          echo "Published: oci://ghcr.io/groblegark/charts/${name}:${version}"
+        fi
+      done
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}

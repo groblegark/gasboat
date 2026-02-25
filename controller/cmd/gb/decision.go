@@ -337,12 +337,6 @@ func printDecisionResult(id string) error {
 	return nil
 }
 
-// decisionField extracts a field from a BeadDetail's Fields map.
-// Used by yield.go for checking decision state.
-func decisionField(b *beadsapi.BeadDetail, key string) string {
-	return b.Fields[key]
-}
-
 // senderFromLabels extracts the sender name from a "from:<name>" label.
 func senderFromLabels(labels []string) string {
 	for _, l := range labels {

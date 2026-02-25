@@ -16,8 +16,3 @@ func printJSON(v any) {
 	fmt.Println(string(data))
 }
 
-// fatalf prints an error message to stderr and exits with code 1.
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
-	os.Exit(1)
-}
