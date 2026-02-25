@@ -1,27 +1,22 @@
-# OCI image builds for gasboat services — RWX native (no Dockerfiles).
-#
-# Uses $RWX_IMAGE for image metadata instead of inline Dockerfiles.
-# Images are pushed via `rwx image build --push-to` from the CLI.
-# The build VM uses rwx/base 1.0.0; the $RWX_IMAGE output defines
-# the final container filesystem and metadata.
+# OCI image builds for gasboat services — crane-based push to GHCR.
 #
 # Architecture:
 #   build-* tasks     -> compile binaries as artifacts (cached by filters)
 #   download-* tasks  -> fetch external deps as cached artifacts
-#   image-*  tasks    -> install runtime deps + configure $RWX_IMAGE metadata
-#   Push is handled by rwx image build --target <key> --push-to <ref>
+#   push-*  tasks     -> crane-append layers to ubuntu:24.04, push to GHCR
 #
 # Images produced:
-#   image-controller   -> ghcr.io/groblegark/gasboat/controller
-#   image-agent-slim   -> ghcr.io/groblegark/gasboat/agent (slim: git, Node, Claude, coop, kd, gb)
-#   image-agent        -> ghcr.io/groblegark/gasboat/agent (omnibus: slim + Go, Rust, CLIs, etc.)
-#   image-slack-bridge -> ghcr.io/groblegark/gasboat/slack-bridge
-#   image-jira-bridge  -> ghcr.io/groblegark/gasboat/jira-bridge
+#   push-controller    -> ghcr.io/groblegark/gasboat/controller
+#   push-agent         -> ghcr.io/groblegark/gasboat/agent (omnibus)
+#   push-slack-bridge  -> ghcr.io/groblegark/gasboat/slack-bridge
+#   push-jira-bridge   -> ghcr.io/groblegark/gasboat/jira-bridge
+#
+# For manual push of a single image:
+#   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-agent
 #
 # OPTIMIZATIONS:
 # - Filter directives on Go mod downloads (cached by go.mod/go.sum)
 # - Parallel builds with filter caching for dependency stability
-# - RWX native layer caching replaces Docker BuildKit
 
 on:
   github:
@@ -67,7 +62,7 @@ on:
           default: latest
           required: false
       title: Agent rebuild (${{ init.ref-name }})
-      target: image-agent
+      target: push-agent
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
@@ -236,341 +231,501 @@ tasks:
           path: kd-bin
 
   # ═══════════════════════════════════════════════════════════════════════
-  # Image tasks — RWX native images via $RWX_IMAGE.
-  # These define the container filesystem and metadata.
-  # Push via: rwx image build -f .rwx/docker.yml --target <key> --push-to <ref>
+  # Push tasks — crane-append layers to ubuntu:24.04, push to GHCR.
+  # Each push task builds a minimal OCI layer and pushes directly.
   # ═══════════════════════════════════════════════════════════════════════
 
-  # ── Controller image (minimal static binary) ───────────────────────
-  - key: image-controller
+  # ── Push controller (minimal static binary) ──────────────────────────
+  - key: push-controller
     use: [build-controller]
     if: ${{ init.ref-name != 'pr' }}
+    cache: false
     run: |
-      # Install binary
-      sudo cp ${{ tasks.build-controller.artifacts.controller-binary }} /controller
-      sudo chmod 755 /controller
+      set -ex
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
 
-      # Configure image metadata
-      jq -n '["/controller"]' > $RWX_IMAGE/entrypoint.json
-      echo "nobody" > $RWX_IMAGE/user
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
 
-  # ── Slack bridge image (minimal static binary) ─────────────────────
-  - key: image-slack-bridge
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Build layer: static binary + CA certs
+      mkdir -p /tmp/layer/etc/ssl/certs
+      cp ${{ tasks.build-controller.artifacts.controller-binary }} /tmp/layer/controller
+      chmod 755 /tmp/layer/controller
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      # Push
+      REPO="ghcr.io/groblegark/gasboat/controller"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane mutate "${REPO}:${TAG}" --entrypoint /controller --user nobody -t "${REPO}:${TAG}"
+      crane tag "${REPO}:${TAG}" latest
+      echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Push slack-bridge (minimal static binary) ────────────────────────
+  - key: push-slack-bridge
     use: [build-slack-bridge]
     if: ${{ init.ref-name != 'pr' }}
+    cache: false
     run: |
-      # Install binary
-      sudo cp ${{ tasks.build-slack-bridge.artifacts.slack-bridge-binary }} /slack-bridge
-      sudo chmod 755 /slack-bridge
+      set -ex
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
 
-      # Configure image metadata
-      jq -n '["/slack-bridge"]' > $RWX_IMAGE/entrypoint.json
-      echo "nobody" > $RWX_IMAGE/user
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
-  # ── JIRA bridge image (minimal static binary) ──────────────────────
-  - key: image-jira-bridge
+      mkdir -p /tmp/layer/etc/ssl/certs
+      cp ${{ tasks.build-slack-bridge.artifacts.slack-bridge-binary }} /tmp/layer/slack-bridge
+      chmod 755 /tmp/layer/slack-bridge
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      REPO="ghcr.io/groblegark/gasboat/slack-bridge"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane mutate "${REPO}:${TAG}" --entrypoint /slack-bridge --user nobody -t "${REPO}:${TAG}"
+      crane tag "${REPO}:${TAG}" latest
+      echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Push jira-bridge (minimal static binary) ─────────────────────────
+  - key: push-jira-bridge
     use: [build-jira-bridge]
     if: ${{ init.ref-name != 'pr' }}
+    cache: false
     run: |
-      # Install binary
-      sudo cp ${{ tasks.build-jira-bridge.artifacts.jira-bridge-binary }} /jira-bridge
-      sudo chmod 755 /jira-bridge
-
-      # Configure image metadata
-      jq -n '["/jira-bridge"]' > $RWX_IMAGE/entrypoint.json
-      echo "nobody" > $RWX_IMAGE/user
-
-  # ── Agent slim image (ubuntu + Node.js + Claude Code + coop + kd + gb) ──
-  - key: image-agent-slim
-    use: [build-gb, download-coop, download-kd, code]
-    if: ${{ init.ref-name != 'pr' }}
-    run: |
-      export DEBIAN_FRONTEND=noninteractive
-
-      # WORKAROUND: Run ALL apt and sudo operations in a single sudo bash -c block.
-      # On multi-layer overlayfs (4+ dependency layers), dpkg operations corrupt
-      # /etc/shadow visibility, breaking all subsequent sudo calls.
-      sudo bash -c '
-        set -e
-
-        # System packages (minimal, matching slim Dockerfile)
-        apt-get -y update
-        apt-get -y install --no-install-recommends \
-          curl git git-lfs jq xz-utils ca-certificates screen \
-          openssh-client sudo \
-          python3 python3-pip python3-venv
-        ln -sf /usr/bin/python3 /usr/bin/python
-
-        # Node.js v24 (binary tarball)
-        NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" \
-          | jq -r "[.[] | select(.version | startswith(\"v24.\"))][0].version")
-        [ "${NODE_FULL}" != "null" ] && [ -n "${NODE_FULL}" ] && \
-        curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
-          | tar -xJ --strip-components=1 -C /usr/local
-
-        # Claude Code
-        npm install -g @anthropic-ai/claude-code
-
-        # kubectl
-        KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
-        curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
-          -o /usr/local/bin/kubectl
-        chmod +x /usr/local/bin/kubectl
-
-        # Agent user
-        sed -i "s/^ubuntu:/agent:/" /etc/passwd
-        sed -i "s|/home/ubuntu|/home/agent|" /etc/passwd
-        sed -i "s|/bin/sh|/bin/bash|" /etc/passwd
-        sed -i "s/^ubuntu:/agent:/" /etc/group
-        mkdir -p /home/agent/workspace
-        chown -R 1000:1000 /home/agent
-        echo "agent ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/agent
-        chmod 0440 /etc/sudoers.d/agent
-
-        # Clean up
-        apt-get clean
-        rm -rf /var/lib/apt/lists/*
-      '
-
-      # Install binaries from artifacts
-      sudo cp ${{ tasks.build-gb.artifacts.gb-binary }} /usr/local/bin/gb
-      sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
-      sudo cp ${{ tasks.download-kd.artifacts.kd-binaries }}/kd /usr/local/bin/kd
-      sudo chmod +x /usr/local/bin/gb /usr/local/bin/coop /usr/local/bin/kd
-
-      # Install hook scripts
-      sudo mkdir -p /hooks
-      sudo cp images/agent/hooks/*.sh /hooks/
-      sudo chmod +x /hooks/*.sh
-
-      # Install claudeless mock scenarios
-      sudo mkdir -p /scenarios
-      sudo cp images/agent/scenarios/*.toml /scenarios/
-
-      # Install entrypoint
-      sudo cp images/agent/entrypoint.sh /entrypoint.sh
-      sudo chmod +x /entrypoint.sh
-
-      # Configure image metadata (no sudo needed)
-      jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
-      echo "agent" > $RWX_IMAGE/user
-      echo "/home/agent/workspace" > $RWX_IMAGE/workspace
-
-  # ── Agent omnibus image (slim + Go, Rust, CLIs, dev tools) ──────────
-  - key: image-agent
-    use: [image-agent-slim]
-    if: ${{ init.ref-name != 'pr' }}
-    run: |
-      export DEBIAN_FRONTEND=noninteractive
-
-      # Run ALL apt and sudo operations in a single sudo bash -c block.
-      # WORKAROUND: dpkg operations corrupt /etc/shadow on RWX overlayfs,
-      # breaking subsequent sudo re-authentication.
-      sudo bash -c '
-        set -e
-
-        # Additional system packages for omnibus
-        apt-get -y update
-        apt-get -y install --no-install-recommends \
-          make unzip xz-utils \
-          gcc g++ libc6-dev binutils \
-          pkg-config libssl-dev \
-          libcurl3t64-gnutls libicu74 libicu-dev \
-          postgresql-client shellcheck
-
-        # Go + gopls
-        GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" \
-          | jq -r "[.[] | select(.version | startswith(\"go1.25\"))][0].version")
-        [ "${GO_LATEST}" != "null" ] && [ -n "${GO_LATEST}" ] && \
-        curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C /usr/local -xz
-        GOPATH=/tmp/go /usr/local/go/bin/go install golang.org/x/tools/gopls@latest
-        mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
-        rm -rf /tmp/go
-        export PATH="/usr/local/go/bin:${PATH}"
-
-        # Rust toolchain (compiler + cargo + rust-analyzer)
-        export RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo
-        export PATH="${CARGO_HOME}/bin:${PATH}"
-        curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-          | sh -s -- -y --default-toolchain stable --profile default \
-              --component rust-analyzer
-        chmod -R a+rw ${RUSTUP_HOME} ${CARGO_HOME}
-
-        # GitHub CLI
-        GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" \
-          | jq -r .tag_name | sed "s/^v//")
-        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
-          | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
-
-        # GitLab CLI
-        GLAB_VERSION=$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases" \
-          | jq -r ".[0].tag_name | ltrimstr(\"v\")")
-        curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" \
-          | tar -xz --strip-components=1 -C /usr/local/bin bin/glab
-
-        # Docker CLI (client only)
-        curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" \
-          | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
-
-        # AWS CLI
-        curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
-        unzip -q /tmp/awscli.zip -d /tmp
-        /tmp/aws/install --install-dir /opt/aws-cli --bin-dir /usr/local/bin
-        AWSVER=$(ls /opt/aws-cli/v2/ | grep -v current | head -1)
-        ln -sfn "/opt/aws-cli/v2/${AWSVER}" /opt/aws-cli/v2/current
-        rm -rf /tmp/awscli.zip /tmp/aws
-
-        # Claudeless (Claude CLI simulator for E2E testing)
-        curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" \
-          | tar -xz -C /usr/local/bin claudeless
-        chmod +x /usr/local/bin/claudeless
-
-        # uv (Python package manager)
-        curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
-        mv /root/.local/bin/uv /usr/local/bin/uv
-        mv /root/.local/bin/uvx /usr/local/bin/uvx
-
-        # Bun
-        export BUN_INSTALL=/usr/local/bun
-        curl -fsSL https://bun.sh/install | bash
-        ln -sf ${BUN_INSTALL}/bin/bun /usr/local/bin/bun
-        ln -sf ${BUN_INSTALL}/bin/bunx /usr/local/bin/bunx
-
-        # Task CLI (Taskfile runner)
-        GOPATH=/tmp/go /usr/local/go/bin/go install github.com/go-task/task/v3/cmd/task@latest
-        mv /tmp/go/bin/task /usr/local/bin/task
-        rm -rf /tmp/go
-
-        # Helm + plugins
-        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-        export HELM_PLUGINS=/usr/local/share/helm/plugins
-        helm plugin install https://github.com/helm-unittest/helm-unittest
-        helm plugin install https://github.com/chartmuseum/helm-push
-
-        # Terraform + Terragrunt
-        TERRAFORM_VERSION=1.11.3
-        TERRAGRUNT_VERSION=0.77.11
-        curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
-          -o /tmp/terraform.zip
-        unzip -q /tmp/terraform.zip -d /usr/local/bin
-        rm /tmp/terraform.zip
-        curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
-          -o /usr/local/bin/terragrunt
-        chmod +x /usr/local/bin/terragrunt
-
-        # golangci-lint
-        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
-          | sh -s -- -b /usr/local/bin "v1.64.8"
-
-        # quench (code quality checker)
-        ${CARGO_HOME}/bin/cargo install quench --git https://github.com/alfredjeanlab/quench
-        mv ${CARGO_HOME}/bin/quench /usr/local/bin/quench
-
-        # yq (YAML processor)
-        YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
-        curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
-          -o /usr/local/bin/yq
-        chmod +x /usr/local/bin/yq
-
-        # stern (K8s log streaming)
-        STERN_VERSION=1.30.0
-        curl -fsSL "https://github.com/stern/stern/releases/download/v${STERN_VERSION}/stern_${STERN_VERSION}_linux_amd64.tar.gz" \
-          | tar -xz -C /usr/local/bin stern
-
-        # hadolint (Dockerfile linter)
-        curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" \
-          -o /usr/local/bin/hadolint
-        chmod +x /usr/local/bin/hadolint
-
-        # Playwright + Chromium (headless browser automation)
-        PLAYWRIGHT_VERSION=1.50.1
-        export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-        npm install -g playwright@${PLAYWRIGHT_VERSION}
-        npx playwright install --with-deps chromium
-        rm -rf /var/lib/apt/lists/* /tmp/*
-        npm cache clean --force
-        chmod -R 777 ${PLAYWRIGHT_BROWSERS_PATH}
-
-        # Clean up
-        apt-get clean
-        rm -rf /var/lib/apt/lists/*
-      '
-
-      # Image metadata stays the same as slim (entrypoint, user, workspace)
-      # — inherited from image-agent-slim via the `use` dependency.
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # Push tasks — publish images to GHCR
-  # ═══════════════════════════════════════════════════════════════════════
-
-  # ── Push controller ─────────────────────────────────────────────────
-  - key: push-controller
-    use: [image-controller]
-    if: ${{ init.ref-name != 'pr' }}
-    run: |
+      set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
 
-      rwx publish image-controller \
-        --registry ghcr.io \
-        --repository groblegark/gasboat/controller \
-        --tag "${TAG}" \
-        --username groblegark \
-        --password "${GHCR_TOKEN}"
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      mkdir -p /tmp/layer/etc/ssl/certs
+      cp ${{ tasks.build-jira-bridge.artifacts.jira-bridge-binary }} /tmp/layer/jira-bridge
+      chmod 755 /tmp/layer/jira-bridge
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      REPO="ghcr.io/groblegark/gasboat/jira-bridge"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane mutate "${REPO}:${TAG}" --entrypoint /jira-bridge --user nobody -t "${REPO}:${TAG}"
+      crane tag "${REPO}:${TAG}" latest
+      echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
     env:
       REF_NAME: ${{ init.ref-name }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
-  # ── Push agent (omnibus) ────────────────────────────────────────────
+  # ── Push agent (omnibus: full dev toolchain) ─────────────────────────
+  # Single image with everything an agent needs: git, Node, Claude Code,
+  # Go, Rust, CLIs, dev tools, gb, coop, kd. No separate slim variant.
   - key: push-agent
-    use: [image-agent]
+    use: [code, build-gb, download-coop, download-kd]
     if: ${{ init.ref-name != 'pr' }}
+    cache: false
     run: |
+      set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
+      export DEBIAN_FRONTEND=noninteractive
 
-      rwx publish image-agent \
-        --registry ghcr.io \
-        --repository groblegark/gasboat/agent \
-        --tag "${TAG}" \
-        --username groblegark \
-        --password "${GHCR_TOKEN}"
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      LAYER=/tmp/layer
+      mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/usr/bin $LAYER/etc
+
+      # ── System packages (install on build VM, copy to layer) ─────────
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        curl git git-lfs jq xz-utils ca-certificates screen \
+        openssh-client sudo \
+        python3 python3-pip python3-venv \
+        make unzip \
+        gcc g++ libc6-dev binutils \
+        pkg-config libssl-dev \
+        libcurl3t64-gnutls libicu74 libicu-dev \
+        postgresql-client shellcheck
+
+      # Extract installed package file lists and copy into layer.
+      for pkg in git git-man git-lfs curl jq screen ca-certificates xz-utils \
+          openssh-client sudo libapparmor1 \
+          python3 python3-minimal python3.12 python3.12-minimal \
+          python3-pip python3-venv python3.12-venv \
+          libpython3.12-stdlib libpython3.12-minimal \
+          make gcc g++ unzip binutils shellcheck \
+          gcc-14 g++-14 cpp-14 libgcc-14-dev \
+          libc6-dev linux-libc-dev binutils-x86-64-linux-gnu \
+          pkg-config libssl-dev \
+          libcurl4t64 libcurl3t64-gnutls \
+          libnghttp2-14 libbrotli1 libpsl5t64 libonig5 libexpat1 \
+          libicu74 libicu-dev icu-devtools \
+          postgresql-client libpq5; do
+        dpkg -L "$pkg" 2>/dev/null | while read -r f; do
+          [ -f "$f" ] || continue
+          dir="$LAYER$(dirname "$f")"
+          mkdir -p "$dir"
+          cp "$f" "$LAYER${f}" 2>/dev/null || true
+        done || true
+      done
+
+      # Copy shared libs that key binaries link against
+      for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen \
+          /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc \
+          /usr/bin/sudo /usr/bin/psql; do
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
+
+      # gcc internal executables (cc1, cc1plus, lto1) need extra libs
+      find /usr/libexec/gcc -name 'cc1*' -o -name 'lto1' 2>/dev/null | while read -r bin; do
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
+
+      # ICU data and libs
+      find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
+      done
+      # ICU development headers
+      if [ -d /usr/include/unicode ]; then
+        mkdir -p $LAYER/usr/include/unicode
+        cp -a /usr/include/unicode/* $LAYER/usr/include/unicode/ 2>/dev/null || true
+      fi
+      # C++ standard library headers (needed by ICU regex)
+      for d in /usr/include/c++/14 /usr/include/c++/13; do
+        if [ -d "$d" ]; then
+          mkdir -p "$LAYER$d"
+          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
+          target_dir="/usr/include/x86_64-linux-gnu/c++/$(basename $d)"
+          if [ -d "$target_dir" ]; then
+            mkdir -p "$LAYER$target_dir"
+            cp -a "$target_dir"/* "$LAYER$target_dir/" 2>/dev/null || true
+          fi
+          break
+        fi
+      done
+      # ICU pkg-config files
+      find /usr/lib/x86_64-linux-gnu/pkgconfig -name 'icu*.pc' 2>/dev/null | while read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp "$f" "$LAYER${f}" 2>/dev/null || true
+      done
+      # git-core helpers (git-remote-https, etc.)
+      cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
+      # gcc internal executables
+      if [ -d /usr/libexec/gcc ]; then
+        mkdir -p $LAYER/usr/libexec
+        cp -r /usr/libexec/gcc $LAYER/usr/libexec/ 2>/dev/null || true
+      fi
+      # binutils (as, ld, ar, nm)
+      for bin in /usr/bin/x86_64-linux-gnu-as /usr/bin/x86_64-linux-gnu-ld /usr/bin/as /usr/bin/ld; do
+        [ -f "$bin" ] || continue
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
+      # glibc linker scripts reference /lib/ paths but files live in /usr/lib/
+      for script in /usr/lib/x86_64-linux-gnu/libc.so /usr/lib/x86_64-linux-gnu/libm.so; do
+        [ -f "$script" ] || continue
+        grep -oP '/lib/x86_64-linux-gnu/\S+' "$script" 2>/dev/null | tr -d ')' | while read -r ref; do
+          [ -f "$LAYER$ref" ] && continue
+          src="/usr${ref}"
+          [ -f "$src" ] || src="$ref"
+          [ -f "$src" ] || continue
+          mkdir -p "$LAYER$(dirname "$ref")"
+          cp "$src" "$LAYER$ref" 2>/dev/null || true
+        done
+      done
+      # gcc support libraries (crtbegin.o, libgcc.a, etc.)
+      for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
+        if [ -d "$d" ]; then
+          mkdir -p "$LAYER$d"
+          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
+          break
+        fi
+      done
+      # libcurl-gnutls symlinks (git-remote-https)
+      find /usr/lib/x86_64-linux-gnu -name 'libcurl-gnutls*' 2>/dev/null | while read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
+      done
+      # sudo helper libraries
+      mkdir -p $LAYER/usr/libexec/sudo
+      cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
+      # Python symlink
+      ln -sf python3 $LAYER/usr/bin/python
+
+      # Sudoers config
+      sudo mkdir -p $LAYER/etc/sudoers.d
+      printf 'Defaults   env_reset\nDefaults   secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"\nroot ALL=(ALL:ALL) ALL\n#includedir /etc/sudoers.d\n' | sudo tee $LAYER/etc/sudoers > /dev/null
+      sudo chmod 0440 $LAYER/etc/sudoers
+      printf 'agent ALL=(ALL) NOPASSWD: ALL\n' | sudo tee $LAYER/etc/sudoers.d/agent > /dev/null
+      sudo chmod 0440 $LAYER/etc/sudoers.d/agent
+      sudo cp /etc/sudo.conf $LAYER/etc/sudo.conf 2>/dev/null || true
+
+      # ── Node.js v24 ──────────────────────────────────────────────────
+      NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" \
+        | jq -r '[.[] | select(.version | startswith("v24."))][0].version')
+      [ "${NODE_FULL}" != "null" ] && [ -n "${NODE_FULL}" ] && \
+      curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
+        | tar -xJ --strip-components=1 -C $LAYER/usr/local
+
+      # ── Claude Code ──────────────────────────────────────────────────
+      PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local @anthropic-ai/claude-code
+
+      # ── kubectl ──────────────────────────────────────────────────────
+      KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        -o $LAYER/usr/local/bin/kubectl
+      chmod +x $LAYER/usr/local/bin/kubectl
+
+      # ── Go + gopls ──────────────────────────────────────────────────
+      GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" \
+        | jq -r '[.[] | select(.version | startswith("go1.25"))][0].version')
+      curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $LAYER/usr/local -xz
+      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
+      cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
+      chmod -R u+w /tmp/gopath 2>/dev/null || true
+      rm -rf /tmp/gopath
+      ln -sf /usr/local/go/bin/go $LAYER/usr/local/bin/go
+      ln -sf /usr/local/go/bin/gofmt $LAYER/usr/local/bin/gofmt
+      ln -sf /usr/local/go/bin/gopls $LAYER/usr/local/bin/gopls
+
+      # ── Rust toolchain ──────────────────────────────────────────────
+      export RUSTUP_HOME=$LAYER/usr/local/rustup CARGO_HOME=$LAYER/usr/local/cargo
+      curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile default \
+            --component rust-analyzer
+      chmod -R a+rw $LAYER/usr/local/rustup $LAYER/usr/local/cargo
+
+      # ── Rust Analyzer (standalone LSP) ──────────────────────────────
+      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
+        | gunzip > $LAYER/usr/local/bin/rust-analyzer
+      chmod +x $LAYER/usr/local/bin/rust-analyzer
+
+      # ── GitHub CLI ──────────────────────────────────────────────────
+      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" \
+        | jq -r .tag_name | sed "s/^v//")
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz --strip-components=2 -C $LAYER/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
+
+      # ── GitLab CLI ──────────────────────────────────────────────────
+      GLAB_VERSION=$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases" \
+        | jq -r '.[0].tag_name | ltrimstr("v")')
+      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz --strip-components=1 -C $LAYER/usr/local/bin bin/glab
+
+      # ── Docker CLI (client only) ────────────────────────────────────
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" \
+        | tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
+
+      # ── AWS CLI ─────────────────────────────────────────────────────
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
+      mkdir -p $LAYER/opt/aws-cli
+      cp -r /tmp/aws-install/* $LAYER/opt/aws-cli/
+      rm -rf $LAYER/opt/aws-cli/v2/current
+      AWS_VER=$(ls $LAYER/opt/aws-cli/v2/ | head -1)
+      ln -sf "$AWS_VER" $LAYER/opt/aws-cli/v2/current
+      rm -rf $LAYER/opt/aws-cli/bin
+      mkdir -p $LAYER/opt/aws-cli/bin
+      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/opt/aws-cli/bin/aws
+      ln -sf /opt/aws-cli/v2/current/bin/aws_completer $LAYER/opt/aws-cli/bin/aws_completer
+      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/usr/local/bin/aws
+      rm -rf /tmp/awscli.zip /tmp/aws /tmp/aws-install /tmp/aws-bin
+
+      # ── RWX CLI ─────────────────────────────────────────────────────
+      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
+        -o $LAYER/usr/local/bin/rwx
+      chmod +x $LAYER/usr/local/bin/rwx
+
+      # ── Claudeless (Claude CLI simulator) ───────────────────────────
+      curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" \
+        | tar -xz -C $LAYER/usr/local/bin claudeless
+      chmod +x $LAYER/usr/local/bin/claudeless
+
+      # ── uv (Python package manager) ─────────────────────────────────
+      curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
+      mv ~/.local/bin/uv $LAYER/usr/local/bin/uv
+      mv ~/.local/bin/uvx $LAYER/usr/local/bin/uvx
+
+      # ── Bun ─────────────────────────────────────────────────────────
+      BUN_INSTALL=$LAYER/usr/local/bun curl -fsSL https://bun.sh/install | bash
+      ln -sf /usr/local/bun/bin/bun $LAYER/usr/local/bin/bun
+      ln -sf /usr/local/bun/bin/bunx $LAYER/usr/local/bin/bunx
+
+      # ── Task CLI (Taskfile runner) ──────────────────────────────────
+      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install github.com/go-task/task/v3/cmd/task@latest
+      mv /tmp/gopath/bin/task $LAYER/usr/local/bin/task
+      rm -rf /tmp/gopath
+
+      # ── Helm + plugins ──────────────────────────────────────────────
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
+      cp /usr/local/bin/helm $LAYER/usr/local/bin/helm
+      HELM_DATA_HOME=$LAYER/usr/local/share/helm helm plugin install https://github.com/helm-unittest/helm-unittest
+      HELM_DATA_HOME=$LAYER/usr/local/share/helm helm plugin install https://github.com/chartmuseum/helm-push
+
+      # ── Terraform + Terragrunt ──────────────────────────────────────
+      TERRAFORM_VERSION=1.11.3
+      TERRAGRUNT_VERSION=0.77.11
+      curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" \
+        -o /tmp/terraform.zip
+      unzip -q /tmp/terraform.zip -d $LAYER/usr/local/bin
+      rm /tmp/terraform.zip
+      curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_amd64" \
+        -o $LAYER/usr/local/bin/terragrunt
+      chmod +x $LAYER/usr/local/bin/terragrunt
+
+      # ── golangci-lint ───────────────────────────────────────────────
+      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+        | sh -s -- -b $LAYER/usr/local/bin "v1.64.8"
+
+      # ── quench (code quality checker) ───────────────────────────────
+      PATH="$LAYER/usr/local/cargo/bin:$PATH" cargo install quench \
+        --git https://github.com/alfredjeanlab/quench --root /tmp/quench-out
+      cp /tmp/quench-out/bin/quench $LAYER/usr/local/bin/quench
+      rm -rf /tmp/quench-out
+
+      # ── yq (YAML processor) ─────────────────────────────────────────
+      YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
+      curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+        -o $LAYER/usr/local/bin/yq
+      chmod +x $LAYER/usr/local/bin/yq
+
+      # ── stern (K8s log streaming) ───────────────────────────────────
+      STERN_VERSION=1.30.0
+      curl -fsSL "https://github.com/stern/stern/releases/download/v${STERN_VERSION}/stern_${STERN_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz -C $LAYER/usr/local/bin stern
+
+      # ── hadolint (Dockerfile linter) ────────────────────────────────
+      curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" \
+        -o $LAYER/usr/local/bin/hadolint
+      chmod +x $LAYER/usr/local/bin/hadolint
+
+      # ── Playwright + Chromium ───────────────────────────────────────
+      # Install playwright system deps on build VM first
+      sudo apt-get -y install --no-install-recommends \
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+        libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+        libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
+        libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+        libxrandr2 fonts-noto-color-emoji libfontconfig1 libfreetype6
+      # Copy playwright system libs to layer
+      for pkg in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+          libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+          libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
+          libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
+          libxrandr2 libfontconfig1 libfreetype6 fonts-noto-color-emoji; do
+        dpkg -L "$pkg" 2>/dev/null | while read -r f; do
+          [ -f "$f" ] || continue
+          dir="$LAYER$(dirname "$f")"
+          mkdir -p "$dir"
+          cp "$f" "$LAYER${f}" 2>/dev/null || true
+        done || true
+      done
+      # Copy shared libs for Playwright graphics stack
+      for bin in /usr/lib/x86_64-linux-gnu/libcairo.so* /usr/lib/x86_64-linux-gnu/libpango*.so* \
+          /usr/lib/x86_64-linux-gnu/libgdk*.so* /usr/lib/x86_64-linux-gnu/libgtk*.so*; do
+        [ -f "$bin" ] || continue
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
+      # Install Playwright + browser to layer
+      PLAYWRIGHT_VERSION=1.50.1
+      PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local playwright@${PLAYWRIGHT_VERSION}
+      PLAYWRIGHT_BROWSERS_PATH=$LAYER/ms-playwright $LAYER/usr/local/bin/npx playwright install chromium
+      chmod -R 777 $LAYER/ms-playwright
+
+      # ── Project binaries (gb, coop, kd) ─────────────────────────────
+      cp ${{ tasks.build-gb.artifacts.gb-binary }} $LAYER/usr/local/bin/gb
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
+      cp ${{ tasks.download-kd.artifacts.kd-binaries }}/kd $LAYER/usr/local/bin/kd
+      chmod +x $LAYER/usr/local/bin/gb $LAYER/usr/local/bin/coop $LAYER/usr/local/bin/kd
+
+      # ── Hook scripts, scenarios, entrypoint ─────────────────────────
+      mkdir -p $LAYER/hooks $LAYER/scenarios
+      cp images/agent/hooks/*.sh $LAYER/hooks/
+      chmod +x $LAYER/hooks/*.sh
+      cp images/agent/scenarios/*.toml $LAYER/scenarios/
+      cp images/agent/entrypoint.sh $LAYER/entrypoint.sh
+      chmod +x $LAYER/entrypoint.sh
+
+      # ── CA certs + version metadata ─────────────────────────────────
+      mkdir -p $LAYER/etc/ssl/certs
+      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
+      echo "${TAG}" > $LAYER/etc/gasboat-version
+
+      # ── Agent user (rename ubuntu→agent, UID 1000) ──────────────────
+      cp /etc/passwd $LAYER/etc/passwd
+      sed -i "s/^ubuntu:/agent:/" $LAYER/etc/passwd
+      sed -i "s|/home/ubuntu|/home/agent|" $LAYER/etc/passwd
+      sed -i "s|/bin/sh|/bin/bash|" $LAYER/etc/passwd
+      cp /etc/group $LAYER/etc/group
+      sed -i "s/^ubuntu:/agent:/" $LAYER/etc/group
+      mkdir -p $LAYER/home/agent/workspace
+
+      # ── Fix ownership ───────────────────────────────────────────────
+      sudo chown root:root $LAYER/usr/bin/sudo 2>/dev/null || true
+      sudo chmod 4755 $LAYER/usr/bin/sudo 2>/dev/null || true
+      sudo chown root:root $LAYER/etc/sudoers $LAYER/etc/sudoers.d 2>/dev/null || true
+      sudo chown root:root $LAYER/etc/sudo.conf 2>/dev/null || true
+      sudo chown -R 1000:1000 $LAYER/home/agent
+
+      # ── Create tar and push ─────────────────────────────────────────
+      sudo tar -cf /tmp/layer.tar -C $LAYER .
+
+      REPO="ghcr.io/groblegark/gasboat/agent"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane mutate "${REPO}:${TAG}" \
+        --entrypoint /entrypoint.sh \
+        --user 1000 \
+        --workdir /home/agent/workspace \
+        -t "${REPO}:${TAG}"
+      crane tag "${REPO}:${TAG}" latest
+      echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
     env:
       REF_NAME: ${{ init.ref-name }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-
-  # ── Push slack-bridge ───────────────────────────────────────────────
-  - key: push-slack-bridge
-    use: [image-slack-bridge]
-    if: ${{ init.ref-name != 'pr' }}
-    run: |
-      TAG="${REF_NAME#refs/tags/}"
-      TAG="${TAG#refs/heads/}"
-
-      rwx publish image-slack-bridge \
-        --registry ghcr.io \
-        --repository groblegark/gasboat/slack-bridge \
-        --tag "${TAG}" \
-        --username groblegark \
-        --password "${GHCR_TOKEN}"
-    env:
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-
-  # ── Push jira-bridge ────────────────────────────────────────────────
-  - key: push-jira-bridge
-    use: [image-jira-bridge]
-    if: ${{ init.ref-name != 'pr' }}
-    run: |
-      TAG="${REF_NAME#refs/tags/}"
-      TAG="${TAG#refs/heads/}"
-
-      rwx publish image-jira-bridge \
-        --registry ghcr.io \
-        --repository groblegark/gasboat/jira-bridge \
-        --tag "${TAG}" \
-        --username groblegark \
-        --password "${GHCR_TOKEN}"
-    env:
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
