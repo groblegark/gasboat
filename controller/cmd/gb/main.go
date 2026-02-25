@@ -105,6 +105,7 @@ func init() {
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(yieldCmd)
 	rootCmd.AddCommand(readyCmd)
+	rootCmd.AddCommand(primeCmd)
 }
 
 func main() {

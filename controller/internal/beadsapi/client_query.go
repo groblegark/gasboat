@@ -73,11 +73,12 @@ func (c *Client) ListBeadsFiltered(ctx context.Context, q ListBeadsQuery) (*List
 
 // UpdateBeadRequest contains mutable fields for updating a bead.
 type UpdateBeadRequest struct {
-	Title       *string         `json:"title,omitempty"`
-	Description *string         `json:"description,omitempty"`
-	Assignee    *string         `json:"assignee,omitempty"`
-	Notes       *string         `json:"notes,omitempty"`
-	Priority    *int            `json:"priority,omitempty"`
+	Title       *string           `json:"title,omitempty"`
+	Description *string           `json:"description,omitempty"`
+	Assignee    *string           `json:"assignee,omitempty"`
+	Status      *string           `json:"status,omitempty"`
+	Notes       *string           `json:"notes,omitempty"`
+	Priority    *int              `json:"priority,omitempty"`
 	Fields      map[string]string `json:"-"` // Handled separately via UpdateBeadFields
 }
 
@@ -92,6 +93,9 @@ func (c *Client) UpdateBead(ctx context.Context, beadID string, req UpdateBeadRe
 	}
 	if req.Assignee != nil {
 		body["assignee"] = *req.Assignee
+	}
+	if req.Status != nil {
+		body["status"] = *req.Status
 	}
 	if req.Notes != nil {
 		body["notes"] = *req.Notes

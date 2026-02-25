@@ -199,14 +199,17 @@ func (c *Client) CreateBead(ctx context.Context, req CreateBeadRequest) (string,
 
 // BeadDetail represents a full bead returned by the daemon.
 type BeadDetail struct {
-	ID       string            `json:"id"`
-	Title    string            `json:"title"`
-	Type     string            `json:"type"`
-	Status   string            `json:"status"`
-	Assignee string            `json:"assignee"`
-	Labels   []string          `json:"labels"`
-	Notes    string            `json:"notes"`
-	Fields   map[string]string `json:"fields"`
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Type        string            `json:"type"`
+	Status      string            `json:"status"`
+	Assignee    string            `json:"assignee"`
+	Labels      []string          `json:"labels"`
+	Notes       string            `json:"notes"`
+	Fields      map[string]string `json:"fields"`
+	Description string            `json:"description"`
+	CreatedBy   string            `json:"created_by"`
+	DueAt       string            `json:"due_at,omitempty"`
 }
 
 // GetBead fetches a single bead by ID from the daemon.
@@ -313,14 +316,17 @@ func (c *Client) SetConfig(ctx context.Context, key string, value []byte) error 
 
 // beadJSON is the JSON representation of a bead from the HTTP API.
 type beadJSON struct {
-	ID       string          `json:"id"`
-	Title    string          `json:"title"`
-	Type     string          `json:"type"`
-	Status   string          `json:"status"`
-	Assignee string          `json:"assignee"`
-	Labels   []string        `json:"labels"`
-	Notes    string          `json:"notes"`
-	Fields   json.RawMessage `json:"fields"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Type        string          `json:"type"`
+	Status      string          `json:"status"`
+	Assignee    string          `json:"assignee"`
+	Labels      []string        `json:"labels"`
+	Notes       string          `json:"notes"`
+	Fields      json.RawMessage `json:"fields"`
+	Description string          `json:"description"`
+	CreatedBy   string          `json:"created_by"`
+	DueAt       string          `json:"due_at,omitempty"`
 }
 
 // ParseFieldsJSON decodes a raw JSON object into a map[string]string.
@@ -365,14 +371,17 @@ func (b *beadJSON) fieldsMap() map[string]string {
 // toDetail converts a beadJSON to a BeadDetail.
 func (b *beadJSON) toDetail() *BeadDetail {
 	return &BeadDetail{
-		ID:       b.ID,
-		Title:    b.Title,
-		Type:     b.Type,
-		Status:   b.Status,
-		Assignee: b.Assignee,
-		Labels:   b.Labels,
-		Notes:    b.Notes,
-		Fields:   b.fieldsMap(),
+		ID:          b.ID,
+		Title:       b.Title,
+		Type:        b.Type,
+		Status:      b.Status,
+		Assignee:    b.Assignee,
+		Labels:      b.Labels,
+		Notes:       b.Notes,
+		Fields:      b.fieldsMap(),
+		Description: b.Description,
+		CreatedBy:   b.CreatedBy,
+		DueAt:       b.DueAt,
 	}
 }
 
