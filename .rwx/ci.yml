@@ -1,0 +1,132 @@
+# CI — manual only (no auto-trigger on push/PR).
+# Run manually: rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --wait
+on:
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  # ── Clone ──────────────────────────────────────────────────────────────
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/gasboat.git
+      ref: ${{ init.commit-sha }}
+
+  # ── Go toolchain ──────────────────────────────────────────────────────
+  - key: go
+    call: golang/install 1.2.0
+    with:
+      go-version: "1.25"
+
+  # ── golangci-lint (built from source to match Go 1.25) ────────────────
+  - key: golangci-lint
+    use: go
+    filter:
+      - .rwx/ci.yml
+    run: |
+      echo "Building golangci-lint from source (needs Go 1.25)..."
+      go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+
+  # ── Download modules (cached by lockfiles) ────────────────────────────
+  - key: go-deps
+    use: [code, go]
+    run: cd controller && go mod download
+    filter:
+      - controller/go.mod
+      - controller/go.sum
+
+  # ── Build gb ──────────────────────────────────────────────────────────
+  - key: build-gb
+    use: go-deps
+    filter:
+      - "controller/cmd/gb/**/*.go"
+      - "controller/internal/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: |
+      cd controller
+      CGO_ENABLED=0 go build -v -o bin/gb ./cmd/gb/
+
+  # ── Build controller ──────────────────────────────────────────────────
+  - key: build-controller
+    use: go-deps
+    filter:
+      - "controller/cmd/controller/**/*.go"
+      - "controller/internal/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: |
+      cd controller
+      CGO_ENABLED=0 go build -v -o bin/controller ./cmd/controller/
+
+  # ── Build slack-bridge ────────────────────────────────────────────────
+  - key: build-slack-bridge
+    use: go-deps
+    filter:
+      - "controller/cmd/slack-bridge/**/*.go"
+      - "controller/internal/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: |
+      cd controller
+      CGO_ENABLED=0 go build -v -o bin/slack-bridge ./cmd/slack-bridge/
+
+  # ── Build jira-bridge ─────────────────────────────────────────────
+  - key: build-jira-bridge
+    use: go-deps
+    filter:
+      - "controller/cmd/jira-bridge/**/*.go"
+      - "controller/internal/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: |
+      cd controller
+      CGO_ENABLED=0 go build -v -o bin/jira-bridge ./cmd/jira-bridge/
+
+  # ── Lint (parallel with builds) ───────────────────────────────────────
+  - key: lint
+    use: [go-deps, golangci-lint]
+    filter:
+      - "controller/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: cd controller && golangci-lint run --timeout=5m ./...
+
+  # ── Test ──────────────────────────────────────────────────────────────
+  - key: test
+    use: go-deps
+    filter:
+      - "controller/**/*.go"
+      - "controller/go.mod"
+      - "controller/go.sum"
+    run: |
+      cd controller
+      CGO_ENABLED=0 go test -v -short -parallel 8 -coverprofile=coverage.out ./...
+    outputs:
+      artifacts:
+        - key: coverage
+          path: controller/coverage.out
+
+  # ── Quench quality checks ─────────────────────────────────────────────
+  - key: quench
+    use: [code, go-deps]
+    cache: false
+    run: |
+      echo "Installing quench build deps (openssl, pkg-config)..."
+      sudo apt-get update
+      sudo apt-get install -y pkg-config libssl-dev
+
+      echo "Installing Rust toolchain for quench..."
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      . "$HOME/.cargo/env"
+
+      echo "Installing quench..."
+      cargo install quench --git https://github.com/alfredjeanlab/quench
+
+      echo "Running quench checks..."
+      quench check --no-docs

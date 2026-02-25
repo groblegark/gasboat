@@ -202,6 +202,27 @@ func configs() map[string]any {
 		},
 		// No context:job — a job's entire context is the agent bead
 		// itself (title, description, dependencies), shown by prime.sh.
+
+		// --- JIRA views and context ----------------------------------------
+
+		"view:jira:pending": ViewConfig{
+			Filter: ViewFilter{
+				Status: []string{"open", "in_progress", "blocked", "deferred"},
+				Type:   []string{"task"},
+				Labels: []string{"source:jira"},
+			},
+			Sort:    "priority",
+			Columns: []string{"id", "title", "status", "assignee", "fields"},
+		},
+
+		// JIRA dispatcher: sees pending JIRA tasks, decisions, and inbox.
+		"context:jira-dispatcher": ContextConfig{
+			Sections: []ContextSection{
+				{Header: "## Pending JIRA Tasks", View: "jira:pending", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Pending Decisions", View: "decisions:pending", Format: "list", Fields: []string{"id", "title", "status"}},
+				{Header: "## Inbox", View: "mail:inbox", Format: "list", Fields: []string{"id", "title", "assignee"}},
+			},
+		},
 	}
 }
 
