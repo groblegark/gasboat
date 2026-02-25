@@ -24,6 +24,7 @@ max_tokens = 6000
 exclude = [
   "helm/**",
   "images/**",
+  "tests/e2e/**",
 ]
 
 [check.escapes]
