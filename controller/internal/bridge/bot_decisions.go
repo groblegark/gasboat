@@ -347,7 +347,8 @@ func reportEmoji(reportType string) string {
 	}
 }
 
-// PostReport posts a report as a thread reply on the linked decision's Slack message.
+// PostReport posts a report as a thread reply on the linked decision's Slack message,
+// and updates the resolved decision message to include a truncated inline preview.
 func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content string) error {
 	ref, ok := b.lookupMessage(decisionID)
 	if !ok {
@@ -362,17 +363,67 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 	}
 
 	emoji := reportEmoji(reportType)
-	text := fmt.Sprintf("%s *Report (%s)*\n\n%s", emoji, reportType, displayContent)
 
+	// 1. Post the full report as a thread reply.
+	threadText := fmt.Sprintf("%s *Report (%s)*\n\n%s", emoji, reportType, displayContent)
 	_, _, err := b.api.PostMessageContext(ctx, ref.ChannelID,
-		slack.MsgOptionText(text, false),
+		slack.MsgOptionText(threadText, false),
 		slack.MsgOptionTS(ref.Timestamp),
 	)
 	if err != nil {
 		return fmt.Errorf("post report to Slack thread: %w", err)
 	}
 
+	// 2. Update the resolved decision message with an inline preview.
+	preview := reportPreview(content, 4)
+	previewText := fmt.Sprintf("\n\n%s *Report (%s)*\n%s", emoji, reportType, preview)
+
+	// Fetch existing message text to append the preview.
+	msgs, err := b.api.GetConversationHistory(&slack.GetConversationHistoryParameters{
+		ChannelID: ref.ChannelID,
+		Latest:    ref.Timestamp,
+		Inclusive: true,
+		Limit:     1,
+	})
+	if err == nil && len(msgs.Messages) > 0 {
+		existing := msgs.Messages[0]
+		var blocks []slack.Block
+		// Preserve existing blocks and append report preview.
+		if len(existing.Blocks.BlockSet) > 0 {
+			blocks = existing.Blocks.BlockSet
+		} else {
+			blocks = []slack.Block{
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn", existing.Text, false, false),
+					nil, nil),
+			}
+		}
+		blocks = append(blocks, slack.NewDividerBlock())
+		blocks = append(blocks, slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", previewText, false, false),
+			nil, nil))
+
+		_, _, _, updateErr := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
+			slack.MsgOptionBlocks(blocks...),
+		)
+		if updateErr != nil {
+			b.logger.Warn("failed to inline report preview", "decision", decisionID, "error", updateErr)
+		}
+	}
+
 	b.logger.Info("posted report to decision Slack thread",
 		"decision", decisionID, "report_type", reportType, "channel", ref.ChannelID)
 	return nil
+}
+
+// reportPreview returns the first N lines of content, with a "show more" hint if truncated.
+func reportPreview(content string, maxLines int) string {
+	lines := strings.SplitN(content, "\n", maxLines+1)
+	if len(lines) <= maxLines {
+		return "> " + strings.Join(lines, "\n> ")
+	}
+	remaining := strings.Count(content, "\n") - maxLines + 1
+	preview := "> " + strings.Join(lines[:maxLines], "\n> ")
+	preview += fmt.Sprintf("\n_%d more lines — see thread_ :thread:", remaining)
+	return preview
 }
