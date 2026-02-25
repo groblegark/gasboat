@@ -14,6 +14,9 @@ set -euo pipefail
 
 BEAD_ID="${BOAT_AGENT_BEAD_ID:-}"
 
+# Clear the gate so the stop hook blocks until this session creates a decision.
+gb gate clear 2>/dev/null || true
+
 # Render the full prime context (workflow, advice, roster, auto-assign).
 gb prime 2>/dev/null || true
 
