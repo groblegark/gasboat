@@ -352,6 +352,10 @@ cd "${WORKSPACE}"
 
 COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 50"
 
+# Agent command: use BOAT_COMMAND if set (e.g., "claudeless run /path/to/scenario.toml"
+# for E2E testing without consuming API credits). Defaults to real Claude Code.
+AGENT_CMD="${BOAT_COMMAND:-claude --dangerously-skip-permissions}"
+
 # Coop log level (overridable via pod env).
 export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 
@@ -641,7 +645,10 @@ trap 'forward_signal TERM' TERM
 trap 'forward_signal INT' INT
 
 # Start credential refresh in background (survives coop restarts).
-refresh_credentials &
+# Skip for mock agent commands — claudeless needs no OAuth credentials.
+if [ -z "${BOAT_COMMAND:-}" ]; then
+    refresh_credentials &
+fi
 
 # ── Restart loop ──────────────────────────────────────────────────────────
 MAX_RESTARTS="${COOP_MAX_RESTARTS:-10}"
@@ -663,7 +670,7 @@ while true; do
     RESUME_FLAG=""
     MAX_STALE_RETRIES=2
     STALE_COUNT=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null || true) | wc -l | tr -d ' ')
-    if [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
+    if [ -z "${BOAT_COMMAND:-}" ] && [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
         LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
             | sort -rn | head -1 | cut -d' ' -f2-)
         if [ -n "${LATEST_LOG}" ]; then
@@ -676,8 +683,8 @@ while true; do
     start_time=$(date +%s)
 
     if [ -n "${RESUME_FLAG}" ]; then
-        echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
-        ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
+        echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT}) with resume"
+        ${COOP_CMD} ${RESUME_FLAG} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
@@ -690,8 +697,8 @@ while true; do
             echo "[entrypoint]   renamed: ${LATEST_LOG} -> ${LATEST_LOG}.stale"
         fi
     else
-        echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
-        ${COOP_CMD} -- claude --dangerously-skip-permissions &
+        echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT})"
+        ${COOP_CMD} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
