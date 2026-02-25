@@ -262,6 +262,15 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 			},
 		)
 	}
+
+	// RWX access token for RWX API calls (dispatches, triggers) inside agent pods.
+	if cfg.RwxAccessTokenSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "RWX_ACCESS_TOKEN",
+			SecretName: cfg.RwxAccessTokenSecret,
+			SecretKey:  "token",
+		})
+	}
 }
 
 // namespaceFromEvent returns the namespace from event metadata or a default.

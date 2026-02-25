@@ -136,6 +136,9 @@ agents:
     remoteRef: ""              # e.g. "gasboat/gitlab-token"
     tokenProperty: "token"    # JSON key inside the AWS secret
 
+  # K8s secret with RWX access token for RWX API calls in agent pods (dispatches, triggers)
+  rwxAccessTokenSecret: ""
+
   # --- NATS event bus ---
 
   # NATS server URL for event bus integration (e.g., "nats://nats-svc:4222")

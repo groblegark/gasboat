@@ -149,6 +149,10 @@ spec:
             - name: GITLAB_TOKEN_SECRET
               value: {{ .Values.agents.gitlabTokenSecret }}
             {{- end }}
+            {{- if .Values.agents.rwxAccessTokenSecret }}
+            - name: RWX_ACCESS_TOKEN_SECRET
+              value: {{ .Values.agents.rwxAccessTokenSecret }}
+            {{- end }}
             {{- if .Values.agents.logLevel }}
             - name: LOG_LEVEL
               value: {{ .Values.agents.logLevel }}

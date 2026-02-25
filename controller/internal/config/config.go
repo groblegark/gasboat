@@ -99,6 +99,10 @@ type Config struct {
 	// Injected as GITLAB_TOKEN in agent pods for glab CLI operations and git clone/push.
 	GitlabTokenSecret string
 
+	// RwxAccessTokenSecret is the K8s secret containing an RWX access token (env: RWX_ACCESS_TOKEN_SECRET).
+	// Injected as RWX_ACCESS_TOKEN in agent pods for RWX API calls (dispatches, triggers).
+	RwxAccessTokenSecret string
+
 	// --- Coopmux ---
 
 	// CoopmuxURL is the URL of the coopmux service (env: COOPMUX_URL).
@@ -183,6 +187,7 @@ func Parse() *Config {
 		GitCredentialsSecret:   os.Getenv("GIT_CREDENTIALS_SECRET"),
 		GithubTokenSecret:      os.Getenv("GITHUB_TOKEN_SECRET"),
 		GitlabTokenSecret:      os.Getenv("GITLAB_TOKEN_SECRET"),
+		RwxAccessTokenSecret:   os.Getenv("RWX_ACCESS_TOKEN_SECRET"),
 
 		// Coopmux
 		CoopmuxURL:         os.Getenv("COOPMUX_URL"),
