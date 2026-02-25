@@ -18,8 +18,9 @@ const syncTTL = 10 * time.Minute
 
 // JiraSync watches bead SSE events and syncs MR links and status back to JIRA.
 type JiraSync struct {
-	jira   *JiraClient
-	logger *slog.Logger
+	jira               *JiraClient
+	logger             *slog.Logger
+	disableTransitions bool
 
 	mu   sync.Mutex
 	seen map[string]time.Time // dedup key → last sync time
@@ -27,16 +28,18 @@ type JiraSync struct {
 
 // JiraSyncConfig holds configuration for the JiraSync watcher.
 type JiraSyncConfig struct {
-	Jira   *JiraClient
-	Logger *slog.Logger
+	Jira               *JiraClient
+	Logger             *slog.Logger
+	DisableTransitions bool
 }
 
 // NewJiraSync creates a new JIRA sync-back watcher.
 func NewJiraSync(cfg JiraSyncConfig) *JiraSync {
 	return &JiraSync{
-		jira:   cfg.Jira,
-		logger: cfg.Logger,
-		seen:   make(map[string]time.Time),
+		jira:               cfg.Jira,
+		logger:             cfg.Logger,
+		disableTransitions: cfg.DisableTransitions,
+		seen:               make(map[string]time.Time),
 	}
 }
 
@@ -123,9 +126,11 @@ func (s *JiraSync) handleClosed(ctx context.Context, data []byte) {
 	}
 
 	// Attempt to transition to "Review" (best-effort).
-	if err := s.jira.TransitionIssue(ctx, jiraKey, "Review"); err != nil {
-		s.logger.Warn("failed to transition JIRA issue to Review (may not be available)",
-			"jira_key", jiraKey, "error", err)
+	if !s.disableTransitions {
+		if err := s.jira.TransitionIssue(ctx, jiraKey, "Review"); err != nil {
+			s.logger.Warn("failed to transition JIRA issue to Review (may not be available)",
+				"jira_key", jiraKey, "error", err)
+		}
 	}
 }
 

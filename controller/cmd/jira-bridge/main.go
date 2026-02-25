@@ -42,6 +42,7 @@ func main() {
 		"beads_http", cfg.beadsHTTPAddr,
 		"jira_base_url", cfg.jiraBaseURL,
 		"jira_projects", cfg.jiraProjects,
+		"jira_disable_transitions", cfg.jiraDisableTransitions,
 		"listen_addr", cfg.listenAddr)
 
 	// Create beads daemon HTTP client.
@@ -127,8 +128,9 @@ func main() {
 
 	// Register JIRA sync handler on the SSE stream.
 	jiraSync := bridge.NewJiraSync(bridge.JiraSyncConfig{
-		Jira:   jiraClient,
-		Logger: logger,
+		Jira:               jiraClient,
+		Logger:             logger,
+		DisableTransitions: cfg.jiraDisableTransitions,
 	})
 	jiraSync.RegisterHandlers(sseStream)
 
@@ -164,10 +166,11 @@ type config struct {
 	jiraProjects     []string
 	jiraStatuses     []string
 	jiraIssueTypes   []string
-	jiraPollInterval time.Duration
-	listenAddr       string
-	logLevel         string
-	statePath        string
+	jiraPollInterval       time.Duration
+	jiraDisableTransitions bool
+	listenAddr             string
+	logLevel               string
+	statePath              string
 }
 
 func parseConfig() *config {
@@ -178,18 +181,21 @@ func parseConfig() *config {
 		}
 	}
 
+	disableTransitions := os.Getenv("JIRA_DISABLE_TRANSITIONS")
+
 	return &config{
-		beadsHTTPAddr:    envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
-		jiraBaseURL:      os.Getenv("JIRA_BASE_URL"),
-		jiraEmail:        os.Getenv("JIRA_EMAIL"),
-		jiraAPIToken:     os.Getenv("JIRA_API_TOKEN"),
-		jiraProjects:     splitCSV(envOrDefault("JIRA_PROJECTS", "PE,DEVOPS")),
-		jiraStatuses:     splitCSV(envOrDefault("JIRA_STATUSES", "To Do,Ready for Development")),
-		jiraIssueTypes:   splitCSV(envOrDefault("JIRA_ISSUE_TYPES", "Bug,Task,Story")),
-		jiraPollInterval: pollInterval,
-		listenAddr:       envOrDefault("JIRA_LISTEN_ADDR", ":8091"),
-		logLevel:         envOrDefault("LOG_LEVEL", "info"),
-		statePath:        envOrDefault("STATE_PATH", "/tmp/jira-bridge-state.json"),
+		beadsHTTPAddr:          envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
+		jiraBaseURL:            os.Getenv("JIRA_BASE_URL"),
+		jiraEmail:              os.Getenv("JIRA_EMAIL"),
+		jiraAPIToken:           os.Getenv("JIRA_API_TOKEN"),
+		jiraProjects:           splitCSV(envOrDefault("JIRA_PROJECTS", "PE,DEVOPS")),
+		jiraStatuses:           splitCSV(envOrDefault("JIRA_STATUSES", "To Do,Ready for Development")),
+		jiraIssueTypes:         splitCSV(envOrDefault("JIRA_ISSUE_TYPES", "Bug,Task,Story")),
+		jiraPollInterval:       pollInterval,
+		jiraDisableTransitions: disableTransitions == "true" || disableTransitions == "1",
+		listenAddr:             envOrDefault("JIRA_LISTEN_ADDR", ":8091"),
+		logLevel:               envOrDefault("LOG_LEVEL", "info"),
+		statePath:              envOrDefault("STATE_PATH", "/tmp/jira-bridge-state.json"),
 	}
 }
 

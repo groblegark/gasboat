@@ -138,6 +138,58 @@ func TestJiraSync_Closed(t *testing.T) {
 	}
 }
 
+func TestJiraSync_Closed_TransitionsDisabled(t *testing.T) {
+	var (
+		mu              sync.Mutex
+		commentAdded    bool
+		transitionCalls int
+	)
+	jiraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/rest/api/3/issue/DEVOPS-42/comment":
+			commentAdded = true
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprint(w, `{"id":"1"}`)
+		case r.Method == "GET" && r.URL.Path == "/rest/api/3/issue/DEVOPS-42/transitions":
+			resp := map[string]any{"transitions": []map[string]any{
+				{"id": "31", "name": "In Progress", "to": map[string]string{"name": "In Progress"}},
+				{"id": "41", "name": "Review", "to": map[string]string{"name": "Review"}},
+			}}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+		case r.Method == "POST" && r.URL.Path == "/rest/api/3/issue/DEVOPS-42/transitions":
+			transitionCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer jiraServer.Close()
+
+	s := NewJiraSync(JiraSyncConfig{
+		Jira:               newTestJiraClient(jiraServer.URL),
+		Logger:             slog.Default(),
+		DisableTransitions: true,
+	})
+	event := marshalSSEBeadPayload(BeadEvent{
+		ID: "bd-task-4", Type: "task", Title: "[DEVOPS-42] Fix CI pipeline",
+		Labels: []string{"source:jira", "jira:DEVOPS-42"},
+		Fields: map[string]string{"jira_key": "DEVOPS-42"},
+	})
+	s.handleClosed(context.Background(), event)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !commentAdded {
+		t.Fatal("expected JIRA closing comment")
+	}
+	if transitionCalls != 0 {
+		t.Errorf("expected 0 transition calls with DisableTransitions, got %d", transitionCalls)
+	}
+}
+
 func TestAdfToMarkdown(t *testing.T) {
 	tests := []struct {
 		name, input, expected string
