@@ -23,20 +23,6 @@ func resolveAgentID(flagValue string) (string, error) {
 	return "", fmt.Errorf("agent ID not set: use --agent-id or set KD_AGENT_ID")
 }
 
-// resolveSessionID looks up the session_id field on the agent bead.
-// This is the session identity used for gates and decisions.
-func resolveSessionID(ctx context.Context, agentBeadID string) (string, error) {
-	bead, err := daemon.GetBead(ctx, agentBeadID)
-	if err != nil {
-		return "", fmt.Errorf("resolving session ID for %s: %w", agentBeadID, err)
-	}
-	if sid, ok := bead.Fields["session_id"]; ok && sid != "" {
-		return sid, nil
-	}
-	// Fall back to agent bead ID as session ID.
-	return agentBeadID, nil
-}
-
 // resolveAgentByActor looks up an open agent bead by the actor's assignee name.
 // Returns empty string if not found or on error.
 func resolveAgentByActor(ctx context.Context, actorName string) string {
