@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,6 +53,8 @@ type Notifier interface {
 	NotifyEscalation(ctx context.Context, bead BeadEvent) error
 	// DismissDecision is called when a decision bead expires (removes Slack message).
 	DismissDecision(ctx context.Context, beadID string) error
+	// PostReport posts a report as a thread reply on the linked decision's Slack message.
+	PostReport(ctx context.Context, decisionID, reportType, content string) error
 }
 
 // escalationTTL is the maximum age of entries in the escalated dedup map.
@@ -91,6 +94,7 @@ func NewDecisions(cfg DecisionsConfig) *Decisions {
 func (d *Decisions) RegisterHandlers(stream *SSEStream) {
 	stream.On("beads.bead.created", d.handleCreated)
 	stream.On("beads.bead.closed", d.handleClosed)
+	stream.On("beads.bead.closed", d.handleReportClosed)
 	stream.On("beads.bead.updated", d.handleUpdated)
 	d.logger.Info("decisions watcher registered SSE handlers",
 		"topics", []string{"beads.bead.created", "beads.bead.closed", "beads.bead.updated"})
@@ -266,6 +270,11 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		message += fmt.Sprintf(" — %s", rationale)
 	}
 
+	// If the decision has a report: label, append report requirement to nudge.
+	if rt := reportTypeFromLabels(bead.Labels); rt != "" {
+		message += fmt.Sprintf(" — Report required (%s). Use `gb decision report %s` to submit.", rt, bead.ID)
+	}
+
 	if err := nudgeCoop(ctx, d.httpClient, coopURL, message); err != nil {
 		d.logger.Error("failed to nudge agent",
 			"agent", agentName, "coop_url", coopURL, "error", err)
@@ -300,4 +309,45 @@ func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string
 		return fmt.Errorf("nudge returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// reportTypeFromLabels extracts the report template name from a "report:" label.
+func reportTypeFromLabels(labels []string) string {
+	for _, l := range labels {
+		if strings.HasPrefix(l, "report:") {
+			return strings.TrimPrefix(l, "report:")
+		}
+	}
+	return ""
+}
+
+// handleReportClosed is called when a report bead is closed. It posts the
+// report content as a thread reply on the linked decision's Slack message.
+func (d *Decisions) handleReportClosed(ctx context.Context, data []byte) {
+	bead := ParseBeadEvent(data)
+	if bead == nil {
+		return
+	}
+	if bead.Type != "report" {
+		return
+	}
+
+	decisionID := bead.Fields["decision_id"]
+	if decisionID == "" {
+		d.logger.Debug("report bead has no decision_id", "id", bead.ID)
+		return
+	}
+
+	reportType := bead.Fields["report_type"]
+	content := bead.Fields["content"]
+
+	d.logger.Info("report bead closed",
+		"id", bead.ID, "decision_id", decisionID, "report_type", reportType)
+
+	if d.notifier != nil && content != "" {
+		if err := d.notifier.PostReport(ctx, decisionID, reportType, content); err != nil {
+			d.logger.Error("failed to post report to Slack",
+				"report", bead.ID, "decision", decisionID, "error", err)
+		}
+	}
 }

@@ -228,6 +228,35 @@ func (s *SlackNotifier) DismissDecision(_ context.Context, beadID string) error 
 	return s.updateSlackMessage(context.Background(), payload)
 }
 
+// PostReport posts a report as a thread reply on the linked decision's Slack message.
+func (s *SlackNotifier) PostReport(ctx context.Context, decisionID, reportType, content string) error {
+	s.mu.Lock()
+	ts, ok := s.messages[decisionID]
+	s.mu.Unlock()
+
+	if !ok {
+		s.logger.Debug("no Slack message found for report's decision", "decision", decisionID)
+		return nil
+	}
+
+	text := fmt.Sprintf(":page_facing_up: *Report (%s)*\n\n%s", reportType, content)
+
+	payload := map[string]interface{}{
+		"channel":   s.channel,
+		"thread_ts": ts,
+		"text":      text,
+	}
+
+	_, err := s.postSlackMessage(ctx, payload)
+	if err != nil {
+		return fmt.Errorf("post report to Slack thread: %w", err)
+	}
+
+	s.logger.Info("posted report to decision Slack thread",
+		"decision", decisionID, "report_type", reportType)
+	return nil
+}
+
 // Handler returns an http.Handler for Slack interaction webhooks.
 func (s *SlackNotifier) Handler() http.Handler {
 	mux := http.NewServeMux()

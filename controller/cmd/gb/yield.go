@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"gasboat/controller/internal/beadsapi"
@@ -190,6 +191,16 @@ func printYieldResult(id string) error {
 	} else {
 		fmt.Printf("Decision %s closed\n", id)
 	}
+
+	// Check if a report is required (decision has report: label).
+	for _, l := range bead.Labels {
+		if strings.HasPrefix(l, "report:") {
+			rt := strings.TrimPrefix(l, "report:")
+			fmt.Printf("REPORT_REQUIRED type=%s decision_id=%s\n", rt, id)
+			break
+		}
+	}
+
 	return nil
 }
 

@@ -278,6 +278,29 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 	return nil
 }
 
+// PostReport posts a report as a thread reply on the linked decision's Slack message.
+func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content string) error {
+	ref, ok := b.lookupMessage(decisionID)
+	if !ok {
+		b.logger.Debug("no Slack message found for report's decision", "decision", decisionID)
+		return nil
+	}
+
+	text := fmt.Sprintf(":page_facing_up: *Report (%s)*\n\n%s", reportType, content)
+
+	_, _, err := b.api.PostMessageContext(ctx, ref.ChannelID,
+		slack.MsgOptionText(text, false),
+		slack.MsgOptionTS(ref.Timestamp),
+	)
+	if err != nil {
+		return fmt.Errorf("post report to Slack thread: %w", err)
+	}
+
+	b.logger.Info("posted report to decision Slack thread",
+		"decision", decisionID, "report_type", reportType, "channel", ref.ChannelID)
+	return nil
+}
+
 // handleBlockActions processes button clicks on decision messages.
 func (b *Bot) handleBlockActions(ctx context.Context, callback slack.InteractionCallback) {
 	for _, action := range callback.ActionCallback.BlockActions {

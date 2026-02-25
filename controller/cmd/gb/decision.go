@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -337,6 +338,111 @@ func printDecisionResult(id string) error {
 	return nil
 }
 
+// ── decision report ───────────────────────────────────────────────────
+
+var decisionReportCmd = &cobra.Command{
+	Use:   "report <decision-id>",
+	Short: "Submit a report for a decision that requires one",
+	Long: `Submit a report bead linked to a decision.
+
+When a decision has a report:<template> label, the agent's gate stays pending
+after the decision resolves. This command creates a report bead, links it to
+the decision, and closes it — which satisfies the agent's decision gate.
+
+Content can be provided via --content flag or piped from stdin.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		decisionID := args[0]
+		content, _ := cmd.Flags().GetString("content")
+		reportType, _ := cmd.Flags().GetString("type")
+		format, _ := cmd.Flags().GetString("format")
+
+		// Read from stdin if no --content flag.
+		if content == "" {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			content = strings.TrimSpace(string(data))
+		}
+		if content == "" {
+			return fmt.Errorf("--content or stdin is required")
+		}
+
+		// Fetch the decision bead to verify and extract report type from labels.
+		decBead, err := daemon.GetBead(cmd.Context(), decisionID)
+		if err != nil {
+			return fmt.Errorf("fetching decision %s: %w", decisionID, err)
+		}
+		if decBead.Type != "decision" {
+			return fmt.Errorf("%s is not a decision bead (type=%s)", decisionID, decBead.Type)
+		}
+
+		// Extract report type from labels if not specified.
+		if reportType == "" {
+			reportType = reportTypeFromLabels(decBead.Labels)
+		}
+		if reportType == "" {
+			reportType = "summary" // default
+		}
+
+		if format == "" {
+			format = "markdown"
+		}
+
+		// Create report bead.
+		fields := map[string]any{
+			"decision_id": decisionID,
+			"report_type": reportType,
+			"content":     content,
+			"format":      format,
+		}
+		fieldsJSON, err := json.Marshal(fields)
+		if err != nil {
+			return fmt.Errorf("encoding fields: %w", err)
+		}
+
+		reportID, err := daemon.CreateBead(cmd.Context(), beadsapi.CreateBeadRequest{
+			Title:     fmt.Sprintf("Report (%s) for %s", reportType, decisionID),
+			Type:      "report",
+			Kind:      "data",
+			Priority:  2,
+			CreatedBy: actor,
+			Fields:    fieldsJSON,
+		})
+		if err != nil {
+			return fmt.Errorf("creating report bead: %w", err)
+		}
+
+		// Link report → decision (parent-child dependency).
+		if err := daemon.AddDependency(cmd.Context(), reportID, decisionID, "parent-child", actor); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to add dependency: %v\n", err)
+		}
+
+		// Close the report bead → triggers gate satisfaction.
+		if err := daemon.CloseBead(cmd.Context(), reportID, nil); err != nil {
+			return fmt.Errorf("closing report bead: %w", err)
+		}
+
+		if jsonOutput {
+			printJSON(map[string]string{"id": reportID, "decision_id": decisionID})
+		} else {
+			fmt.Printf("Report %s submitted for decision %s\n", reportID, decisionID)
+		}
+		return nil
+	},
+}
+
+// reportTypeFromLabels extracts the report template from labels.
+func reportTypeFromLabels(labels []string) string {
+	for _, l := range labels {
+		if strings.HasPrefix(l, "report:") {
+			return strings.TrimPrefix(l, "report:")
+		}
+	}
+	return ""
+}
+
 // senderFromLabels extracts the sender name from a "from:<name>" label.
 func senderFromLabels(labels []string) string {
 	for _, l := range labels {
@@ -352,6 +458,7 @@ func init() {
 	decisionCmd.AddCommand(decisionListCmd)
 	decisionCmd.AddCommand(decisionShowCmd)
 	decisionCmd.AddCommand(decisionRespondCmd)
+	decisionCmd.AddCommand(decisionReportCmd)
 
 	decisionCreateCmd.Flags().String("prompt", "", "decision prompt (required)")
 	decisionCreateCmd.Flags().String("options", "", "options JSON array")
@@ -364,4 +471,8 @@ func init() {
 
 	decisionRespondCmd.Flags().String("select", "", "selected option ID")
 	decisionRespondCmd.Flags().String("text", "", "free-text response")
+
+	decisionReportCmd.Flags().String("content", "", "report content (or pipe from stdin)")
+	decisionReportCmd.Flags().String("type", "", "report type (default: from decision label or 'summary')")
+	decisionReportCmd.Flags().String("format", "markdown", "content format: markdown, json, text")
 }

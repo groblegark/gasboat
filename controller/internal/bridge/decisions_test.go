@@ -158,6 +158,10 @@ func (m *mockNotifier) DismissDecision(_ context.Context, beadID string) error {
 	return nil
 }
 
+func (m *mockNotifier) PostReport(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
 func (m *mockNotifier) getCreated() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
