@@ -340,6 +340,7 @@ tasks:
     use: [code, build-gb, download-coop, download-kd]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
+    timeout: 30m
     run: |
       set -e
       TAG="${REF_NAME#refs/tags/}"

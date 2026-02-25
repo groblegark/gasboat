@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -270,9 +269,9 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		message += fmt.Sprintf(" — %s", rationale)
 	}
 
-	// If the decision has a report: label, append report requirement to nudge.
-	if rt := reportTypeFromLabels(bead.Labels); rt != "" {
-		message += fmt.Sprintf(" — Report required (%s). Use `gb decision report %s` to submit.", rt, bead.ID)
+	// If the chosen option requires an artifact, append requirement to nudge.
+	if ra, ok := bead.Fields["required_artifact"]; ok && ra != "" {
+		message += fmt.Sprintf(" — Artifact required (%s). Use `gb decision report %s` to submit.", ra, bead.ID)
 	}
 
 	if err := nudgeCoop(ctx, d.httpClient, coopURL, message); err != nil {
@@ -309,16 +308,6 @@ func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string
 		return fmt.Errorf("nudge returned status %d", resp.StatusCode)
 	}
 	return nil
-}
-
-// reportTypeFromLabels extracts the report template name from a "report:" label.
-func reportTypeFromLabels(labels []string) string {
-	for _, l := range labels {
-		if strings.HasPrefix(l, "report:") {
-			return strings.TrimPrefix(l, "report:")
-		}
-	}
-	return ""
 }
 
 // handleReportClosed is called when a report bead is closed. It posts the

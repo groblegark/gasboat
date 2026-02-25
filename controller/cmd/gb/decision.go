@@ -45,11 +45,17 @@ var decisionCreateCmd = &cobra.Command{
 			if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {
 				return fmt.Errorf("invalid --options JSON: %w", err)
 			}
-			for _, opt := range opts {
-				if at, _ := opt["artifact_type"].(string); at != "" {
-					if !validArtifactTypes[at] {
-						return fmt.Errorf("unknown artifact_type %q (allowed: report, plan, checklist, diff-summary, epic, bug)", at)
+			for i, opt := range opts {
+				at, _ := opt["artifact_type"].(string)
+				if at == "" {
+					id, _ := opt["id"].(string)
+					if id == "" {
+						id = fmt.Sprintf("#%d", i)
 					}
+					return fmt.Errorf("option %s missing required artifact_type (allowed: report, plan, checklist, diff-summary, epic, bug)", id)
+				}
+				if !validArtifactTypes[at] {
+					return fmt.Errorf("unknown artifact_type %q on option %d (allowed: report, plan, checklist, diff-summary, epic, bug)", at, i)
 				}
 			}
 			fields["options"] = json.RawMessage(optionsJSON)
@@ -378,11 +384,11 @@ func printDecisionResult(id string) error {
 var decisionReportCmd = &cobra.Command{
 	Use:   "report <decision-id>",
 	Short: "Submit a report for a decision that requires one",
-	Long: `Submit a report bead linked to a decision.
+	Long: `Submit an artifact for a decision that requires one.
 
-When a decision has a report:<template> label, the agent's gate stays pending
+When a decision option has an artifact_type, the agent's gate stays pending
 after the decision resolves. This command creates a report bead, links it to
-the decision, and closes it — which satisfies the agent's decision gate.
+the decision, and closes it — which satisfies the artifact requirement.
 
 Content can be provided via --content flag or piped from stdin.`,
 	Args: cobra.ExactArgs(1),
@@ -404,7 +410,7 @@ Content can be provided via --content flag or piped from stdin.`,
 			return fmt.Errorf("--content or stdin is required")
 		}
 
-		// Fetch the decision bead to verify and extract report type from labels.
+		// Fetch the decision bead to verify and extract artifact type.
 		decBead, err := daemon.GetBead(cmd.Context(), decisionID)
 		if err != nil {
 			return fmt.Errorf("fetching decision %s: %w", decisionID, err)
@@ -413,9 +419,9 @@ Content can be provided via --content flag or piped from stdin.`,
 			return fmt.Errorf("%s is not a decision bead (type=%s)", decisionID, decBead.Type)
 		}
 
-		// Extract report type from labels if not specified.
+		// Extract report type from the decision's required_artifact field if not specified.
 		if reportType == "" {
-			reportType = reportTypeFromLabels(decBead.Labels)
+			reportType = decBead.Fields["required_artifact"]
 		}
 		if reportType == "" {
 			reportType = "summary" // default
@@ -466,16 +472,6 @@ Content can be provided via --content flag or piped from stdin.`,
 		}
 		return nil
 	},
-}
-
-// reportTypeFromLabels extracts the report template from labels.
-func reportTypeFromLabels(labels []string) string {
-	for _, l := range labels {
-		if strings.HasPrefix(l, "report:") {
-			return strings.TrimPrefix(l, "report:")
-		}
-	}
-	return ""
 }
 
 // validArtifactTypes lists allowed artifact_type values for decision options.
