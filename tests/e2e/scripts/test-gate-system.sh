@@ -2,13 +2,13 @@
 # test-gate-system.sh — kbeads gate system E2E tests
 #
 # Tests gb bus emit --hook=Stop gate enforcement against a live
-# kd server in the gasboat-e2e namespace.
+# kd server. Works against any gasboat namespace (gasboat-e2e, gasboat-rwx, etc.).
 #
 # Usage:
 #   ./tests/e2e/scripts/test-gate-system.sh [--namespace <ns>] [--daemon <url>] [--token <token>]
 #
 # Prerequisites:
-#   - kubectl context pointing at america-e2e-eks
+#   - kubectl context pointing at the target cluster
 #   - kd binary in PATH (or set KD_BIN) for CRUD
 #   - gb binary in PATH (or set GB_BIN) for orchestration
 #   - jq installed
@@ -25,6 +25,7 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────
 NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+BEADS_SVC="${BEADS_SVC:-${NAMESPACE}-beads}"
 KD_BIN="${KD_BIN:-kd}"         # CRUD: create, close, list, show
 GB_BIN="${GB_BIN:-gb}"         # Orchestration: bus emit, decision, gate
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -109,9 +110,9 @@ setup_portforward() {
     return
   fi
 
-  blue "Port-forwarding gasboat-e2e kd server..."
+  blue "Port-forwarding ${NAMESPACE} kd server..."
   local port=19090
-  kubectl -n "$NAMESPACE" port-forward svc/gasboat-e2e-beads "${port}:8080" \
+  kubectl -n "$NAMESPACE" port-forward "svc/${BEADS_SVC}" "${port}:8080" \
     >/tmp/kd-pf.log 2>&1 &
   PF_PID=$!
   sleep 3

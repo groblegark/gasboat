@@ -2,13 +2,13 @@
 # test-decisions-yield.sh — decisions + yield E2E tests
 #
 # Tests gb decision create/list/show/respond and gb yield against a live
-# kd server in the gasboat-e2e namespace.
+# kd server. Works against any gasboat namespace (gasboat-e2e, gasboat-rwx, etc.).
 #
 # Usage:
 #   ./tests/e2e/scripts/test-decisions-yield.sh [--namespace <ns>] [--daemon <url>] [--token <token>]
 #
 # Prerequisites:
-#   - kubectl context pointing at america-e2e-eks
+#   - kubectl context pointing at the target cluster
 #   - kd binary in PATH (or set KD_BIN) for CRUD
 #   - gb binary in PATH (or set GB_BIN) for orchestration
 #   - jq and python3 installed
@@ -26,6 +26,7 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────
 NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+BEADS_SVC="${BEADS_SVC:-${NAMESPACE}-beads}"
 KD_BIN="${KD_BIN:-kd}"         # CRUD: create, close, list, show
 GB_BIN="${GB_BIN:-gb}"         # Orchestration: decision, yield, mail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,9 +88,9 @@ setup_portforward() {
     return
   fi
 
-  blue "Port-forwarding gasboat-e2e kd server..."
+  blue "Port-forwarding ${NAMESPACE} kd server..."
   local port=19091
-  kubectl -n "$NAMESPACE" port-forward svc/gasboat-e2e-beads "${port}:8080" \
+  kubectl -n "$NAMESPACE" port-forward "svc/${BEADS_SVC}" "${port}:8080" \
     >/tmp/kd-pf-decisions.log 2>&1 &
   PF_PID=$!
   sleep 3

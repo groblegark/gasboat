@@ -127,8 +127,9 @@ tasks:
     use: [kubeconfig, install-kd]
     run: |
       NAMESPACE="${NAMESPACE:-gasboat-e2e}"
-      echo "Verifying cluster access in namespace: $NAMESPACE"
-      kubectl -n "$NAMESPACE" get svc gasboat-e2e-beads
+      BEADS_SVC="${BEADS_SVC:-${NAMESPACE}-beads}"
+      echo "Verifying cluster access in namespace: $NAMESPACE (svc: $BEADS_SVC)"
+      kubectl -n "$NAMESPACE" get svc "$BEADS_SVC"
       echo "Cluster access verified"
     env:
       NAMESPACE: ${{ init.namespace }}
@@ -155,7 +156,8 @@ tasks:
     use: verify-cluster
     run: |
       NAMESPACE="${NAMESPACE:-gasboat-e2e}"
-      kubectl -n "$NAMESPACE" port-forward svc/gasboat-e2e-beads 19090:8080 &
+      BEADS_SVC="${BEADS_SVC:-${NAMESPACE}-beads}"
+      kubectl -n "$NAMESPACE" port-forward "svc/${BEADS_SVC}" 19090:8080 &
       echo $! > /tmp/pf-pid
       sleep 3
       # Quick health check
@@ -170,6 +172,7 @@ tasks:
     timeout: 30m
     run: |
       NAMESPACE="${NAMESPACE:-gasboat-e2e}"
+      BEADS_SVC="${BEADS_SVC:-${NAMESPACE}-beads}"
       BEADS_TOKEN=$(cat /tmp/beads-token)
       export BEADS_TOKEN
       export BEADS_HTTP_URL="http://localhost:19090"
@@ -177,6 +180,7 @@ tasks:
       export KD_BIN="kd"
       export KD_ACTOR="e2e-rwx"
       export NAMESPACE
+      export BEADS_SVC
 
       JUNIT_DIR="$PWD/junit-results"
       mkdir -p "$JUNIT_DIR"

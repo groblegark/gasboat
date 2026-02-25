@@ -1,4 +1,7 @@
 name: E2E
+# RETIRED: This workflow has been replaced by .rwx/e2e.yml (RWX-native).
+# The EKS-based gasboat-e2e namespace is superseded by the gasboat-rwx namespace.
+# Kept here for reference; all jobs are gated to never run.
 
 on:
   workflow_run:
@@ -13,7 +16,7 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: false  # Retired: use .rwx/e2e.yml instead
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
