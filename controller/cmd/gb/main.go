@@ -93,19 +93,18 @@ func init() {
 
 	// Orchestration
 	rootCmd.AddCommand(gateCmd)
-	// rootCmd.AddCommand(decisionCmd)
-	// rootCmd.AddCommand(busCmd)
-	// rootCmd.AddCommand(hookCmd)
-	// rootCmd.AddCommand(primeCmd)
-	// rootCmd.AddCommand(mailCmd)
-	// rootCmd.AddCommand(inboxCmd)
-	// rootCmd.AddCommand(newsCmd)
-	// rootCmd.AddCommand(adviceCmd)
+	rootCmd.AddCommand(decisionCmd)
+	rootCmd.AddCommand(busCmd)
+	rootCmd.AddCommand(hookCmd)
+	rootCmd.AddCommand(mailCmd)
+	rootCmd.AddCommand(inboxCmd)
+	rootCmd.AddCommand(newsCmd)
+	rootCmd.AddCommand(adviceCmd)
 
-	// Session Control (placeholders — added by Phase 2 tasks)
-	// rootCmd.AddCommand(setupCmd)
-	// rootCmd.AddCommand(yieldCmd)
-	// rootCmd.AddCommand(readyCmd)
+	// Session Control
+	rootCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(yieldCmd)
+	rootCmd.AddCommand(readyCmd)
 }
 
 func main() {

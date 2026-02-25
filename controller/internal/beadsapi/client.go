@@ -175,12 +175,15 @@ func (c *Client) ListDecisionBeads(ctx context.Context) ([]*BeadDetail, error) {
 
 // CreateBeadRequest contains the fields for creating a new bead.
 type CreateBeadRequest struct {
-	Title       string   `json:"title"`
-	Type        string   `json:"issue_type"`
-	Description string   `json:"description,omitempty"`
-	Assignee    string   `json:"assignee,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	Priority    int      `json:"priority,omitempty"`
+	Title       string          `json:"title"`
+	Type        string          `json:"issue_type"`
+	Kind        string          `json:"kind,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Assignee    string          `json:"assignee,omitempty"`
+	Labels      []string        `json:"labels,omitempty"`
+	Priority    int             `json:"priority,omitempty"`
+	CreatedBy   string          `json:"created_by,omitempty"`
+	Fields      json.RawMessage `json:"fields,omitempty"`
 }
 
 // CreateBead creates a new bead and returns its ID.
