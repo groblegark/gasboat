@@ -167,23 +167,6 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 	if cfg.CoopSyncInterval > 0 {
 		syncInterval = cfg.CoopSyncInterval
 	}
-	// Seed the digest tracker with the default agent image so it starts
-	// checking the registry for :latest updates immediately.
-	if cfg.CoopImage != "" {
-		go func() {
-			dt := rec.DigestTracker()
-			if dt == nil {
-				return
-			}
-			digest, err := dt.CheckRegistryDigest(ctx, cfg.CoopImage)
-			if err != nil {
-				logger.Debug("initial image digest check failed", "image", cfg.CoopImage, "error", err)
-				return
-			}
-			dt.RecordDigest(cfg.CoopImage, digest)
-			logger.Info("seeded image digest tracker", "image", cfg.CoopImage, "digest", digest[:min(19, len(digest))])
-		}()
-	}
 	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval)
 
 	logger.Info("controller ready, waiting for beads events",
@@ -214,10 +197,6 @@ func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusrepo
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Check registry for image digest updates every 5 minutes (every 5th sync cycle at 60s interval).
-	digestCheckCounter := 0
-	digestCheckInterval := 5
-
 	for {
 		select {
 		case <-ticker.C:
@@ -226,14 +205,6 @@ func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusrepo
 			}
 			// Refresh project cache from daemon.
 			refreshProjectCache(ctx, logger, daemon, cfg)
-			// Periodically check the OCI registry for image digest updates.
-			digestCheckCounter++
-			if rec != nil && digestCheckCounter >= digestCheckInterval {
-				digestCheckCounter = 0
-				if dt := rec.DigestTracker(); dt != nil {
-					dt.RefreshImages(ctx)
-				}
-			}
 			// Run reconciler to converge desired vs actual state.
 			if rec != nil {
 				if err := rec.Reconcile(ctx); err != nil {

@@ -29,7 +29,6 @@ type Reconciler struct {
 	logger         *slog.Logger
 	specBuilder    SpecBuilder
 	mu             sync.Mutex // prevent concurrent reconciles
-	digestTracker  *ImageDigestTracker
 	upgradeTracker *UpgradeTracker
 }
 
@@ -47,15 +46,8 @@ func New(
 		cfg:            cfg,
 		logger:         logger,
 		specBuilder:    specBuilder,
-		digestTracker:  NewImageDigestTracker(logger, 5*time.Minute),
 		upgradeTracker: NewUpgradeTracker(logger),
 	}
-}
-
-// DigestTracker returns the image digest tracker for external callers
-// (e.g., periodic registry refresh from the main loop).
-func (r *Reconciler) DigestTracker() *ImageDigestTracker {
-	return r.digestTracker
 }
 
 // Reconcile performs a single reconciliation pass:
@@ -144,7 +136,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 		desiredSpec := r.specBuilder(r.cfg, bead.Project, bead.Mode, bead.Role, bead.AgentName, bead.Metadata)
 		desiredSpec.BeadID = bead.ID
-		reason := podDriftReason(desiredSpec, &pod, r.digestTracker)
+		reason := podDriftReason(desiredSpec, &pod)
 		if reason != "" {
 			driftReasons[name] = reason
 			r.upgradeTracker.RegisterDrift(name, bead.Mode)
@@ -231,43 +223,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 // podDriftReason returns a non-empty string describing why the pod needs
 // recreation, or "" if the pod matches the desired spec.
-func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod, tracker *ImageDigestTracker) string {
-	// Check agent image drift (tag changed).
+// Only compares image tags — digest-level enforcement is intentionally omitted
+// because registry manifest digests (manifest list vs platform image) don't
+// match pod-observed digests, causing false-positive restart loops.
+func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod) string {
 	if agentChanged(desired.Image, actual) {
 		return fmt.Sprintf("agent image changed: %s", desired.Image)
-	}
-	// Check image digest drift (same tag, different digest — e.g. :latest updated).
-	if tracker != nil {
-		if reason := digestDrift(desired.Image, actual, tracker); reason != "" {
-			return reason
-		}
-	}
-	return ""
-}
-
-// digestDrift checks whether the running pod's image digest differs from the
-// latest known digest for the same image tag. This detects :latest updates
-// that tag-only comparison misses.
-func digestDrift(desiredImage string, actual *corev1.Pod, tracker *ImageDigestTracker) string {
-	for _, cs := range actual.Status.ContainerStatuses {
-		if cs.Name != "agent" {
-			continue
-		}
-		runningDigest := extractDigestFromImageID(cs.ImageID)
-		if runningDigest == "" {
-			return ""
-		}
-		// Record this pod's digest. If it's the first pod seen for this image,
-		// this becomes the baseline. If it differs from a previously recorded
-		// digest, RecordDigest returns true (meaning an update was detected
-		// from a registry check or a newer pod).
-		tracker.RecordDigest(desiredImage, runningDigest)
-
-		latestDigest := tracker.LatestDigest(desiredImage)
-		if latestDigest != "" && latestDigest != runningDigest {
-			return fmt.Sprintf("image digest changed: running %s, latest %s",
-				truncDigest(runningDigest), truncDigest(latestDigest))
-		}
 	}
 	return ""
 }
