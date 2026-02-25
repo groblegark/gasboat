@@ -162,7 +162,7 @@ Agent name: %s
 
 ## Quick Reference
 
-- `+"`"+`kd ready`+"`"+` — See your workflow steps
+- `+"`"+`gb ready`+"`"+` — See your workflow steps
 - `+"`"+`gb mail inbox`+"`"+` — Check messages
 - `+"`"+`kd show <issue>`+"`"+` — View specific issue details
 

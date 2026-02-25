@@ -114,17 +114,17 @@ func outputWorkflowContext(w io.Writer) {
 **NEVER skip this.** Work is not done until pushed.
 
 ## Core Rules
-- **Default**: Use kd for ALL task tracking (` + "`kd create`" + `, ` + "`kd ready`" + `, ` + "`kd close`" + `)
+- **Default**: Use kd for CRUD (` + "`kd create`" + `, ` + "`kd show`" + `, ` + "`kd close`" + `), gb for orchestration (` + "`gb ready`" + `, ` + "`gb decision`" + `, ` + "`gb yield`" + `)
 - **Prohibited**: Do NOT use TodoWrite, TaskCreate, or markdown files for task tracking
 - **Workflow**: Create kbeads issue BEFORE writing code, ` + "`kd claim <id>`" + ` when starting
 - Persistence you don't need beats lost context
 - Git workflow: beads auto-synced by Postgres backend
-- Session management: check ` + "`kd ready`" + ` for available work
+- Session management: check ` + "`gb ready`" + ` for available work
 
 ## Essential Commands
 
 ### Finding Work
-- ` + "`kd ready`" + ` - Show issues ready to work (no blockers)
+- ` + "`gb ready`" + ` - Show issues ready to work (no blockers)
 - ` + "`gb news`" + ` - Show in-progress work by others (check for conflicts before starting)
 - ` + "`kd list --status=open`" + ` - All open issues
 - ` + "`kd list --status=in_progress`" + ` - Your active work
@@ -153,7 +153,7 @@ func outputWorkflowContext(w io.Writer) {
 **Starting work:**
 ` + "```bash" + `
 gb news            # Check what others are working on (avoid conflicts)
-kd ready           # Find available work
+gb ready           # Find available work
 kd show <id>       # Review issue details
 kd claim <id>      # Claim it (sets assignee + in_progress)
 ` + "```" + `

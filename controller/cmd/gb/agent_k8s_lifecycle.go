@@ -93,7 +93,7 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 func injectInitialPrompt(ctx context.Context, coopPort int, role string) {
 	base := fmt.Sprintf("http://localhost:%d/api/v1", coopPort)
 	client := &http.Client{Timeout: 3 * time.Second}
-	nudge := "Check `kd ready` for your workflow steps and begin working."
+	nudge := "Check `gb ready` for your workflow steps and begin working."
 
 	for i := 0; i < 60; i++ {
 		select {
