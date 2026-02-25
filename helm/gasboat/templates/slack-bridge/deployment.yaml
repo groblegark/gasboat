@@ -97,6 +97,11 @@ spec:
             - name: LOG_LEVEL
               value: {{ .Values.slackBridge.logLevel | quote }}
             {{- end }}
+            # Threading mode
+            {{- if .Values.slackBridge.slack.threadingMode }}
+            - name: SLACK_THREADING_MODE
+              value: {{ .Values.slackBridge.slack.threadingMode | quote }}
+            {{- end }}
             # Dashboard
             {{- if .Values.slackBridge.dashboard.enabled }}
             - name: SLACK_DASHBOARD
