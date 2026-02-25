@@ -44,6 +44,7 @@ The agent is registered with the kbeads server on startup and appears in
 func init() {
 	agentCmd.AddCommand(agentStartCmd)
 
+	agentStartCmd.Flags().Bool("k8s", false, "Run as K8s pod entrypoint (replaces entrypoint.sh)")
 	agentStartCmd.Flags().Bool("local", false, "Run agent on the host via coop (attached)")
 	agentStartCmd.Flags().Bool("docker", false, "Run agent in a Docker container")
 	agentStartCmd.Flags().String("name", "", "Agent name (default: derived from hostname)")
@@ -53,14 +54,25 @@ func init() {
 	agentStartCmd.Flags().String("image", "", "Pre-built image name to skip rebuild (--docker only)")
 	agentStartCmd.Flags().Bool("attach", false, "Follow container output (--docker only; --local is always attached)")
 	agentStartCmd.Flags().String("command", "", "Command to run (default: claude --dangerously-skip-permissions)")
+
+	// K8s-only flags.
+	agentStartCmd.Flags().String("workspace", "/home/agent/workspace", "Workspace path (--k8s only)")
+	agentStartCmd.Flags().Int("coop-port", 8080, "Coop HTTP port (--k8s only)")
+	agentStartCmd.Flags().Int("coop-health-port", 9090, "Coop health port (--k8s only)")
+	agentStartCmd.Flags().Int("max-restarts", 0, "Max consecutive restarts — 0 uses COOP_MAX_RESTARTS env or 10 (--k8s only)")
 }
 
 func runAgentStart(cmd *cobra.Command, args []string) error {
+	isK8s, _ := cmd.Flags().GetBool("k8s")
+	if isK8s {
+		return runAgentStartK8s(cmd, args)
+	}
+
 	isLocal, _ := cmd.Flags().GetBool("local")
 	isDocker, _ := cmd.Flags().GetBool("docker")
 
 	if isLocal == isDocker {
-		return fmt.Errorf("specify exactly one of --local or --docker")
+		return fmt.Errorf("specify exactly one of --local, --docker, or --k8s")
 	}
 
 	agentName, _ := cmd.Flags().GetString("name")
@@ -113,7 +125,7 @@ func runAgentStart(cmd *cobra.Command, args []string) error {
 	}()
 
 	if isLocal {
-		return runLocal(cmd, ctx, agentName, agentBeadID, role, dir, agentCommand)
+		return runLocal(ctx, agentName, agentBeadID, role, dir, agentCommand)
 	}
 
 	imageDir, _ := cmd.Flags().GetString("image-dir")
@@ -124,7 +136,7 @@ func runAgentStart(cmd *cobra.Command, args []string) error {
 
 // ── --local ───────────────────────────────────────────────────────────────
 
-func runLocal(cmd *cobra.Command, ctx context.Context, agentName, agentBeadID, role, dir, agentCommand string) error {
+func runLocal(ctx context.Context, agentName, agentBeadID, role, dir, agentCommand string) error {
 	// Find a free port for coop (health probe gets port+1).
 	coopPort, err := freePort()
 	if err != nil {
@@ -135,7 +147,7 @@ func runLocal(cmd *cobra.Command, ctx context.Context, agentName, agentBeadID, r
 
 	// Materialize workspace .claude/settings.json via gb setup claude.
 	fmt.Printf("[gb agent start] Materializing hooks (gb setup claude)...\n")
-	if err := runSetupClaude(cmd, dir, role); err != nil {
+	if err := runSetupClaude(ctx, dir, role); err != nil {
 		fmt.Fprintf(os.Stderr, "[gb agent start] config beads not found, installing defaults...\n")
 		if err2 := runSetupClaudeDefaults(dir); err2 != nil {
 			fmt.Fprintf(os.Stderr, "[gb agent start] warning: could not write .claude/settings.json: %v\n", err2)

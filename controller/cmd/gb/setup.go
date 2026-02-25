@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,7 +64,7 @@ Flags:
 			return runSetupClaudeDefaults(workspace)
 		}
 
-		return runSetupClaude(cmd, workspace, role)
+		return runSetupClaude(cmd.Context(), workspace, role)
 	},
 }
 
@@ -256,16 +257,16 @@ func runSetupClaudeRemove(workspace string) error {
 	return nil
 }
 
-func runSetupClaude(cmd *cobra.Command, workspace, role string) error {
+func runSetupClaude(ctx context.Context, workspace, role string) error {
 	var layers []json.RawMessage
 
-	if cfg, err := daemon.GetConfig(cmd.Context(), "claude-hooks:global"); err == nil && cfg != nil {
+	if cfg, err := daemon.GetConfig(ctx, "claude-hooks:global"); err == nil && cfg != nil {
 		layers = append(layers, cfg.Value)
 		fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:global\n")
 	}
 
 	if role != "" {
-		if cfg, err := daemon.GetConfig(cmd.Context(), "claude-hooks:"+role); err == nil && cfg != nil {
+		if cfg, err := daemon.GetConfig(ctx, "claude-hooks:"+role); err == nil && cfg != nil {
 			layers = append(layers, cfg.Value)
 			fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:%s\n", role)
 		}
