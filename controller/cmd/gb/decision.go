@@ -517,6 +517,7 @@ Content can be provided via --content flag or piped from stdin.`,
 			Type:      "decision",
 			Kind:      "data",
 			Priority:  2,
+			Assignee:  actor,
 			CreatedBy: actor,
 			Fields:    nextFieldsJSON,
 		})
