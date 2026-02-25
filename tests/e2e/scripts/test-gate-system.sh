@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-gate-system.sh — kbeads gate system E2E tests
 #
-# Tests the kd bus emit --hook=Stop gate enforcement against a live
+# Tests gb bus emit --hook=Stop gate enforcement against a live
 # kd server in the gasboat-e2e namespace.
 #
 # Usage:
@@ -9,7 +9,8 @@
 #
 # Prerequisites:
 #   - kubectl context pointing at america-e2e-eks
-#   - kd binary in PATH (or set KD_BIN)
+#   - kd binary in PATH (or set KD_BIN) for CRUD
+#   - gb binary in PATH (or set GB_BIN) for orchestration
 #   - jq installed
 #
 # Scenarios tested:
@@ -18,13 +19,14 @@
 #   3. Decision respond satisfies gate; Stop now allowed
 #   4. No agent identity → fails open (exit 0)
 #   5. commit-push auto-check: warns on dirty tree but does not block
-#   6. kd gate status reflects reality after each transition
+#   6. gb gate status reflects reality after each transition
 
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────
 NAMESPACE="${NAMESPACE:-gasboat-e2e}"
-KD_BIN="${KD_BIN:-kd}"
+KD_BIN="${KD_BIN:-kd}"         # CRUD: create, close, list, show
+GB_BIN="${GB_BIN:-gb}"         # Orchestration: bus emit, decision, gate
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PASS=0
@@ -76,14 +78,14 @@ assert_contains() {
 }
 
 # Emit a Stop hook event for the given agent bead ID.
-# Returns the exit code of kd bus emit.
+# Returns the exit code of gb bus emit.
 emit_stop() {
   local agent_id="$1"
   local cwd="${2:-/tmp}"
   local hook_json
   hook_json=$(printf '{"session_id":"e2e-test-session","cwd":"%s"}' "$cwd")
   KD_AGENT_ID="$agent_id" \
-    "$KD_BIN" bus emit --hook=Stop <<< "$hook_json" \
+    "$GB_BIN" bus emit --hook=Stop <<< "$hook_json" \
     2>/tmp/kd-emit-stderr.txt
   # Return the exit code
 }
@@ -94,7 +96,7 @@ emit_stop_rc() {
   local hook_json
   hook_json=$(printf '{"session_id":"e2e-test-session","cwd":"%s"}' "$cwd")
   KD_AGENT_ID="$agent_id" \
-    "$KD_BIN" bus emit --hook=Stop <<< "$hook_json" \
+    "$GB_BIN" bus emit --hook=Stop <<< "$hook_json" \
     2>/tmp/kd-emit-stderr.txt
   echo $?
 }
@@ -179,7 +181,7 @@ main() {
     | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo "")
   if [ -n "$gate_probe_id" ]; then
     local gate_probe_out
-    gate_probe_out=$(KD_AGENT_ID="$gate_probe_id" "$KD_BIN" gate status 2>&1 || true)
+    gate_probe_out=$(KD_AGENT_ID="$gate_probe_id" "$GB_BIN" gate status 2>&1 || true)
     "$KD_BIN" close "$gate_probe_id" 2>/dev/null || true
     if echo "$gate_probe_out" | grep -q "404\|unknown command\|not found"; then
       red "ERROR: kd server does not support gate API (bd-pe028 not deployed)"
@@ -223,7 +225,7 @@ main() {
 
     # Create a decision (this resets the decision gate to pending)
     local dec_id
-    dec_id=$("$KD_BIN" decision create \
+    dec_id=$("$GB_BIN" decision create \
       --prompt="E2E test decision: what next?" \
       --options='[{"id":"a","label":"Continue"},{"id":"b","label":"Stop"}]' \
       --no-wait --json 2>/dev/null \
@@ -241,7 +243,7 @@ main() {
 
       # Verify gate status shows pending
       local gate_status
-      gate_status=$(KD_AGENT_ID="$AGENT2" "$KD_BIN" gate status 2>/dev/null || true)
+      gate_status=$(KD_AGENT_ID="$AGENT2" "$GB_BIN" gate status 2>/dev/null || true)
       assert_contains "gate status shows pending" "pending\|○" "$gate_status"
 
       # Clean up: close decision bead (this satisfies the gate)
@@ -261,7 +263,7 @@ main() {
 
     # Create a decision
     local dec3_id
-    dec3_id=$("$KD_BIN" decision create \
+    dec3_id=$("$GB_BIN" decision create \
       --prompt="E2E test decision 3: what next?" \
       --options='[{"id":"a","label":"Done"}]' \
       --no-wait --json 2>/dev/null \
@@ -283,7 +285,7 @@ main() {
 
       # Verify gate status shows satisfied
       local gate3_status
-      gate3_status=$(KD_AGENT_ID="$AGENT3" "$KD_BIN" gate status 2>/dev/null || true)
+      gate3_status=$(KD_AGENT_ID="$AGENT3" "$GB_BIN" gate status 2>/dev/null || true)
       assert_contains "gate status shows satisfied" "satisfied\|●" "$gate3_status"
     fi
     close_bead "$AGENT3"
@@ -295,7 +297,7 @@ main() {
   local hook_json='{"session_id":"e2e-anon","cwd":"/tmp"}'
   # Unset KD_AGENT_ID and KD_ACTOR to simulate unrecognized agent
   env -u KD_AGENT_ID -u KD_ACTOR \
-    "$KD_BIN" bus emit --hook=Stop <<< "$hook_json" \
+    "$GB_BIN" bus emit --hook=Stop <<< "$hook_json" \
     >/dev/null 2>/tmp/kd-emit-anon-stderr.txt; rc=$?
   assert_exit "anonymous agent: Stop fails open" 0 "$rc"
   echo
@@ -310,7 +312,7 @@ main() {
 
     # Satisfy decision gate first so it doesn't interfere
     local dec5_id
-    dec5_id=$("$KD_BIN" decision create \
+    dec5_id=$("$GB_BIN" decision create \
       --prompt="E2E scenario 5 decision" \
       --options='[{"id":"a","label":"ok"}]' \
       --no-wait --json 2>/dev/null \
@@ -327,7 +329,7 @@ main() {
 
     local stdout_content
     stdout_content=$(KD_AGENT_ID="$AGENT5" \
-      "$KD_BIN" bus emit --hook=Stop --cwd="$dirty_dir" \
+      "$GB_BIN" bus emit --hook=Stop --cwd="$dirty_dir" \
       <<< '{"session_id":"e2e-dirty","cwd":"'"$dirty_dir"'"}' \
       2>/tmp/kd-emit-dirty-stderr.txt || true)
     rc=$?
@@ -343,8 +345,8 @@ main() {
   fi
   echo
 
-  # ── Scenario 6: kd gate status reflects reality ──────────────────
-  blue "Scenario 6: kd gate status reflects gate transitions"
+  # ── Scenario 6: gb gate status reflects reality ──────────────────
+  blue "Scenario 6: gb gate status reflects gate transitions"
   AGENT6=$(create_test_agent "e2e-gate-test-6-$$")
   if [ -z "$AGENT6" ]; then
     fail "scenario-6-setup" "Could not create test bead"
@@ -353,7 +355,7 @@ main() {
 
     # Initially: no gate row → gate status should show nothing or pending
     local status6_init
-    status6_init=$(KD_AGENT_ID="$AGENT6" "$KD_BIN" gate status 2>/dev/null || true)
+    status6_init=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
     dim "  Initial status: $status6_init"
 
     # Trigger gate creation by emitting Stop
@@ -361,23 +363,23 @@ main() {
 
     # Now gate should be pending
     local status6_pending
-    status6_pending=$(KD_AGENT_ID="$AGENT6" "$KD_BIN" gate status 2>/dev/null || true)
+    status6_pending=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
     assert_contains "gate status pending after emit" "pending\|○\|decision" "$status6_pending"
 
-    # Manually satisfy via kd gate mark
-    KD_AGENT_ID="$AGENT6" "$KD_BIN" gate mark decision 2>/dev/null || true
+    # Manually satisfy via gb gate mark
+    KD_AGENT_ID="$AGENT6" "$GB_BIN" gate mark decision 2>/dev/null || true
 
     # Now gate should be satisfied
     local status6_satisfied
-    status6_satisfied=$(KD_AGENT_ID="$AGENT6" "$KD_BIN" gate status 2>/dev/null || true)
+    status6_satisfied=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
     assert_contains "gate status satisfied after mark" "satisfied\|●" "$status6_satisfied"
 
     # Clear the gate
-    KD_AGENT_ID="$AGENT6" "$KD_BIN" gate clear decision 2>/dev/null || true
+    KD_AGENT_ID="$AGENT6" "$GB_BIN" gate clear decision 2>/dev/null || true
 
     # Back to pending
     local status6_cleared
-    status6_cleared=$(KD_AGENT_ID="$AGENT6" "$KD_BIN" gate status 2>/dev/null || true)
+    status6_cleared=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
     assert_contains "gate status pending after clear" "pending\|○\|decision" "$status6_cleared"
 
     close_bead "$AGENT6"

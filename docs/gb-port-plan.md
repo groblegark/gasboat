@@ -2,7 +2,7 @@
 
 **Epic**: `bd-fzkui`
 **Date**: 2026-02-24
-**Status**: Planning
+**Status**: Complete (orchestration commands removed from kd in kbeads@20a7aee)
 
 ## Motivation
 

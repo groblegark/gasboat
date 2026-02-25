@@ -5,7 +5,8 @@ Integration tests for the gasboat/kbeads stack.
 ## Prerequisites
 
 - `kubectl` context pointing at `america-e2e-eks`
-- `gb` binary from `~/gasboat/controller` (or `kd` from `~/kbeads` for CRUD commands)
+- `gb` binary from `~/gasboat/controller` (orchestration: bus emit, decision, gate)
+- `kd` binary from `~/kbeads` (CRUD: create, close, list, show)
 - `jq` and `python3` installed
 - `gasboat-e2e` namespace deployed (see `fics-helm-chart/charts/gasboat/values/gasboat-e2e.yaml`)
 
@@ -19,14 +20,14 @@ The `gasboat-e2e` namespace must be running kbeads at commit `8c92e4e` or later.
 ### Quick run (port-forward auto-setup):
 
 ```bash
-KD_BIN=/tmp/kd-gate \
+GB_BIN=/tmp/gb KD_BIN=/tmp/kd \
   ./tests/e2e/scripts/test-gate-system.sh
 ```
 
 ### With explicit daemon URL:
 
 ```bash
-KD_BIN=/tmp/kd-gate \
+GB_BIN=/tmp/gb KD_BIN=/tmp/kd \
 BEADS_HTTP_URL=http://localhost:19090 \
   ./tests/e2e/scripts/test-gate-system.sh
 ```
