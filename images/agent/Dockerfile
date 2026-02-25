@@ -2,7 +2,9 @@
 #
 # Targets:
 #   slim     — minimal: git, Node.js, Claude Code, coop, kd, hooks
-#   omnibus  — slim + Go, Rust, uv, bun, kubectl, Helm, Task, AWS/Docker/GitHub/GitLab CLIs
+#   omnibus  — slim + Go, Rust, uv, bun, Helm, Task, Terraform, Terragrunt,
+#              AWS/Docker/GitHub/GitLab CLIs, Playwright, golangci-lint, quench,
+#              yq, stern, hadolint, shellcheck, postgresql-client
 #
 # Build:
 #   docker build --target slim    -t gasboat-agent:slim    images/agent/
@@ -99,7 +101,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make unzip xz-utils \
     python3 python3-pip python3-venv \
     gcc g++ libc6-dev binutils \
-    libcurl3t64-gnutls libicu74 libicu-dev && \
+    libcurl3t64-gnutls libicu74 libicu-dev \
+    postgresql-client shellcheck && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -171,7 +174,56 @@ RUN GOPATH=/tmp/go /usr/local/go/bin/go install github.com/go-task/task/v3/cmd/t
     mv /tmp/go/bin/task /usr/local/bin/task && \
     rm -rf /tmp/go
 
-# ── Helm ───────────────────────────────────────────────────────
+# ── Helm + plugins ───────────────────────────────────────────────
 RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+ENV HELM_PLUGINS=/usr/local/share/helm/plugins
+RUN helm plugin install https://github.com/helm-unittest/helm-unittest && \
+    helm plugin install https://github.com/chartmuseum/helm-push
+
+# ── Terraform + Terragrunt ───────────────────────────────────────
+ARG TERRAFORM_VERSION=1.11.3
+ARG TERRAGRUNT_VERSION=0.77.11
+RUN curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${TARGETARCH}.zip" \
+      -o /tmp/terraform.zip && \
+    unzip -q /tmp/terraform.zip -d /usr/local/bin && \
+    rm /tmp/terraform.zip && \
+    curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v${TERRAGRUNT_VERSION}/terragrunt_linux_${TARGETARCH}" \
+      -o /usr/local/bin/terragrunt && \
+    chmod +x /usr/local/bin/terragrunt
+
+# ── golangci-lint ────────────────────────────────────────────────
+ARG GOLANGCI_LINT_VERSION=1.64.8
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+      | sh -s -- -b /usr/local/bin "v${GOLANGCI_LINT_VERSION}"
+
+# ── quench (code quality checker) ────────────────────────────────
+RUN cargo install quench --git https://github.com/alfredjeanlab/quench && \
+    mv ${CARGO_HOME}/bin/quench /usr/local/bin/quench
+
+# ── yq (YAML processor) ─────────────────────────────────────────
+RUN YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name) && \
+    curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${TARGETARCH}" \
+      -o /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq
+
+# ── stern (K8s log streaming) ────────────────────────────────────
+ARG STERN_VERSION=1.30.0
+RUN curl -fsSL "https://github.com/stern/stern/releases/download/v${STERN_VERSION}/stern_${STERN_VERSION}_linux_${TARGETARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin stern
+
+# ── hadolint (Dockerfile linter) ─────────────────────────────────
+RUN case "${TARGETARCH}" in arm64) HL_ARCH=arm64 ;; *) HL_ARCH=x86_64 ;; esac && \
+    curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-${HL_ARCH}" \
+      -o /usr/local/bin/hadolint && \
+    chmod +x /usr/local/bin/hadolint
+
+# ── Playwright + Chromium (headless browser automation) ──────────
+ARG PLAYWRIGHT_VERSION=1.50.1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g playwright@${PLAYWRIGHT_VERSION} && \
+    npx playwright install --with-deps chromium && \
+    rm -rf /var/lib/apt/lists/* /tmp/* && \
+    npm cache clean --force && \
+    chmod -R 777 ${PLAYWRIGHT_BROWSERS_PATH}
 
 USER 1000
