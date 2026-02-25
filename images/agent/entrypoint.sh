@@ -77,6 +77,35 @@ if [ "${CRED_WRITTEN}" = "1" ]; then
     git config --global credential.helper "store --file=${CRED_FILE}"
 fi
 
+# ── Repo cloning ──────────────────────────────────────────────────────────
+# Clone source repos that agents reference.  Stored under ${WORKSPACE}/repos/
+# (PVC-backed) so they persist across restarts.  Uses a shallow clone on first
+# start for speed; skips if the repo directory already exists.
+#
+# Public repos: cloned unconditionally.
+# Private repos: require credentials set above (GITLAB_TOKEN for gitlab.com).
+#
+# To force a fresh clone, delete the relevant directory under workspace/repos/.
+
+_clone_repo() {
+    local url="$1"
+    local dest="$2"
+    if [ -d "${dest}/.git" ]; then
+        echo "[entrypoint] Repo already present: ${dest} (skipping clone)"
+    else
+        echo "[entrypoint] Cloning ${url} → ${dest}"
+        git clone --depth 1 --quiet "${url}" "${dest}" 2>&1 \
+            || echo "[entrypoint] WARNING: clone failed for ${url} (credentials missing?)"
+    fi
+}
+
+REPOS_DIR="${WORKSPACE}/repos"
+mkdir -p "${REPOS_DIR}"
+
+_clone_repo "https://github.com/groblegark/kbeads"              "${REPOS_DIR}/kbeads"
+_clone_repo "https://github.com/groblegark/gasboat"             "${REPOS_DIR}/gasboat"
+_clone_repo "https://gitlab.com/PiHealth/CoreFICS/monorepo"     "${REPOS_DIR}/pihealth-monorepo"
+
 # Initialize git repo in workspace if not already present.
 # Persistent roles keep state across restarts via PVC.
 if [ ! -d "${WORKSPACE}/.git" ]; then
@@ -85,6 +114,8 @@ if [ ! -d "${WORKSPACE}/.git" ]; then
     git init -q
     git config user.name "${GIT_AUTHOR_NAME:-${ROLE}}"
     git config user.email "${ROLE}@gasboat.local"
+    # Keep cloned repos out of the workspace's own git index.
+    echo "repos/" >> "${WORKSPACE}/.gitignore"
 else
     echo "[entrypoint] Git repo already exists in ${WORKSPACE}"
     cd "${WORKSPACE}"

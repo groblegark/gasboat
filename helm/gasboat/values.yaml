@@ -124,8 +124,17 @@ agents:
   # K8s secret with GitHub token for gh CLI in agent pods (releases, GHCR push)
   githubTokenSecret: ""
 
-  # K8s secret with GitLab token for glab CLI and git clone/push in agent pods
+  # K8s secret with GitLab token for glab CLI and git clone/push in agent pods.
+  # Set gitlabTokenSecret to the K8s secret name; the secret must contain a "token" key.
+  # Use gitlabTokenExternalSecret to have the Helm chart create it from AWS Secrets Manager.
   gitlabTokenSecret: ""
+  gitlabTokenExternalSecret:   # Creates the K8s secret from a secret store
+    enabled: false
+    secretStoreName: "secretstore"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "15m"
+    remoteRef: ""              # e.g. "gasboat/gitlab-token"
+    tokenProperty: "token"    # JSON key inside the AWS secret
 
   # --- NATS event bus ---
 
