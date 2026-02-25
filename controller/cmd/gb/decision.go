@@ -83,6 +83,7 @@ var decisionCreateCmd = &cobra.Command{
 			Type:      "decision",
 			Kind:      "data",
 			Priority:  2,
+			Assignee:  actor,
 			CreatedBy: actor,
 			Fields:    fieldsJSON,
 		})
