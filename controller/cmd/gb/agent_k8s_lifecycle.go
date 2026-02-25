@@ -166,7 +166,7 @@ func monitorAgentExit(ctx context.Context, coopPort int) {
 		if agentState == "exited" {
 			fmt.Printf("[gb agent start] agent exited, requesting coop shutdown\n")
 			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/shutdown", nil)
-			_, _ = client.Do(req) //nolint:errcheck
+			_, _ = client.Do(req) //nolint:errcheck // best-effort shutdown on exit
 			return
 		}
 	}
