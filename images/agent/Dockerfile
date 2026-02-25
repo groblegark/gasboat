@@ -1,12 +1,27 @@
 # Gasboat agent images (multi-stage).
 #
 # Targets:
-#   slim     — minimal: git, Node.js, Claude Code, coop, kd, hooks
+#   slim     — minimal: git, Node.js, Claude Code, coop, kd, gb, hooks
 #   omnibus  — slim + Go, Rust, uv, bun, kubectl, Helm, Task, AWS/Docker/GitHub/GitLab CLIs
 #
-# Build:
-#   docker build --target slim    -t gasboat-agent:slim    images/agent/
-#   docker build --target omnibus -t gasboat-agent:omnibus  images/agent/
+# Build (from repo root):
+#   docker build --target slim    -t gasboat-agent:slim    -f images/agent/Dockerfile .
+#   docker build --target omnibus -t gasboat-agent:omnibus  -f images/agent/Dockerfile .
+
+# ═════════════════════════════════════════════════════════════════
+# Go builder — compiles gb (agent orchestration CLI) from source
+# ═════════════════════════════════════════════════════════════════
+
+FROM golang:1.25-bookworm AS gb-builder
+WORKDIR /build
+COPY controller/go.mod controller/go.sum ./controller/
+RUN cd controller && go mod download
+COPY controller/ ./controller/
+RUN cd controller && CGO_ENABLED=0 go build -ldflags="-s -w" -o /gb ./cmd/gb/
+
+# ═════════════════════════════════════════════════════════════════
+# slim — minimal agent with git, Node.js, Claude Code, coop, kd, gb
+# ═════════════════════════════════════════════════════════════════
 
 FROM ubuntu:24.04 AS slim
 
@@ -53,6 +68,9 @@ RUN set -e && \
     curl -fsSL "https://github.com/groblegark/kbeads/releases/download/${BEADS_VERSION}/kd-linux-${BD_ARCH}.tar.gz" \
       | tar -xz -C /usr/local/bin kd
 
+# ── Gasboat CLI (gb) — agent orchestration ──────────────────────
+COPY --from=gb-builder /gb /usr/local/bin/gb
+
 # ── Agent user ───────────────────────────────────────────────────
 RUN sed -i 's/^ubuntu:/agent:/' /etc/passwd && \
     sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd && \
@@ -64,7 +82,7 @@ RUN sed -i 's/^ubuntu:/agent:/' /etc/passwd && \
     chmod 0440 /etc/sudoers.d/agent
 
 # ── Hook scripts ─────────────────────────────────────────────────
-COPY hooks/ /hooks/
+COPY images/agent/hooks/ /hooks/
 RUN chmod +x /hooks/*.sh
 
 # ── kubectl ──────────────────────────────────────────────────────
@@ -74,7 +92,7 @@ RUN KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) && \
     chmod +x /usr/local/bin/kubectl
 
 # ── Entrypoint ───────────────────────────────────────────────────
-COPY entrypoint.sh /entrypoint.sh
+COPY images/agent/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER 1000
