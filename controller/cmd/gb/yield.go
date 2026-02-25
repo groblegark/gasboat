@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var yieldAgentID string
+
 var yieldCmd = &cobra.Command{
 	Use:   "yield",
 	Short: "Block until a pending decision is resolved or mail arrives",
@@ -21,7 +23,11 @@ var yieldCmd = &cobra.Command{
   - A mail/message bead targeting this agent is created
   - The timeout expires (default 24h)
 
-Uses HTTP SSE for real-time notification, with 2-second polling as fallback.`,
+Uses HTTP SSE for real-time notification, with 2-second polling as fallback.
+
+Requires an open decision bead created with 'gb decision create' before
+calling yield. After the decision resolves, gb yield calls
+POST /v1/agents/{id}/gates/decision/satisfy to release the Stop gate.`,
 	GroupID: "session",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		timeout, _ := cmd.Flags().GetDuration("timeout")
@@ -35,28 +41,59 @@ Uses HTTP SSE for real-time notification, with 2-second polling as fallback.`,
 			defer cancel()
 		}
 
+		// Resolve agent ID — required for gate satisfaction.
+		agentID, err := resolveAgentIDWithFallback(ctx, yieldAgentID)
+		if err != nil {
+			return fmt.Errorf("agent identity required for yield: %w", err)
+		}
+
+		// Find open decision beads for this agent.
 		result, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
 			Statuses: []string{"open"},
 			Types:    []string{"decision"},
 			Sort:     "-created_at",
-			Limit:    1,
+			Limit:    20,
 		})
 		if err != nil {
 			return fmt.Errorf("listing decisions: %w", err)
 		}
 
-		if len(result.Beads) == 0 {
-			fmt.Println("No pending decisions found, waiting for any event...")
-		} else {
-			d := result.Beads[0]
-			prompt := d.Fields["prompt"]
-			if prompt == "" {
-				prompt = d.Title
+		// Find a decision that belongs to this agent.
+		var pending *beadsapi.BeadDetail
+		for _, b := range result.Beads {
+			if b.Fields["requesting_agent_bead_id"] == agentID {
+				pending = b
+				break
 			}
-			fmt.Fprintf(os.Stderr, "Yielding on decision %s: %s\n", d.ID, prompt)
 		}
 
-		return yieldSSE(ctx, result.Beads)
+		if pending == nil {
+			return fmt.Errorf("no open decision for agent %s; create one with 'gb decision create'", agentID)
+		}
+
+		prompt := pending.Fields["prompt"]
+		if prompt == "" {
+			prompt = pending.Title
+		}
+		fmt.Fprintf(os.Stderr, "Yielding on decision %s: %s\n", pending.ID, prompt)
+
+		if err := yieldSSE(ctx, []*beadsapi.BeadDetail{pending}); err != nil {
+			return err
+		}
+
+		// Only satisfy the gate if the yield resolved normally (not timed out or interrupted).
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		// Call satisfy gate — this releases the Stop hook for the next session turn.
+		satisfyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := daemon.SatisfyGate(satisfyCtx, agentID, "decision"); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
+		}
+
+		return nil
 	},
 }
 
@@ -128,19 +165,6 @@ func yieldPoll(ctx context.Context, pendingIDs map[string]bool) error {
 				return printYieldResult(id)
 			}
 		}
-
-		if len(pendingIDs) == 0 {
-			msgs, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
-				Statuses: []string{"open"},
-				Types:    []string{"message", "mail"},
-				Limit:    1,
-				Sort:     "-created_at",
-			})
-			if err == nil && len(msgs.Beads) > 0 {
-				fmt.Printf("Mail received: %s\n", msgs.Beads[0].ID)
-				return nil
-			}
-		}
 	}
 }
 
@@ -163,4 +187,5 @@ func printYieldResult(id string) error {
 
 func init() {
 	yieldCmd.Flags().Duration("timeout", 24*time.Hour, "maximum time to wait")
+	yieldCmd.Flags().StringVar(&yieldAgentID, "agent-id", "", "agent bead ID (default: KD_AGENT_ID env)")
 }
