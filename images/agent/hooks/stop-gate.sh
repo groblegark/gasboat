@@ -9,12 +9,13 @@
 set -uo pipefail
 
 # Read stdin (Claude Code hook JSON) and forward to gb bus emit.
+# stderr flows through so Claude Code sees the block reason.
 _stdin=$(cat)
-echo "$_stdin" | gb bus emit --hook=Stop 2>/tmp/stop-gate-stderr
+echo "$_stdin" | gb bus emit --hook=Stop
 _rc=$?
 
 if [ $_rc -eq 2 ]; then
-    # Gate blocked — inject checkpoint instructions into the conversation.
+    # Gate blocked — inject checkpoint instructions into the conversation via stdout.
     cat <<'CHECKPOINT'
 <system-reminder>
 STOP BLOCKED — decision gate unsatisfied. You MUST create a decision checkpoint before you can stop.
