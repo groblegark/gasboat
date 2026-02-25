@@ -54,6 +54,47 @@ claudeless run tests/e2e/claudeless/gate-decision-flow.toml \
 
 Claudeless is installed in the `ghcr.io/groblegark/gasboat/agent:nightly-omnibus` image.
 
+## Decisions/Yield Tests (`test-decisions-yield.sh`)
+
+Tests `gb decision` CRUD and `gb yield` blocking behavior.
+
+**Requires** `gb` binary and a kbeads server with decision/yield support.
+
+### Quick run (port-forward auto-setup):
+
+```bash
+GB_BIN=/tmp/gb KD_BIN=/tmp/kd \
+  ./tests/e2e/scripts/test-decisions-yield.sh
+```
+
+### With explicit daemon URL:
+
+```bash
+GB_BIN=/tmp/gb KD_BIN=/tmp/kd \
+BEADS_HTTP_URL=http://localhost:19091 \
+  ./tests/e2e/scripts/test-decisions-yield.sh
+```
+
+### Scenarios covered:
+
+1. **Decision create** — `gb decision create --no-wait --json` returns ID, exit 0
+2. **Decision list** — created decision appears in `gb decision list --json`
+3. **Decision show** — shows prompt, options, status=open
+4. **Decision respond** — `gb decision respond <id> --select=a` closes it; chosen=a
+5. **Yield unblocks on decision close** — background `gb yield --timeout=15s`, respond to decision, yield exits 0 with "resolved"
+6. **Yield unblocks on mail** — background yield, `gb mail send`, yield exits 0 with "Mail received"
+7. **Yield timeout** — `gb yield --timeout=3s` with no events, exits 0 with "Yield timed out"
+
+## CI/CD
+
+E2E tests run automatically via `.github/workflows/e2e.yml`:
+
+- **Trigger**: after CI workflow succeeds on `main`, or via `workflow_dispatch`
+- **Cluster**: `america-e2e-eks` / `gasboat-e2e` namespace
+- **Secrets**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+
+Run locally with `make e2e` (requires port-forward or `BEADS_HTTP_URL` set).
+
 ## Deploying gasboat-e2e namespace
 
 ```bash

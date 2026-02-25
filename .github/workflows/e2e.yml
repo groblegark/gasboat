@@ -1,0 +1,85 @@
+name: E2E
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/go.mod
+
+      - name: Build gb
+        run: cd controller && go build -o /usr/local/bin/gb ./cmd/gb/
+
+      - name: Install kd
+        run: |
+          BEADS_VERSION=$(grep '^ARG BEADS_VERSION=' images/agent/Dockerfile | cut -d= -f2)
+          echo "Installing kd ${BEADS_VERSION}"
+          curl -fsSL "https://github.com/groblegark/kbeads/releases/download/${BEADS_VERSION}/kd-linux-x86_64.tar.gz" \
+            | tar -xz -C /usr/local/bin kd
+          kd --version
+
+      - name: Install kubectl
+        run: |
+          curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          kubectl version --client
+
+      - name: Configure AWS credentials
+        run: |
+          aws configure set aws_access_key_id "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          aws configure set aws_secret_access_key "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          aws configure set region us-east-1
+
+      - name: Connect to EKS
+        run: aws eks update-kubeconfig --name america-e2e-eks --region us-east-1
+
+      - name: Verify cluster access
+        run: kubectl -n gasboat-e2e get svc gasboat-e2e-beads
+
+      - name: Port-forward beads daemon
+        run: |
+          kubectl -n gasboat-e2e port-forward svc/gasboat-e2e-beads 19090:8080 &
+          echo "PF_PID=$!" >> "$GITHUB_ENV"
+          sleep 3
+
+      - name: Load token
+        run: |
+          TOKEN=$(kubectl -n gasboat-e2e get secret kd-beads-token \
+            -o jsonpath='{.data.token}' | base64 -d)
+          echo "::add-mask::${TOKEN}"
+          echo "BEADS_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+
+      - name: Run decisions/yield tests
+        env:
+          BEADS_HTTP_URL: http://localhost:19090
+          GB_BIN: gb
+          KD_BIN: kd
+          KD_ACTOR: e2e-ci
+        run: ./tests/e2e/scripts/test-decisions-yield.sh
+
+      - name: Run gate system tests
+        env:
+          BEADS_HTTP_URL: http://localhost:19090
+          GB_BIN: gb
+          KD_BIN: kd
+          KD_ACTOR: e2e-ci
+        run: ./tests/e2e/scripts/test-gate-system.sh
+
+      - name: Cleanup port-forward
+        if: always()
+        run: kill "$PF_PID" 2>/dev/null || true

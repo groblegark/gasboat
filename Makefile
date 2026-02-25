@@ -1,4 +1,4 @@
-.PHONY: build build-bridge test lint image image-agent image-bridge image-all push push-agent push-bridge push-all helm-package helm-template clean
+.PHONY: build build-bridge test lint e2e image image-agent image-bridge image-all push push-agent push-bridge push-all helm-package helm-template clean
 
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -20,6 +20,10 @@ test:
 
 lint:
 	$(MAKE) -C controller lint
+
+e2e: build-gb
+	./tests/e2e/scripts/test-decisions-yield.sh
+	./tests/e2e/scripts/test-gate-system.sh
 
 # ── Docker ──────────────────────────────────────────────────────────────
 
