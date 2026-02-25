@@ -329,6 +329,24 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 	return nil
 }
 
+// reportEmoji returns an emoji for the given artifact/report type.
+func reportEmoji(reportType string) string {
+	switch reportType {
+	case "plan":
+		return ":clipboard:"
+	case "checklist":
+		return ":ballot_box_with_check:"
+	case "diff-summary":
+		return ":mag:"
+	case "epic":
+		return ":rocket:"
+	case "bug":
+		return ":bug:"
+	default:
+		return ":page_facing_up:"
+	}
+}
+
 // PostReport posts a report as a thread reply on the linked decision's Slack message.
 func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content string) error {
 	ref, ok := b.lookupMessage(decisionID)
@@ -337,7 +355,14 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 		return nil
 	}
 
-	text := fmt.Sprintf(":page_facing_up: *Report (%s)*\n\n%s", reportType, content)
+	// Truncate content for Slack block limits (3000 char max for text blocks).
+	displayContent := content
+	if len(displayContent) > 3000 {
+		displayContent = displayContent[:2997] + "..."
+	}
+
+	emoji := reportEmoji(reportType)
+	text := fmt.Sprintf("%s *Report (%s)*\n\n%s", emoji, reportType, displayContent)
 
 	_, _, err := b.api.PostMessageContext(ctx, ref.ChannelID,
 		slack.MsgOptionText(text, false),
