@@ -460,9 +460,18 @@ Content can be provided via --content flag or piped from stdin.`,
 			fmt.Fprintf(os.Stderr, "Warning: failed to add dependency: %v\n", err)
 		}
 
-		// Close the report bead → triggers gate satisfaction.
+		// Close the report bead.
 		if err := daemon.CloseBead(cmd.Context(), reportID, nil); err != nil {
 			return fmt.Errorf("closing report bead: %w", err)
+		}
+
+		// Satisfy the agent's decision gate — the artifact has been delivered.
+		if reqAgentID := decBead.Fields["requesting_agent_bead_id"]; reqAgentID != "" {
+			gateCtx, gateCancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			defer gateCancel()
+			if err := daemon.SatisfyGate(gateCtx, reqAgentID, "decision"); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
+			}
 		}
 
 		if jsonOutput {

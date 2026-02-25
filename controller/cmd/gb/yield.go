@@ -86,6 +86,15 @@ POST /v1/agents/{id}/gates/decision/satisfy to release the Stop gate.`,
 			return nil
 		}
 
+		// Re-fetch the resolved decision to check if an artifact is required.
+		// If so, the gate stays pending until 'gb decision report' submits the artifact.
+		resolvedBead, fetchErr := daemon.GetBead(context.Background(), pending.ID)
+		if fetchErr == nil && resolvedBead.Fields["required_artifact"] != "" {
+			fmt.Fprintf(os.Stderr, "Artifact required (%s) — gate stays pending until 'gb decision report %s' is called\n",
+				resolvedBead.Fields["required_artifact"], pending.ID)
+			return nil
+		}
+
 		// Call satisfy gate — this releases the Stop hook for the next session turn.
 		satisfyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
