@@ -601,6 +601,7 @@ tasks:
       # ── Task CLI (Taskfile runner) ──────────────────────────────────
       GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install github.com/go-task/task/v3/cmd/task@latest
       mv /tmp/gopath/bin/task $LAYER/usr/local/bin/task
+      chmod -R u+w /tmp/gopath 2>/dev/null || true
       rm -rf /tmp/gopath
 
       # ── Helm + plugins ──────────────────────────────────────────────
