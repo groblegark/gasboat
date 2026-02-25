@@ -18,10 +18,11 @@ var readyCmd = &cobra.Command{
 		limit, _ := cmd.Flags().GetInt("limit")
 
 		q := beadsapi.ListBeadsQuery{
-			Statuses: []string{"open"},
-			Types:    beadType,
-			Limit:    limit,
-			Sort:     "priority",
+			Statuses:   []string{"open"},
+			Types:      beadType,
+			Limit:      limit,
+			Sort:       "priority",
+			NoOpenDeps: true,
 		}
 		if assignee != "" {
 			q.Assignee = assignee

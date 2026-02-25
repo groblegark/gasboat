@@ -10,14 +10,15 @@ import (
 
 // ListBeadsQuery contains the full set of query parameters for listing beads.
 type ListBeadsQuery struct {
-	Types    []string // Filter by bead types (e.g., "decision", "mail")
-	Statuses []string // Filter by statuses (e.g., "open", "closed")
-	Labels   []string // Filter by labels
-	Assignee string   // Filter by assignee
-	Search   string   // Full-text search
-	Sort     string   // Sort field (e.g., "priority", "created_at")
-	Limit    int      // Max results
-	Offset   int      // Pagination offset
+	Types      []string // Filter by bead types (e.g., "decision", "mail")
+	Statuses   []string // Filter by statuses (e.g., "open", "closed")
+	Labels     []string // Filter by labels
+	Assignee   string   // Filter by assignee
+	Search     string   // Full-text search
+	Sort       string   // Sort field (e.g., "priority", "created_at")
+	NoOpenDeps bool     // Only return beads with no open/in_progress/deferred dependencies
+	Limit      int      // Max results
+	Offset     int      // Pagination offset
 }
 
 // ListBeadsResult is the response from a filtered bead listing.
@@ -46,6 +47,9 @@ func (c *Client) ListBeadsFiltered(ctx context.Context, q ListBeadsQuery) (*List
 	}
 	if q.Sort != "" {
 		params.Set("sort", q.Sort)
+	}
+	if q.NoOpenDeps {
+		params.Set("no_open_deps", "true")
 	}
 	if q.Limit > 0 {
 		params.Set("limit", strconv.Itoa(q.Limit))
