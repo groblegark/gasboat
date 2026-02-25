@@ -91,9 +91,9 @@ func init() {
 	// Agent Lifecycle
 	rootCmd.AddCommand(agentCmd)
 
-	// Orchestration (placeholders — added by Phase 2 tasks)
+	// Orchestration
+	rootCmd.AddCommand(gateCmd)
 	// rootCmd.AddCommand(decisionCmd)
-	// rootCmd.AddCommand(gateCmd)
 	// rootCmd.AddCommand(busCmd)
 	// rootCmd.AddCommand(hookCmd)
 	// rootCmd.AddCommand(primeCmd)
