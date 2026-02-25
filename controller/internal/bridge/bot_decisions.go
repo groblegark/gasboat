@@ -19,10 +19,11 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 
 	// Parse options — try JSON array of objects first, then strings.
 	type optionObj struct {
-		ID          string `json:"id"`
-		Short       string `json:"short"`
-		Label       string `json:"label"`
-		Description string `json:"description"`
+		ID           string `json:"id"`
+		Short        string `json:"short"`
+		Label        string `json:"label"`
+		Description  string `json:"description"`
+		ArtifactType string `json:"artifact_type,omitempty"`
 	}
 	var optObjs []optionObj
 	var optStrings []string
@@ -89,6 +90,9 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 					}
 					optText += fmt.Sprintf("\n%s", desc)
 				}
+				if opt.ArtifactType != "" {
+					optText += fmt.Sprintf("\n_Requires: %s_", opt.ArtifactType)
+				}
 
 				buttonLabel := "Choose"
 				if len(optObjs) <= 4 {
@@ -154,14 +158,31 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	// Resolve target channel for this agent.
 	targetChannel := b.resolveChannel(agent)
 
-	// Thread under predecessor decision if present and in the same channel.
+	// Thread under agent card or predecessor decision.
 	var threadTS string
 	var threadSource string
 
+	if b.agentThreadingEnabled() && agent != "" {
+		// Agent threading mode: thread under the agent's status card.
+		cardTS, err := b.ensureAgentCard(ctx, agent, targetChannel)
+		if err != nil {
+			b.logger.Error("failed to ensure agent card", "agent", agent, "error", err)
+			// Fall through to flat posting.
+		} else {
+			threadTS = cardTS
+			threadSource = "agent_card"
+		}
+	}
+
+	// Predecessor threading (within the agent thread or top-level).
 	if predecessorID != "" {
 		if ref, ok := b.lookupMessage(predecessorID); ok && ref.ChannelID == targetChannel {
-			threadTS = ref.Timestamp
-			threadSource = "predecessor"
+			// In agent mode, predecessor still chains within the thread.
+			// In flat mode, predecessor creates the thread.
+			if threadTS == "" {
+				threadTS = ref.Timestamp
+				threadSource = "predecessor"
+			}
 		}
 	}
 
@@ -176,23 +197,24 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	}
 
 	// Track the message and update pending count.
+	ref := MessageRef{ChannelID: channelID, Timestamp: ts, Agent: agent}
 	b.mu.Lock()
-	b.messages[bead.ID] = MessageRef{
-		ChannelID: channelID,
-		Timestamp: ts,
-		Agent:     agent,
+	b.messages[bead.ID] = ref
+	if b.agentThreadingEnabled() && agent != "" {
+		b.agentPending[agent]++
 	}
 	b.mu.Unlock()
 
 	if b.state != nil {
-		_ = b.state.SetDecisionMessage(bead.ID, MessageRef{
-			ChannelID: channelID,
-			Timestamp: ts,
-			Agent:     agent,
-		})
+		_ = b.state.SetDecisionMessage(bead.ID, ref)
 	}
 
-	// Mark predecessor as superseded if we threaded under it.
+	// Update agent card with new pending count.
+	if threadSource == "agent_card" {
+		b.updateAgentCard(ctx, agent)
+	}
+
+	// Mark predecessor as superseded if we threaded under it (flat mode only).
 	if threadSource == "predecessor" {
 		b.markDecisionSuperseded(ctx, predecessorID, bead.ID, targetChannel, threadTS)
 	}
@@ -238,10 +260,19 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 
 	targetChannel := b.resolveChannel(agent)
 
-	_, _, err := b.api.PostMessageContext(ctx, targetChannel,
+	msgOpts := []slack.MsgOption{
 		slack.MsgOptionText(fmt.Sprintf("ESCALATED: %s — %s", displayID, question), false),
 		slack.MsgOptionBlocks(blocks...),
-	)
+	}
+
+	// In agent threading mode, thread escalation under the agent's card.
+	if b.agentThreadingEnabled() && agent != "" {
+		if cardTS, err := b.ensureAgentCard(ctx, agent, targetChannel); err == nil {
+			msgOpts = append(msgOpts, slack.MsgOptionTS(cardTS))
+		}
+	}
+
+	_, _, err := b.api.PostMessageContext(ctx, targetChannel, msgOpts...)
 	if err != nil {
 		return fmt.Errorf("post escalation to Slack: %w", err)
 	}
@@ -264,13 +295,23 @@ func (b *Bot) DismissDecision(ctx context.Context, beadID string) error {
 		return fmt.Errorf("delete dismissed decision from Slack: %w", err)
 	}
 
-	// Clean up tracking.
+	// Clean up tracking and update agent card.
 	b.mu.Lock()
 	delete(b.messages, beadID)
+	if b.agentThreadingEnabled() && ref.Agent != "" {
+		if b.agentPending[ref.Agent] > 0 {
+			b.agentPending[ref.Agent]--
+		}
+	}
+	agent := ref.Agent
 	b.mu.Unlock()
 
 	if b.state != nil {
 		_ = b.state.RemoveDecisionMessage(beadID)
+	}
+
+	if b.agentThreadingEnabled() && agent != "" {
+		b.updateAgentCard(ctx, agent)
 	}
 
 	b.logger.Info("dismissed decision from Slack",
@@ -363,6 +404,38 @@ func (b *Bot) resolveOptionLabel(ctx context.Context, beadID, optIndex string) s
 		return opt.ID
 	}
 	return fmt.Sprintf("Option %s", optIndex)
+}
+
+// lookupArtifactType fetches the bead's options and returns the artifact_type
+// for the option matching the given label. Returns "" if not found.
+func (b *Bot) lookupArtifactType(ctx context.Context, beadID, chosenLabel string) string {
+	bead, err := b.daemon.GetBead(ctx, beadID)
+	if err != nil {
+		return ""
+	}
+	type optWithArtifact struct {
+		ID           string `json:"id"`
+		Short        string `json:"short"`
+		Label        string `json:"label"`
+		ArtifactType string `json:"artifact_type"`
+	}
+	var opts []optWithArtifact
+	if raw, ok := bead.Fields["options"]; ok {
+		_ = json.Unmarshal([]byte(raw), &opts)
+	}
+	for _, opt := range opts {
+		label := opt.Label
+		if label == "" {
+			label = opt.Short
+		}
+		if label == "" {
+			label = opt.ID
+		}
+		if label == chosenLabel && opt.ArtifactType != "" {
+			return opt.ArtifactType
+		}
+	}
+	return ""
 }
 
 // openResolveModal opens a modal for confirming a decision choice with optional rationale.
@@ -543,6 +616,13 @@ func (b *Bot) handleResolveSubmission(ctx context.Context, callback slack.Intera
 		"chosen":    chosen,
 		"rationale": rationale,
 	}
+
+	// Look up artifact_type from the chosen option.
+	if at := b.lookupArtifactType(ctx, beadID, chosen); at != "" {
+		fields["required_artifact"] = at
+		fields["artifact_status"] = "pending"
+	}
+
 	if err := b.daemon.CloseBead(ctx, beadID, fields); err != nil {
 		b.logger.Error("failed to resolve decision from modal",
 			"bead", beadID, "error", err)

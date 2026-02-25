@@ -41,9 +41,16 @@ var decisionCreateCmd = &cobra.Command{
 			"prompt": prompt,
 		}
 		if optionsJSON != "" {
-			var opts []any
+			var opts []map[string]any
 			if err := json.Unmarshal([]byte(optionsJSON), &opts); err != nil {
 				return fmt.Errorf("invalid --options JSON: %w", err)
+			}
+			for _, opt := range opts {
+				if at, _ := opt["artifact_type"].(string); at != "" {
+					if !validArtifactTypes[at] {
+						return fmt.Errorf("unknown artifact_type %q (allowed: report, plan, checklist, diff-summary, epic, bug)", at)
+					}
+				}
 			}
 			fields["options"] = json.RawMessage(optionsJSON)
 		}
@@ -175,6 +182,17 @@ var decisionRespondCmd = &cobra.Command{
 		fields["responded_by"] = actor
 		fields["responded_at"] = time.Now().UTC().Format(time.RFC3339)
 
+		// Look up artifact_type from the chosen option.
+		if selected != "" {
+			bead, err := daemon.GetBead(cmd.Context(), id)
+			if err == nil {
+				if at := extractArtifactType(bead.Fields["options"], selected); at != "" {
+					fields["required_artifact"] = at
+					fields["artifact_status"] = "pending"
+				}
+			}
+		}
+
 		if err := daemon.UpdateBeadFields(cmd.Context(), id, fields); err != nil {
 			return fmt.Errorf("updating decision %s: %w", id, err)
 		}
@@ -217,7 +235,12 @@ func printDecisionSummary(b *beadsapi.BeadDetail) {
 				if label == "" {
 					label, _ = opt["short"].(string)
 				}
-				fmt.Printf("    [%s] %s\n", id, label)
+				at, _ := opt["artifact_type"].(string)
+				if at != "" {
+					fmt.Printf("    [%s] %s (artifact: %s)\n", id, label, at)
+				} else {
+					fmt.Printf("    [%s] %s\n", id, label)
+				}
 			}
 		}
 	}
@@ -247,11 +270,17 @@ func printDecisionDetail(b *beadsapi.BeadDetail) {
 				id, _ := opt["id"].(string)
 				label, _ := opt["label"].(string)
 				short, _ := opt["short"].(string)
+				at, _ := opt["artifact_type"].(string)
+				line := ""
 				if label != "" {
-					fmt.Printf("  [%s] %s — %s\n", id, short, label)
+					line = fmt.Sprintf("  [%s] %s — %s", id, short, label)
 				} else {
-					fmt.Printf("  [%s] %s\n", id, short)
+					line = fmt.Sprintf("  [%s] %s", id, short)
 				}
+				if at != "" {
+					line += fmt.Sprintf(" (artifact: %s)", at)
+				}
+				fmt.Println(line)
 			}
 		}
 	}
@@ -264,6 +293,9 @@ func printDecisionDetail(b *beadsapi.BeadDetail) {
 	}
 	if respondedBy := b.Fields["responded_by"]; respondedBy != "" {
 		fmt.Printf("By:       %s\n", respondedBy)
+	}
+	if ra := b.Fields["required_artifact"]; ra != "" {
+		fmt.Printf("Artifact: %s (%s)\n", ra, b.Fields["artifact_status"])
 	}
 }
 
@@ -334,6 +366,9 @@ func printDecisionResult(id string) error {
 		fmt.Printf("Decision %s resolved: %s\n", id, responseText)
 	} else {
 		fmt.Printf("Decision %s closed\n", id)
+	}
+	if ra := bead.Fields["required_artifact"]; ra != "" {
+		fmt.Printf("  Artifact required: %s (%s)\n", ra, bead.Fields["artifact_status"])
 	}
 	return nil
 }
@@ -438,6 +473,28 @@ func reportTypeFromLabels(labels []string) string {
 	for _, l := range labels {
 		if strings.HasPrefix(l, "report:") {
 			return strings.TrimPrefix(l, "report:")
+		}
+	}
+	return ""
+}
+
+// validArtifactTypes lists allowed artifact_type values for decision options.
+var validArtifactTypes = map[string]bool{
+	"report": true, "plan": true, "checklist": true,
+	"diff-summary": true, "epic": true, "bug": true,
+}
+
+// extractArtifactType looks up the chosen option and returns its artifact_type (if any).
+func extractArtifactType(optionsJSON, chosenID string) string {
+	var opts []map[string]any
+	if json.Unmarshal([]byte(optionsJSON), &opts) != nil {
+		return ""
+	}
+	for _, opt := range opts {
+		if id, _ := opt["id"].(string); id == chosenID {
+			if at, _ := opt["artifact_type"].(string); at != "" {
+				return at
+			}
 		}
 	}
 	return ""

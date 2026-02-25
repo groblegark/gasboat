@@ -39,6 +39,7 @@ func main() {
 		"commit", commit,
 		"beads_http", cfg.beadsHTTPAddr,
 		"slack_channel", cfg.slackChannel,
+		"threading_mode", cfg.threadingMode,
 		"listen_addr", cfg.listenAddr)
 
 	// Create beads daemon HTTP client.
@@ -88,13 +89,14 @@ func main() {
 	if cfg.slackBotToken != "" && cfg.slackAppToken != "" {
 		// Socket Mode: real-time WebSocket connection for events, interactions, slash commands.
 		bot = bridge.NewBot(bridge.BotConfig{
-			BotToken: cfg.slackBotToken,
-			AppToken: cfg.slackAppToken,
-			Channel:  cfg.slackChannel,
-			Daemon:   daemon,
-			State:    state,
-			Logger:   logger,
-			Debug:    cfg.debug,
+			BotToken:      cfg.slackBotToken,
+			AppToken:      cfg.slackAppToken,
+			Channel:       cfg.slackChannel,
+			ThreadingMode: cfg.threadingMode,
+			Daemon:        daemon,
+			State:         state,
+			Logger:        logger,
+			Debug:         cfg.debug,
 		})
 		notifier = bot
 		logger.Info("Slack Socket Mode bot enabled", "channel", cfg.slackChannel)
@@ -250,6 +252,9 @@ type config struct {
 	logLevel           string
 	statePath          string
 	debug              bool
+
+	// Threading
+	threadingMode string
 
 	// Dashboard
 	dashboardEnabled  bool

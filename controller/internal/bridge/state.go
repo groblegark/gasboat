@@ -31,6 +31,7 @@ type DashboardRef struct {
 type StateData struct {
 	DecisionMessages map[string]MessageRef `json:"decision_messages,omitempty"` // bead ID → message ref
 	ChatMessages     map[string]MessageRef `json:"chat_messages,omitempty"`     // bead ID → message ref (chat forwarding)
+	AgentCards       map[string]MessageRef `json:"agent_cards,omitempty"`       // agent identity → status card message ref
 	Dashboard        *DashboardRef         `json:"dashboard,omitempty"`
 	LastEventID      string                `json:"last_event_id,omitempty"` // SSE event ID for reconnection
 }
@@ -50,6 +51,7 @@ func NewStateManager(path string) (*StateManager, error) {
 		data: StateData{
 			DecisionMessages: make(map[string]MessageRef),
 			ChatMessages:     make(map[string]MessageRef),
+			AgentCards:       make(map[string]MessageRef),
 		},
 	}
 	if err := sm.load(); err != nil && !os.IsNotExist(err) {
@@ -132,6 +134,43 @@ func (sm *StateManager) AllChatMessages() map[string]MessageRef {
 	return out
 }
 
+// --- Agent Cards ---
+
+// GetAgentCard returns the status card message ref for an agent.
+func (sm *StateManager) GetAgentCard(agent string) (MessageRef, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	ref, ok := sm.data.AgentCards[agent]
+	return ref, ok
+}
+
+// SetAgentCard stores a status card message ref for an agent and persists.
+func (sm *StateManager) SetAgentCard(agent string, ref MessageRef) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.data.AgentCards[agent] = ref
+	return sm.saveLocked()
+}
+
+// RemoveAgentCard removes a status card message ref for an agent and persists.
+func (sm *StateManager) RemoveAgentCard(agent string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	delete(sm.data.AgentCards, agent)
+	return sm.saveLocked()
+}
+
+// AllAgentCards returns a copy of all tracked agent status card messages.
+func (sm *StateManager) AllAgentCards() map[string]MessageRef {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	out := make(map[string]MessageRef, len(sm.data.AgentCards))
+	for k, v := range sm.data.AgentCards {
+		out[k] = v
+	}
+	return out
+}
+
 // --- Dashboard ---
 
 // GetDashboard returns the dashboard message ref.
@@ -186,6 +225,9 @@ func (sm *StateManager) load() error {
 	}
 	if sm.data.ChatMessages == nil {
 		sm.data.ChatMessages = make(map[string]MessageRef)
+	}
+	if sm.data.AgentCards == nil {
+		sm.data.AgentCards = make(map[string]MessageRef)
 	}
 	return nil
 }

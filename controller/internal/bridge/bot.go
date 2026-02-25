@@ -41,21 +41,27 @@ type Bot struct {
 	connected        atomic.Bool
 	numConnections   atomic.Int32
 
+	// Threading mode: "" / "flat" = flat messages, "agent" = threaded under agent cards.
+	threadingMode string
+
 	// In-memory decision tracking (augments StateManager).
-	mu       sync.Mutex
-	messages map[string]MessageRef // bead ID → Slack message ref (hot cache)
+	mu           sync.Mutex
+	messages     map[string]MessageRef // bead ID → Slack message ref (hot cache)
+	agentCards   map[string]MessageRef // agent identity → status card ref (hot cache)
+	agentPending map[string]int        // agent identity → pending decision count
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
 type BotConfig struct {
-	BotToken  string
-	AppToken  string
-	Channel   string
-	Daemon    BeadClient
-	State     *StateManager
-	Router    *Router // optional channel router; nil = all to Channel
-	Logger    *slog.Logger
-	Debug     bool
+	BotToken       string
+	AppToken       string
+	Channel        string
+	ThreadingMode  string // "flat" (default) or "agent" — controls decision threading
+	Daemon         BeadClient
+	State          *StateManager
+	Router         *Router // optional channel router; nil = all to Channel
+	Logger         *slog.Logger
+	Debug          bool
 }
 
 // NewBot creates a new Socket Mode bot.
@@ -71,20 +77,35 @@ func NewBot(cfg BotConfig) *Bot {
 	)
 
 	b := &Bot{
-		api:          api,
-		socket:       socket,
-		state:        cfg.State,
-		daemon:       cfg.Daemon,
-		router:       cfg.Router,
-		logger:       cfg.Logger,
-		channel:      cfg.Channel,
-		messages:     make(map[string]MessageRef),
+		api:           api,
+		socket:        socket,
+		state:         cfg.State,
+		daemon:        cfg.Daemon,
+		router:        cfg.Router,
+		logger:        cfg.Logger,
+		channel:       cfg.Channel,
+		threadingMode: cfg.ThreadingMode,
+		messages:      make(map[string]MessageRef),
+		agentCards:    make(map[string]MessageRef),
+		agentPending:  make(map[string]int),
 	}
 
-	// Hydrate hot cache from persisted state.
+	// Hydrate hot caches from persisted state.
 	if cfg.State != nil {
 		for id, ref := range cfg.State.AllDecisionMessages() {
 			b.messages[id] = ref
+		}
+		for agent, ref := range cfg.State.AllAgentCards() {
+			b.agentCards[agent] = ref
+		}
+	}
+
+	// Count pending decisions per agent from hydrated messages.
+	if b.agentThreadingEnabled() {
+		for _, ref := range b.messages {
+			if ref.Agent != "" {
+				b.agentPending[ref.Agent]++
+			}
 		}
 	}
 
@@ -537,6 +558,110 @@ func (b *Bot) handleRosterCommand(ctx context.Context, cmd slack.SlashCommand) {
 		slack.MsgOptionBlocks(blocks...))
 }
 
+// agentThreadingEnabled returns true if agent card threading is active.
+func (b *Bot) agentThreadingEnabled() bool {
+	return b.threadingMode == "agent"
+}
+
+// ensureAgentCard posts or retrieves the agent status card for threading.
+// Returns the card's message timestamp for use as threadTS.
+func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (string, error) {
+	b.mu.Lock()
+	if ref, ok := b.agentCards[agent]; ok && ref.ChannelID == channelID {
+		b.mu.Unlock()
+		return ref.Timestamp, nil
+	}
+	b.mu.Unlock()
+
+	// Post a new status card.
+	b.mu.Lock()
+	pending := b.agentPending[agent]
+	b.mu.Unlock()
+
+	blocks := buildAgentCardBlocks(agent, pending)
+	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return "", fmt.Errorf("post agent card: %w", err)
+	}
+
+	ref := MessageRef{ChannelID: cardChannel, Timestamp: ts, Agent: agent}
+
+	b.mu.Lock()
+	b.agentCards[agent] = ref
+	b.mu.Unlock()
+
+	if b.state != nil {
+		_ = b.state.SetAgentCard(agent, ref)
+	}
+
+	b.logger.Info("posted agent status card", "agent", agent, "channel", cardChannel, "ts", ts)
+	return ts, nil
+}
+
+// updateAgentCard updates the agent status card with the current pending count.
+func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
+	b.mu.Lock()
+	ref, ok := b.agentCards[agent]
+	pending := b.agentPending[agent]
+	b.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	blocks := buildAgentCardBlocks(agent, pending)
+	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to update agent card", "agent", agent, "error", err)
+	}
+}
+
+// buildAgentCardBlocks constructs Block Kit blocks for an agent status card.
+func buildAgentCardBlocks(agent string, pendingCount int) []slack.Block {
+	name := extractAgentName(agent)
+	project := extractAgentProject(agent)
+
+	var indicator, status string
+	if pendingCount > 0 {
+		indicator = ":large_blue_circle:"
+		status = fmt.Sprintf("%d pending", pendingCount)
+	} else {
+		indicator = ":white_circle:"
+		status = "idle"
+	}
+
+	headerText := fmt.Sprintf("%s *%s*", indicator, name)
+	if project != "" {
+		headerText += fmt.Sprintf(" \u00b7 _%s_", project)
+	}
+	headerText += fmt.Sprintf(" \u00b7 %s", status)
+
+	contextText := fmt.Sprintf("`%s` \u00b7 Decisions thread below", agent)
+
+	return []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", contextText, false, false)),
+	}
+}
+
+// extractAgentProject returns the first segment (project) of an agent identity.
+// "gasboat/crew/test-bot" → "gasboat", "test-bot" → ""
+func extractAgentProject(identity string) string {
+	if i := strings.Index(identity, "/"); i >= 0 {
+		return identity[:i]
+	}
+	return ""
+}
+
 // resolveChannel returns the target Slack channel for an agent.
 // Uses the router if configured, otherwise falls back to the default channel.
 func (b *Bot) resolveChannel(agent string) string {
@@ -611,13 +736,24 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 		return
 	}
 
-	// Clean up tracking.
+	// Clean up tracking and update agent card.
 	b.mu.Lock()
+	ref, hadRef := b.messages[beadID]
 	delete(b.messages, beadID)
+	if hadRef && b.agentThreadingEnabled() && ref.Agent != "" {
+		if b.agentPending[ref.Agent] > 0 {
+			b.agentPending[ref.Agent]--
+		}
+	}
+	agent := ref.Agent
 	b.mu.Unlock()
 
 	if b.state != nil {
 		_ = b.state.RemoveDecisionMessage(beadID)
+	}
+
+	if hadRef && b.agentThreadingEnabled() && agent != "" {
+		b.updateAgentCard(ctx, agent)
 	}
 }
 
