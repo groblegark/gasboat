@@ -19,7 +19,7 @@ escapes = true
 check = "warn"
 # Baseline: grandfather current large files, ratchet prevents new ones
 max_lines = 800         # podmanager/manager.go is 709
-max_lines_test = 500    # bridge/decisions_test.go is 232
+max_lines_test = 500    # split: reconciler_drift_test.go=480, decisions_test.go=472
 max_tokens = 6000
 exclude = [
   "helm/**",
