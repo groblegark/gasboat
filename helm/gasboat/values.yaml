@@ -229,6 +229,12 @@ coopmux:
       average: 100
       burst: 200
 
+  # NATS relay for local agent discovery (requires coopmux binary with --nats-relay-url support)
+  natsRelay:
+    enabled: false
+    url: ""       # defaults to natsURL when empty
+    prefix: "coop.mux"
+
   # Coopmux settings
   mux:
     port: 9800

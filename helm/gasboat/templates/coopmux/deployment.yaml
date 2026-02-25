@@ -101,12 +101,14 @@ spec:
             - "$(COOP_MUX_NATS_URL)"
             - "--nats-token"
             - "$(COOP_MUX_NATS_TOKEN)"
+            {{- if and .Values.coopmux.natsRelay .Values.coopmux.natsRelay.enabled }}
             - "--nats-relay-url"
             - "$(COOP_MUX_NATS_RELAY_URL)"
             - "--nats-relay-token"
             - "$(COOP_MUX_NATS_RELAY_TOKEN)"
             - "--nats-relay-prefix"
-            - "coop.mux"
+            - {{ .Values.coopmux.natsRelay.prefix | default "coop.mux" | quote }}
+            {{- end }}
             {{- end }}
             {{- /* API key is seeded by init container into state dir, not via CLI flag */}}
           env:
@@ -129,13 +131,15 @@ spec:
                 secretKeyRef:
                   name: {{ include "gasboat.coopmux.authTokenSecretName" . }}
                   key: token
+            {{- if and .Values.coopmux.natsRelay .Values.coopmux.natsRelay.enabled }}
             - name: COOP_MUX_NATS_RELAY_URL
-              value: {{ $natsURL }}
+              value: {{ .Values.coopmux.natsRelay.url | default $natsURL }}
             - name: COOP_MUX_NATS_RELAY_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "gasboat.coopmux.authTokenSecretName" . }}
                   key: token
+            {{- end }}
             {{- end }}
           ports:
             - name: http
