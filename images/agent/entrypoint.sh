@@ -301,17 +301,22 @@ Agent name: ${AGENT}
 
 ## Checkpoint Protocol (Stop Hook)
 
-When you hit a Stop hook block, you MUST create a decision checkpoint:
+When the stop hook blocks, you MUST create a decision checkpoint before stopping.
 
-1. Review what you accomplished
-2. Create a decision:
+1. **Summarize** what you accomplished and what's blocked
+2. **Create a decision** with concrete options — each option needs an \`artifact_type\`:
    \`\`\`bash
    gb decision create --no-wait \\
-     --prompt="<what you did and why these options>" \\
-     --options='[{"id":"opt1","short":"Option 1","label":"Full description"}]'
+     --prompt="Did X. Blocked on Y. Recommending option A because..." \\
+     --options='[
+       {"id":"a","short":"Continue","label":"Finish remaining work","artifact_type":"report"},
+       {"id":"b","short":"Rethink","label":"Change approach","artifact_type":"plan"}
+     ]'
    \`\`\`
+   Artifact types: \`report\`, \`plan\`, \`checklist\`, \`diff-summary\`, \`epic\`, \`bug\`
 3. Run \`gb yield\` — blocks until human responds
-4. When \`gb yield\` returns, act on the response
+4. If yield requires an artifact, submit it:
+   \`gb decision report <id> --content '...'\`
 CLAUDEMD
 fi
 

@@ -18,16 +18,54 @@ if [ $_rc -eq 2 ]; then
     # Gate blocked — inject checkpoint instructions into the conversation via stdout.
     cat <<'CHECKPOINT'
 <system-reminder>
-STOP BLOCKED — decision gate unsatisfied. You MUST create a decision checkpoint before you can stop.
+STOP BLOCKED — decision gate unsatisfied. You MUST create a decision checkpoint before stopping.
 
-Follow these steps:
-1. Review what you accomplished this session
-2. Create a decision offering next steps:
-   gb decision create --no-wait \
-     --prompt="<what you did, blockers, and why these options>" \
-     --options='[{"id":"opt1","short":"Option 1","label":"Description of option 1"},{"id":"opt2","short":"Option 2","label":"Description of option 2"}]'
-3. Run: gb yield
-   This blocks until the human responds. When it returns, act on the response.
+## What Is a Decision Checkpoint?
+
+A checkpoint is a structured handoff: you summarize your work, propose next steps as
+options, and wait for human direction. Each option declares what artifact you will
+produce when chosen, so the human knows what to expect.
+
+## Steps
+
+### 1. Summarize your session
+Review what you accomplished, what's blocked, and what remains.
+
+### 2. Create a decision with concrete options
+Every option MUST have an `artifact_type` — this tells the human what deliverable
+you will produce if they pick that option.
+
+```bash
+gb decision create --no-wait \
+  --prompt="Completed X and Y. Blocked on Z. Recommending option A because..." \
+  --options='[
+    {"id":"continue","short":"Continue work","label":"Finish the remaining implementation and write tests","artifact_type":"report"},
+    {"id":"rethink","short":"Change approach","label":"Switch to alternative design per discussion","artifact_type":"plan"},
+    {"id":"file-bug","short":"File a bug","label":"The blocker is a bug in dependency X — file it","artifact_type":"bug"}
+  ]'
+```
+
+**Artifact types**: `report` (summary of work), `plan` (implementation plan), `checklist` (verification steps), `diff-summary` (code change summary), `epic` (feature breakdown), `bug` (bug report)
+
+**Writing good prompts**: Lead with what you did, then why these options make sense.
+The prompt appears in Slack — make it useful for someone catching up.
+
+**Writing good options**: Each option should be a distinct, actionable next step.
+Use `short` for the button label (2-3 words) and `label` for the full description.
+
+### 3. Yield and wait
+```bash
+gb yield
+```
+This blocks until the human responds. When it returns, act on their choice.
+
+### 4. Fulfill the artifact requirement
+If the chosen option has an artifact_type, `gb yield` will exit with an error
+telling you what artifact to produce. Submit it:
+```bash
+gb decision report <decision-id> --content '<artifact content in markdown>'
+```
+Then continue with your work.
 </system-reminder>
 CHECKPOINT
     exit 2

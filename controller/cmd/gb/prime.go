@@ -172,16 +172,29 @@ kd dep add <tests-id> <feature-id>  # Tests depend on Feature
 
 ## Human Decisions
 
-When you need human input (approval, choices, clarification), use decision points:
+When you need human input (approval, choices, clarification), create a decision checkpoint.
+Every option MUST declare an ` + "`artifact_type`" + ` — what you will deliver if that option is chosen.
 
 ` + "```bash" + `
-# Create a decision point — blocks until human responds
-gb decision create --prompt="Deploy to production?" \
-  --options='[{"id":"y","label":"Yes, deploy"},{"id":"n","label":"No, abort"}]'
+gb decision create --no-wait \
+  --prompt="Completed auth refactor. Tests pass. Two options for session handling:" \
+  --options='[
+    {"id":"jwt","short":"Use JWT","label":"Stateless JWT tokens with refresh rotation","artifact_type":"plan"},
+    {"id":"session","short":"Use sessions","label":"Server-side sessions with Redis store","artifact_type":"plan"},
+    {"id":"skip","short":"Defer","label":"Keep current impl, file a tech debt issue","artifact_type":"bug"}
+  ]'
+gb yield  # blocks until human responds
 ` + "```" + `
 
+**Artifact types:** ` + "`report`" + ` (work summary), ` + "`plan`" + ` (implementation plan), ` + "`checklist`" + ` (verification steps), ` + "`diff-summary`" + ` (code changes), ` + "`epic`" + ` (feature breakdown), ` + "`bug`" + ` (bug report)
+
+If the chosen option requires an artifact, ` + "`gb yield`" + ` will tell you — submit it with:
+` + "`gb decision report <decision-id> --content '...'`" + `
+
 **Decision commands:**
-- ` + "`gb decision create --prompt=\"...\" --options='[...]'`" + ` - Create and wait for response
+- ` + "`gb decision create --prompt=\"...\" --options='[...]'`" + ` - Create decision (` + "`--no-wait`" + ` to not block)
+- ` + "`gb yield`" + ` - Wait for human response
+- ` + "`gb decision report <id> --content '...'`" + ` - Submit required artifact
 - ` + "`gb decision list`" + ` - Show pending decisions
 - ` + "`gb decision show <id>`" + ` - Decision details
 `
