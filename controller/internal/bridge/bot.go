@@ -400,9 +400,66 @@ func (b *Bot) handleSlashCommand(ctx context.Context, cmd slack.SlashCommand) {
 		b.handleDecisionsCommand(ctx, cmd)
 	case "/roster":
 		b.handleRosterCommand(ctx, cmd)
+	case "/spawn":
+		b.handleSpawnCommand(ctx, cmd)
 	default:
 		b.logger.Debug("unhandled slash command", "command", cmd.Command)
 	}
+}
+
+// handleSpawnCommand processes the /spawn slash command.
+// Usage: /spawn <agent> [project]
+func (b *Bot) handleSpawnCommand(ctx context.Context, cmd slack.SlashCommand) {
+	args := strings.Fields(strings.TrimSpace(cmd.Text))
+	if len(args) == 0 {
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(":x: Usage: `/spawn <agent> [project]`", false))
+		return
+	}
+
+	agentName := args[0]
+	if !isValidAgentName(agentName) {
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(fmt.Sprintf(":x: Invalid agent name %q — use lowercase letters, digits, and hyphens only", agentName), false))
+		return
+	}
+
+	project := ""
+	if len(args) >= 2 {
+		project = args[1]
+	}
+
+	beadID, err := b.daemon.SpawnAgent(ctx, agentName, project)
+	if err != nil {
+		b.logger.Error("failed to spawn agent", "agent", agentName, "project", project, "error", err)
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(fmt.Sprintf(":x: Failed to spawn agent %q: %s", agentName, err.Error()), false))
+		return
+	}
+
+	b.logger.Info("spawned agent via Slack", "agent", agentName, "project", project, "bead", beadID, "user", cmd.UserID)
+
+	text := fmt.Sprintf(":rocket: Spawning agent *%s*", agentName)
+	if project != "" {
+		text += fmt.Sprintf(" in project *%s*", project)
+	}
+	text += fmt.Sprintf("\nBead: `%s` · Use `/roster` to check status.", beadID)
+	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+		slack.MsgOptionText(text, false))
+}
+
+// isValidAgentName reports whether s is a valid agent name.
+// Valid names are non-empty and contain only lowercase letters, digits, and hyphens.
+func isValidAgentName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // handleDecisionsCommand shows pending decisions as an ephemeral message.

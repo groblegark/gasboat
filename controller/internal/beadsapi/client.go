@@ -220,6 +220,32 @@ func (c *Client) CreateBead(ctx context.Context, req CreateBeadRequest) (string,
 	return result.ID, nil
 }
 
+// SpawnAgent creates a new agent bead with the given name and project.
+// The bead starts in open status; the reconciler picks it up and schedules a pod.
+// agentName is the agent identifier (e.g., "my-bot"). project is the project name
+// (e.g., "gasboat"); if empty the daemon uses its default project.
+func (c *Client) SpawnAgent(ctx context.Context, agentName, project string) (string, error) {
+	fields := map[string]string{
+		"agent":   agentName,
+		"mode":    "crew",
+		"role":    "crew",
+		"project": project,
+	}
+	fieldsJSON, err := json.Marshal(fields)
+	if err != nil {
+		return "", fmt.Errorf("marshalling agent fields: %w", err)
+	}
+	id, err := c.CreateBead(ctx, CreateBeadRequest{
+		Title:  agentName,
+		Type:   "agent",
+		Fields: json.RawMessage(fieldsJSON),
+	})
+	if err != nil {
+		return "", fmt.Errorf("spawning agent %q: %w", agentName, err)
+	}
+	return id, nil
+}
+
 // BeadDetail represents a full bead returned by the daemon.
 type BeadDetail struct {
 	ID          string            `json:"id"`

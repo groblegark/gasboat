@@ -69,6 +69,19 @@ func (m *mockDaemon) CreateBead(_ context.Context, req beadsapi.CreateBeadReques
 	return id, nil
 }
 
+func (m *mockDaemon) SpawnAgent(_ context.Context, agentName, project string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := fmt.Sprintf("bd-agent-%d", len(m.beads)+1)
+	m.beads[id] = &beadsapi.BeadDetail{
+		ID:     id,
+		Title:  agentName,
+		Type:   "agent",
+		Fields: map[string]string{"agent": agentName, "project": project, "mode": "crew", "role": "crew"},
+	}
+	return id, nil
+}
+
 func (m *mockDaemon) ListDecisionBeads(_ context.Context) ([]*beadsapi.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
