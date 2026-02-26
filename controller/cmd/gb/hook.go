@@ -149,7 +149,7 @@ func init() {
 // emitHookWithRetry calls daemon.EmitHook with increasing backoff on transient
 // errors. Returns an error only after all retries are exhausted.
 func emitHookWithRetry(ctx context.Context, req beadsapi.EmitHookRequest) (*beadsapi.EmitHookResponse, error) {
-	backoffs := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+	backoffs := []time.Duration{5 * time.Second, 30 * time.Second, 1 * time.Minute, 5 * time.Minute}
 	var lastErr error
 	for attempt := 0; attempt <= len(backoffs); attempt++ {
 		resp, err := daemon.EmitHook(ctx, req)
