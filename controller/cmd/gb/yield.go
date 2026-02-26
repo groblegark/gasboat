@@ -203,7 +203,7 @@ func printYieldResult(id string) error {
 	// Check if the chosen option requires an artifact (set by gb decision respond).
 	if ra := bead.Fields["required_artifact"]; ra != "" {
 		fmt.Printf("ARTIFACT_REQUIRED type=%s decision_id=%s\n", ra, id)
-		return fmt.Errorf("decision %s requires a %s artifact — run: gb decision report %s --type %s --content '...'", id, ra, id, ra)
+		return fmt.Errorf("decision %s requires a %s artifact — run: gb decision report %s --content '<your report>'", id, ra, id)
 	}
 
 	return nil

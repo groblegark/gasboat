@@ -200,11 +200,7 @@ var decisionRespondCmd = &cobra.Command{
 			}
 		}
 
-		if err := daemon.UpdateBeadFields(cmd.Context(), id, fields); err != nil {
-			return fmt.Errorf("updating decision %s: %w", id, err)
-		}
-
-		if err := daemon.CloseBead(cmd.Context(), id, nil); err != nil {
+		if err := daemon.CloseBead(cmd.Context(), id, fields); err != nil {
 			return fmt.Errorf("closing decision %s: %w", id, err)
 		}
 
@@ -385,15 +381,12 @@ func printDecisionResult(id string) error {
 var decisionReportCmd = &cobra.Command{
 	Use:   "report <decision-id>",
 	Short: "Submit a report for a decision that requires one",
-	Long: `Submit an artifact for a decision that requires one, then offer next steps.
+	Long: `Submit an artifact for a decision that requires one, then satisfy the gate.
 
 When a decision option has an artifact_type, the agent's gate stays pending
 after the decision resolves. This command creates a report bead, links it to
-the decision, closes it, and then creates a next-steps decision — which the
-agent must yield on before the gate is satisfied.
-
---next-prompt is required: it becomes the prompt for the next-steps decision.
---next-options is required: same JSON array format as 'gb decision create --options'.
+the decision, closes it, and satisfies the decision gate so the agent can
+proceed.
 
 Content can be provided via --content flag or piped from stdin.`,
 	Args: cobra.ExactArgs(1),
@@ -402,15 +395,6 @@ Content can be provided via --content flag or piped from stdin.`,
 		content, _ := cmd.Flags().GetString("content")
 		reportType, _ := cmd.Flags().GetString("type")
 		format, _ := cmd.Flags().GetString("format")
-		nextPrompt, _ := cmd.Flags().GetString("next-prompt")
-		nextOptionsJSON, _ := cmd.Flags().GetString("next-options")
-
-		if nextPrompt == "" {
-			return fmt.Errorf("--next-prompt is required: describe what the agent offers to do next")
-		}
-		if nextOptionsJSON == "" {
-			return fmt.Errorf("--next-options is required: provide next-step options as a JSON array (same format as 'gb decision create --options')")
-		}
 
 		// Read from stdin if no --content flag.
 		if content == "" {
@@ -479,57 +463,20 @@ Content can be provided via --content flag or piped from stdin.`,
 			return fmt.Errorf("closing report bead: %w", err)
 		}
 
-		// Validate and create the next-steps decision.
-		// Gate satisfaction is deferred: the agent must yield on this new decision,
-		// and gb yield will satisfy the gate when it resolves.
-		var nextOpts []map[string]any
-		if err := json.Unmarshal([]byte(nextOptionsJSON), &nextOpts); err != nil {
-			return fmt.Errorf("invalid --next-options JSON: %w", err)
-		}
-		for i, opt := range nextOpts {
-			at, _ := opt["artifact_type"].(string)
-			if at == "" {
-				id, _ := opt["id"].(string)
-				if id == "" {
-					id = fmt.Sprintf("#%d", i)
-				}
-				return fmt.Errorf("next-step option %s missing required artifact_type (allowed: report, plan, checklist, diff-summary, epic, bug)", id)
+		// Satisfy the decision gate so the agent can proceed.
+		agentID, _ := resolveAgentID("")
+		if agentID != "" {
+			satisfyCtx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			defer cancel()
+			if err := daemon.SatisfyGate(satisfyCtx, agentID, "decision"); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
 			}
-			if !validArtifactTypes[at] {
-				return fmt.Errorf("unknown artifact_type %q on next-step option %d (allowed: report, plan, checklist, diff-summary, epic, bug)", at, i)
-			}
-		}
-
-		nextFields := map[string]any{
-			"prompt":       nextPrompt,
-			"options":      json.RawMessage(nextOptionsJSON),
-			"requested_by": actor,
-		}
-		if agentID, _ := resolveAgentID(""); agentID != "" {
-			nextFields["requesting_agent_bead_id"] = agentID
-		}
-		nextFieldsJSON, err := json.Marshal(nextFields)
-		if err != nil {
-			return fmt.Errorf("encoding next-steps fields: %w", err)
-		}
-		nextID, err := daemon.CreateBead(cmd.Context(), beadsapi.CreateBeadRequest{
-			Title:     nextPrompt,
-			Type:      "decision",
-			Kind:      "data",
-			Priority:  2,
-			Assignee:  actor,
-			CreatedBy: actor,
-			Fields:    nextFieldsJSON,
-		})
-		if err != nil {
-			return fmt.Errorf("creating next-steps decision: %w", err)
 		}
 
 		if jsonOutput {
-			printJSON(map[string]string{"id": reportID, "decision_id": decisionID, "next_decision_id": nextID})
+			printJSON(map[string]string{"id": reportID, "decision_id": decisionID})
 		} else {
 			fmt.Printf("Report %s submitted for decision %s\n", reportID, decisionID)
-			fmt.Printf("Next-steps decision created: %s — now run: gb yield\n", nextID)
 		}
 		return nil
 	},
@@ -589,6 +536,4 @@ func init() {
 	decisionReportCmd.Flags().String("content", "", "report content (or pipe from stdin)")
 	decisionReportCmd.Flags().String("type", "", "report type (default: from decision label or 'summary')")
 	decisionReportCmd.Flags().String("format", "markdown", "content format: markdown, json, text")
-	decisionReportCmd.Flags().String("next-prompt", "", "prompt for the next-steps decision (required)")
-	decisionReportCmd.Flags().String("next-options", "", "options JSON array for the next-steps decision (required, same format as 'gb decision create --options')")
 }

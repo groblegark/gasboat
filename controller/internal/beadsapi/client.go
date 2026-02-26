@@ -334,16 +334,17 @@ func (c *Client) UpdateAgentState(ctx context.Context, beadID, state string) err
 	return c.UpdateBeadFields(ctx, beadID, map[string]string{"agent_state": state})
 }
 
-// CloseBead closes a bead by ID, optionally setting fields before closing.
+// CloseBead closes a bead by ID, optionally setting fields at the same time.
+// Fields are sent in the close request body so the server merges them without
+// type-config validation — this allows decision beads to carry artifact-lifecycle
+// fields (required_artifact, artifact_status, rationale) that are not declared
+// in the type:decision schema.
 func (c *Client) CloseBead(ctx context.Context, beadID string, fields map[string]string) error {
-	if len(fields) > 0 {
-		if err := c.UpdateBeadFields(ctx, beadID, fields); err != nil {
-			return fmt.Errorf("updating fields before close: %w", err)
-		}
-	}
-
-	body := map[string]string{
+	body := map[string]any{
 		"closed_by": "gasboat",
+	}
+	for k, v := range fields {
+		body[k] = v
 	}
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/beads/"+url.PathEscape(beadID)+"/close", body, nil); err != nil {
 		return fmt.Errorf("closing bead %s: %w", beadID, err)

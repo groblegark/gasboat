@@ -199,53 +199,35 @@ func TestCloseBead_SendsCloseRequest(t *testing.T) {
 	}
 }
 
-func TestCloseBead_UpdatesFieldsBeforeClose(t *testing.T) {
-	var requests []struct {
-		Method string
-		Path   string
-	}
+func TestCloseBead_SendsFieldsInCloseBody(t *testing.T) {
+	var gotBody map[string]any
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, struct {
-			Method string
-			Path   string
-		}{r.Method, r.URL.Path})
-
-		switch {
-		case r.Method == http.MethodGet:
-			bead := beadJSON{
-				ID:     "bd-close2",
-				Fields: json.RawMessage(`{"existing":"val"}`),
-			}
-			_ = json.NewEncoder(w).Encode(bead)
-
-		default:
-			w.WriteHeader(http.StatusNoContent)
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/close") {
+			_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
 
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
-	err := c.CloseBead(context.Background(), "bd-close2", map[string]string{"exit_code": "0"})
+	err := c.CloseBead(context.Background(), "bd-close2", map[string]string{
+		"required_artifact": "report",
+		"artifact_status":   "pending",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should be 3 requests: GET (read fields), PATCH (update fields), POST (close).
-	if len(requests) != 3 {
-		t.Fatalf("expected 3 requests (GET+PATCH+POST), got %d: %v", len(requests), requests)
+	// Fields must be included in the single POST /close request body.
+	if gotBody["required_artifact"] != "report" {
+		t.Errorf("expected required_artifact=report in close body, got %v", gotBody)
 	}
-	if requests[0].Method != http.MethodGet {
-		t.Errorf("first request should be GET, got %s", requests[0].Method)
+	if gotBody["artifact_status"] != "pending" {
+		t.Errorf("expected artifact_status=pending in close body, got %v", gotBody)
 	}
-	if requests[1].Method != http.MethodPatch {
-		t.Errorf("second request should be PATCH, got %s", requests[1].Method)
-	}
-	if requests[2].Method != http.MethodPost {
-		t.Errorf("third request should be POST, got %s", requests[2].Method)
-	}
-	if requests[2].Path != "/v1/beads/bd-close2/close" {
-		t.Errorf("third request should be /close, got %s", requests[2].Path)
+	if gotBody["closed_by"] != "gasboat" {
+		t.Errorf("expected closed_by=gasboat in close body, got %v", gotBody)
 	}
 }
 

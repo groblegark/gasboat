@@ -309,9 +309,9 @@ func TestUpdateBeadFields_GetFailsPropagatesError(t *testing.T) {
 	}
 }
 
-func TestCloseBead_FieldUpdateFailsPropagatesError(t *testing.T) {
+func TestCloseBead_CloseFailsPropagatesError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// All requests return 500 -- the GET in UpdateBeadFields will fail.
+		// POST /close returns 500.
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("boom"))
 	}))
@@ -320,10 +320,10 @@ func TestCloseBead_FieldUpdateFailsPropagatesError(t *testing.T) {
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
 	err := c.CloseBead(context.Background(), "bd-fail", map[string]string{"k": "v"})
 	if err == nil {
-		t.Fatal("expected error when field update fails before close")
+		t.Fatal("expected error when close request fails")
 	}
-	if !strings.Contains(err.Error(), "updating fields before close") {
-		t.Errorf("expected 'updating fields before close' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "closing bead") {
+		t.Errorf("expected 'closing bead' in error, got: %v", err)
 	}
 }
 
