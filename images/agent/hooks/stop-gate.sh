@@ -71,4 +71,28 @@ CHECKPOINT
     exit 2
 fi
 
-exit $_rc
+# Gate is satisfied (exit 0 from bus emit). Verify it was satisfied via 'gb yield'
+# (or operator --force), not a manual 'gb gate mark decision' bypass.
+# This ensures the Slack bridge always has a decision bead re-entry handle.
+if ! gb gate satisfied-by 2>/dev/null; then
+    cat <<'BYPASS'
+<system-reminder>
+STOP BLOCKED — decision gate was satisfied without 'gb yield'.
+
+Using 'gb gate mark decision' without --force silently cuts off the Slack
+operator's re-entry handle. The gate must be satisfied via 'gb yield' so
+that a decision bead exists for the operator to respond to.
+
+To fix this:
+1. Clear the gate:   gb gate clear decision
+2. Create a decision and yield:
+   gb decision create --no-wait --prompt="..." --options='[...]'
+   gb yield
+
+Do NOT use 'gb gate mark decision' — it is blocked for agents.
+</system-reminder>
+BYPASS
+    exit 2
+fi
+
+exit 0

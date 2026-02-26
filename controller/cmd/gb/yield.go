@@ -102,12 +102,14 @@ POST /v1/agents/{id}/gates/decision/satisfy to release the Stop gate.`,
 			fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
 		}
 
-		// Set the gate_satisfied_by marker so the stop hook can verify this was a proper yield.
-		// The stop hook rejects gates satisfied by other means (e.g. manual 'gb gate mark').
-		if err := daemon.UpdateBeadFields(context.Background(), agentID, map[string]string{
+		// Mark the agent bead so stop-gate.sh can verify this was a proper yield,
+		// not a manual 'gb gate mark decision' bypass.
+		markCtx, markCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer markCancel()
+		if err := daemon.UpdateBeadFields(markCtx, agentID, map[string]string{
 			"gate_satisfied_by": "yield",
 		}); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to set gate_satisfied_by field: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to set gate_satisfied_by: %v\n", err)
 		}
 
 		return nil

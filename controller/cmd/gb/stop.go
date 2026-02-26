@@ -9,6 +9,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -25,17 +27,29 @@ causing the pod to terminate cleanly.
 This is the correct way to despawn an agent voluntarily. Crashing or simply
 exiting without calling 'gb stop' will trigger an automatic restart.
 
+By default, the session JSONL is left intact so a re-spawned agent (with the same
+name) resumes where it left off via coop --resume. Use --clean to mark all session
+logs as stale instead, causing the next spawn to start a fresh conversation.
+
 Usage:
-  gb stop              # request despawn, then exit normally
-  gb stop --force      # skip in-progress work check`,
+  gb stop                          # request despawn, then exit normally
+  gb stop --reason "finished work" # leave a note on the agent bead
+  gb stop --clean                  # also retire session JSONL (fresh start on re-spawn)
+  gb stop --force                  # skip in-progress work check`,
 	GroupID: "session",
 	RunE:    runStop,
 }
 
-var stopForce bool
+var (
+	stopForce  bool
+	stopReason string
+	stopClean  bool
+)
 
 func init() {
 	stopCmd.Flags().BoolVar(&stopForce, "force", false, "skip in-progress work check")
+	stopCmd.Flags().StringVar(&stopReason, "reason", "", "reason for stopping (added as a comment on the agent bead)")
+	stopCmd.Flags().BoolVar(&stopClean, "clean", false, "retire session JSONL so next spawn starts a fresh conversation")
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
@@ -57,6 +71,29 @@ func runStop(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Add a comment to the agent bead explaining the stop reason.
+	reason := stopReason
+	if reason == "" {
+		reason = "agent self-stopped"
+	}
+	commentAuthor := actor
+	if commentAuthor == "" || commentAuthor == "unknown" {
+		commentAuthor = agentID
+	}
+	if err := daemon.AddComment(ctx, agentID, commentAuthor, "gb stop: "+reason); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not add stop comment: %v\n", err)
+	}
+
+	// --clean: retire all session JSONL files so next spawn starts fresh.
+	if stopClean {
+		if retired, errs := retireAgentSessions(); retired > 0 || len(errs) > 0 {
+			fmt.Printf("Retired %d session log(s) (next spawn will start fresh).\n", retired)
+			for _, e := range errs {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", e)
+			}
+		}
+	}
+
 	if err := daemon.UpdateBeadFields(ctx, agentID, map[string]string{
 		"stop_requested": "true",
 	}); err != nil {
@@ -66,4 +103,34 @@ func runStop(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Stop requested for agent %s.\n", agentID)
 	fmt.Printf("Exit now — the entrypoint will not restart this pod.\n")
 	return nil
+}
+
+// retireAgentSessions renames all .jsonl session logs under ~/.claude/projects/
+// to .jsonl.stale, causing the restart loop's findResumeSession to skip them.
+// Returns the count of retired files and any errors encountered.
+func retireAgentSessions() (int, []error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return 0, []error{fmt.Errorf("finding home dir: %w", err)}
+	}
+	projectsDir := filepath.Join(homeDir, ".claude", "projects")
+
+	var errs []error
+	retired := 0
+	_ = filepath.Walk(projectsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".jsonl") || strings.Contains(path, "/subagents/") {
+			return nil
+		}
+		stalePath := path + ".stale"
+		if renameErr := os.Rename(path, stalePath); renameErr != nil {
+			errs = append(errs, fmt.Errorf("retiring %s: %w", path, renameErr))
+		} else {
+			retired++
+		}
+		return nil
+	})
+	return retired, errs
 }
