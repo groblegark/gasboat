@@ -152,13 +152,18 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check if the agent requested a polite stop before restarting.
-		// The bead is intentionally NOT closed here so the agent card
-		// remains visible in the roster. The reconciler skips beads with
-		// stop_requested=true when building the desired pod set, so no
-		// new pod will be spawned after this exit.
+		// Close the bead so it transitions to closed status (it remains
+		// queryable for historical purposes — closed beads are not deleted).
+		// The reconciler excludes closed beads from desired state, so no
+		// new pod will be spawned.
 		agentBeadID := envOr("KD_AGENT_ID", os.Getenv("BOAT_AGENT_BEAD_ID"))
 		if agentBeadID != "" && isStopRequested(ctx, agentBeadID) {
-			fmt.Printf("[gb agent start] stop requested — exiting without restart (bead kept open)\n")
+			fmt.Printf("[gb agent start] stop requested — closing bead and exiting cleanly\n")
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer closeCancel()
+			if err := daemon.CloseBead(closeCtx, agentBeadID, map[string]string{"agent_state": "done"}); err != nil {
+				fmt.Printf("[gb agent start] warning: close agent bead: %v\n", err)
+			}
 			return nil
 		}
 
