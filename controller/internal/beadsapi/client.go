@@ -183,6 +183,27 @@ func (c *Client) ListTaskBeads(ctx context.Context) ([]*BeadDetail, error) {
 	return beads, nil
 }
 
+// ListAssignedTask returns the first in-progress non-agent bead claimed by
+// agentName, or nil if none is found. It excludes agent, decision, and project
+// beads so only actionable work (task, bug, feature, etc.) is returned.
+func (c *Client) ListAssignedTask(ctx context.Context, agentName string) (*BeadDetail, error) {
+	q := url.Values{}
+	q.Set("status", "in_progress")
+	q.Set("assignee", url.QueryEscape(agentName))
+	var resp listBeadsResponse
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads?"+q.Encode(), nil, &resp); err != nil {
+		return nil, fmt.Errorf("listing assigned beads: %w", err)
+	}
+	for _, b := range resp.Beads {
+		switch b.Type {
+		case "agent", "decision", "project":
+			continue
+		}
+		return b.toDetail(), nil
+	}
+	return nil, nil
+}
+
 // ListDecisionBeads queries the daemon for active decision beads (type=decision).
 func (c *Client) ListDecisionBeads(ctx context.Context) ([]*BeadDetail, error) {
 	resp, err := c.listBeads(ctx, []string{"decision"}, activeStatuses)

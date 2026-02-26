@@ -402,6 +402,16 @@ func (b *Bot) agentThreadingEnabled() bool {
 	return b.threadingMode == "agent"
 }
 
+// agentTaskTitle fetches the title of the task currently claimed by agent.
+// Returns "" if none is found or on error.
+func (b *Bot) agentTaskTitle(ctx context.Context, agent string) string {
+	bead, err := b.daemon.ListAssignedTask(ctx, agent)
+	if err != nil || bead == nil {
+		return ""
+	}
+	return bead.Title
+}
+
 // ensureAgentCard posts or retrieves the agent status card for threading.
 // Returns the card's message timestamp for use as threadTS.
 func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (string, error) {
@@ -418,7 +428,8 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	state := b.agentState[agent]
 	b.mu.Unlock()
 
-	blocks := buildAgentCardBlocks(agent, pending, state)
+	taskTitle := b.agentTaskTitle(ctx, agent)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -459,7 +470,7 @@ func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	b.updateAgentCard(ctx, agent)
 }
 
-// updateAgentCard updates the agent status card with the current pending count and state.
+// updateAgentCard updates the agent status card with the current pending count, state, and task.
 func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	b.mu.Lock()
 	ref, ok := b.agentCards[agent]
@@ -471,7 +482,8 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 		return
 	}
 
-	blocks := buildAgentCardBlocks(agent, pending, state)
+	taskTitle := b.agentTaskTitle(ctx, agent)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -482,7 +494,9 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 }
 
 // buildAgentCardBlocks constructs Block Kit blocks for an agent status card.
-func buildAgentCardBlocks(agent string, pendingCount int, agentState string) []slack.Block {
+// agentState is the agent's current lifecycle state (spawning, working, etc.).
+// taskTitle is the title of the bead the agent currently has in_progress ("" if idle).
+func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string) []slack.Block {
 	name := extractAgentName(agent)
 	project := extractAgentProject(agent)
 
@@ -509,6 +523,9 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState string) []s
 	headerText += fmt.Sprintf(" \u00b7 %s", status)
 
 	contextText := fmt.Sprintf("`%s` \u00b7 Decisions thread below", agent)
+	if taskTitle != "" {
+		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 80))
+	}
 
 	return []slack.Block{
 		slack.NewSectionBlock(

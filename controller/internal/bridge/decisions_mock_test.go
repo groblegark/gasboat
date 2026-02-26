@@ -99,6 +99,21 @@ func (m *mockDaemon) ListDecisionBeads(_ context.Context) ([]*beadsapi.BeadDetai
 	return result, nil
 }
 
+func (m *mockDaemon) ListAssignedTask(_ context.Context, agentName string) (*beadsapi.BeadDetail, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, b := range m.beads {
+		if b.Status == "in_progress" && b.Assignee == agentName {
+			switch b.Type {
+			case "agent", "decision", "project":
+				continue
+			}
+			return b, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *mockDaemon) ListAgentBeads(_ context.Context) ([]beadsapi.AgentBead, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
