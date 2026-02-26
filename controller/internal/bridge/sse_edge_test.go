@@ -157,8 +157,8 @@ func TestSSEStream_SendsLastEventID(t *testing.T) {
 		t.Errorf("reconnection should send Last-Event-ID 42, got %q", lastEventIDs[1])
 	}
 	// Verify the stream tracked lastID internally.
-	if stream.lastID != "42" {
-		t.Errorf("expected lastID to be '42', got %q", stream.lastID)
+	if stream.LastID() != "42" {
+		t.Errorf("expected lastID to be '42', got %q", stream.LastID())
 	}
 }
 

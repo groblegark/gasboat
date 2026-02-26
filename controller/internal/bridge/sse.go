@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gasboat/controller/internal/beadsapi"
@@ -29,9 +30,10 @@ type SSEStream struct {
 	httpClient *http.Client // reused across reconnections (long-lived, no timeout)
 
 	handlers map[string][]SSEHandler // topic -> handlers
-	lastID   string                  // last event ID for reconnection
-	dedup    *Dedup                  // optional event deduplicator
-	state    *StateManager           // optional state for persisting last event ID
+	mu       sync.RWMutex
+	lastID   string        // last event ID for reconnection; protected by mu
+	dedup    *Dedup        // optional event deduplicator
+	state    *StateManager // optional state for persisting last event ID
 }
 
 // SSEHandler is a callback for SSE events on a specific topic.
@@ -72,6 +74,20 @@ func NewSSEStream(cfg SSEStreamConfig) *SSEStream {
 	return s
 }
 
+// LastID returns the last received SSE event ID, safe for concurrent use.
+func (s *SSEStream) LastID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastID
+}
+
+// setLastID sets the last received SSE event ID.
+func (s *SSEStream) setLastID(id string) {
+	s.mu.Lock()
+	s.lastID = id
+	s.mu.Unlock()
+}
+
 // On registers a handler for a specific SSE topic (e.g., "beads.bead.created").
 func (s *SSEStream) On(topic string, handler SSEHandler) {
 	s.handlers[topic] = append(s.handlers[topic], handler)
@@ -95,7 +111,7 @@ func (s *SSEStream) Start(ctx context.Context) error {
 			return ctx.Err()
 		}
 		s.logger.Warn("SSE connection lost, reconnecting",
-			"error", err, "backoff", backoff, "last_id", s.lastID)
+			"error", err, "backoff", backoff, "last_id", s.LastID())
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -121,8 +137,9 @@ func (s *SSEStream) stream(ctx context.Context) error {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
-	if s.lastID != "" {
-		req.Header.Set("Last-Event-ID", s.lastID)
+	lastID := s.LastID()
+	if lastID != "" {
+		req.Header.Set("Last-Event-ID", lastID)
 	}
 
 	resp, err := s.httpClient.Do(req)
@@ -137,7 +154,7 @@ func (s *SSEStream) stream(ctx context.Context) error {
 	}
 
 	s.logger.Info("SSE stream connected",
-		"url", url, "last_id", s.lastID)
+		"url", url, "last_id", lastID)
 
 	return s.readEvents(ctx, resp.Body)
 }
@@ -165,7 +182,7 @@ func (s *SSEStream) readEvents(ctx context.Context, body io.Reader) error {
 				s.dispatch(ctx, currentID, currentEvent, currentData.String())
 			}
 			if currentID != "" {
-				s.lastID = currentID
+				s.setLastID(currentID)
 			}
 			currentID = ""
 			currentEvent = ""
