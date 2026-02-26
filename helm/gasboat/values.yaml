@@ -45,7 +45,7 @@ agents:
 
   image:
     repository: ghcr.io/groblegark/gasboat
-    tag: "nightly"
+    tag: ""
     pullPolicy: Always
 
   serviceAccount:
@@ -71,7 +71,7 @@ agents:
   # Image used for agent pods spawned by the controller (includes gb + kd CLIs)
   agentImage:
     repository: ghcr.io/groblegark/gasboat/agent
-    tag: "nightly"
+    tag: ""
 
   # ServiceAccount for spawned agent pods (not the controller itself).
   # When create=true, the chart provisions a SA + namespace-admin Role + RoleBinding.
@@ -174,7 +174,7 @@ coopmux:
 
   image:
     repository: ghcr.io/groblegark/coop
-    tag: "coopmux"
+    tag: ""
     pullPolicy: Always
 
   replicaCount: 1
@@ -330,7 +330,7 @@ postgres:
 beads:
   image:
     repository: ghcr.io/groblegark/kbeads
-    tag: "nightly"
+    tag: ""
     pullPolicy: Always
 
   replicaCount: 1
@@ -430,7 +430,7 @@ slackBridge:
 
   image:
     repository: ghcr.io/groblegark/gasboat/slack-bridge
-    tag: "nightly"
+    tag: ""
     pullPolicy: Always
 
   replicaCount: 1
@@ -493,7 +493,7 @@ jiraBridge:
 
   image:
     repository: ghcr.io/groblegark/gasboat/jira-bridge
-    tag: "nightly"
+    tag: ""
     pullPolicy: Always
 
   replicaCount: 1

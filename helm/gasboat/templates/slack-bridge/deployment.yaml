@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
         - name: slack-bridge
-          image: "{{ .Values.slackBridge.image.repository }}:{{ .Values.slackBridge.image.tag }}"
+          image: "{{ .Values.slackBridge.image.repository }}:{{ .Values.slackBridge.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.slackBridge.image.pullPolicy | default "Always" }}
           ports:
             - name: http

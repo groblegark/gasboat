@@ -29,7 +29,7 @@ spec:
         runAsUser: 65534
       containers:
         - name: beads
-          image: "{{ .Values.beads.image.repository }}:{{ .Values.beads.image.tag }}"
+          image: "{{ .Values.beads.image.repository }}:{{ .Values.beads.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.beads.image.pullPolicy }}
           command: {{ .Values.beads.command | default (list "kd" "serve") | toJson }}
           ports:

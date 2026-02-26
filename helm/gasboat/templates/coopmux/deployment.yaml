@@ -40,7 +40,7 @@ spec:
       {{- if and .Values.coopmux.claudeApiKeySecret .Values.coopmux.persistence.enabled }}
       initContainers:
         - name: seed-credentials
-          image: "{{ .Values.coopmux.image.repository }}:{{ .Values.coopmux.image.tag }}"
+          image: "{{ .Values.coopmux.image.repository }}:{{ .Values.coopmux.image.tag | default .Chart.AppVersion }}"
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -77,7 +77,7 @@ spec:
       {{- end }}
       containers:
         - name: coopmux
-          image: "{{ .Values.coopmux.image.repository }}:{{ .Values.coopmux.image.tag }}"
+          image: "{{ .Values.coopmux.image.repository }}:{{ .Values.coopmux.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.coopmux.image.pullPolicy }}
           command: ["coopmux"]
           args:

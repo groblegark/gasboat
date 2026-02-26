@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
         - name: jira-bridge
-          image: "{{ .Values.jiraBridge.image.repository }}:{{ .Values.jiraBridge.image.tag }}"
+          image: "{{ .Values.jiraBridge.image.repository }}:{{ .Values.jiraBridge.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.jiraBridge.image.pullPolicy | default "Always" }}
           ports:
             - name: http

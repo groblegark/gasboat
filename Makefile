@@ -1,4 +1,4 @@
-.PHONY: build build-bridge build-jira-bridge test lint e2e image image-agent image-bridge image-jira-bridge image-all push push-agent push-bridge push-jira-bridge push-all helm-package helm-template clean
+.PHONY: build build-bridge build-jira-bridge test lint e2e image image-agent image-bridge image-jira-bridge image-all push push-agent push-bridge push-jira-bridge push-all helm-package helm-template release release-dry-run clean
 
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -90,6 +90,14 @@ helm-template:
 
 helm-package:
 	helm package helm/gasboat/ --version $(VERSION) --app-version $(VERSION)
+
+# ── Release ────────────────────────────────────────────────────────────
+
+release:
+	./scripts/release.sh
+
+release-dry-run:
+	./scripts/release.sh --dry-run
 
 # ── Clean ───────────────────────────────────────────────────────────────
 
