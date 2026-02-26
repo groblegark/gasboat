@@ -151,9 +151,23 @@ type ProjectCacheEntry struct {
 	GitURL        string // e.g., "https://github.com/groblegark/kbeads.git"
 	DefaultBranch string // e.g., "main"
 
-	// Per-project pod customization (from project bead labels).
+	// Per-project pod customization (from project bead fields).
 	Image        string // Override agent image for this project
 	StorageClass string // Override PVC storage class
+
+	// Tier 1: resource overrides (Kubernetes quantity strings, e.g. "500m", "1Gi").
+	// Zero value means "use the global default".
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// ServiceAccount overrides the global COOP_SERVICE_ACCOUNT for this project.
+	ServiceAccount string
+
+	// EnvOverrides holds extra env vars to inject into agent pods for this project.
+	// Applied before controller-level config; pod-level metadata takes precedence.
+	EnvOverrides map[string]string
 }
 
 // Parse reads configuration from environment variables.

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/subscriber"
@@ -123,6 +126,56 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	}
 	if entry.StorageClass != "" && spec.WorkspaceStorage != nil {
 		spec.WorkspaceStorage.StorageClassName = entry.StorageClass
+	}
+
+	// Service account override.
+	if entry.ServiceAccount != "" {
+		spec.ServiceAccountName = entry.ServiceAccount
+	}
+
+	// Resource overrides: rebuild ResourceRequirements when any quantity is set.
+	if entry.CPURequest != "" || entry.CPULimit != "" || entry.MemoryRequest != "" || entry.MemoryLimit != "" {
+		if spec.Resources == nil {
+			spec.Resources = &corev1.ResourceRequirements{}
+		}
+		if spec.Resources.Requests == nil {
+			spec.Resources.Requests = corev1.ResourceList{}
+		}
+		if spec.Resources.Limits == nil {
+			spec.Resources.Limits = corev1.ResourceList{}
+		}
+		if entry.CPURequest != "" {
+			if q, err := resource.ParseQuantity(entry.CPURequest); err == nil {
+				spec.Resources.Requests[corev1.ResourceCPU] = q
+			}
+		}
+		if entry.CPULimit != "" {
+			if q, err := resource.ParseQuantity(entry.CPULimit); err == nil {
+				spec.Resources.Limits[corev1.ResourceCPU] = q
+			}
+		}
+		if entry.MemoryRequest != "" {
+			if q, err := resource.ParseQuantity(entry.MemoryRequest); err == nil {
+				spec.Resources.Requests[corev1.ResourceMemory] = q
+			}
+		}
+		if entry.MemoryLimit != "" {
+			if q, err := resource.ParseQuantity(entry.MemoryLimit); err == nil {
+				spec.Resources.Limits[corev1.ResourceMemory] = q
+			}
+		}
+	}
+
+	// Env overrides: inject project-level env vars (spec values take precedence).
+	if len(entry.EnvOverrides) > 0 {
+		if spec.Env == nil {
+			spec.Env = make(map[string]string)
+		}
+		for k, v := range entry.EnvOverrides {
+			if _, exists := spec.Env[k]; !exists {
+				spec.Env[k] = v
+			}
+		}
 	}
 }
 

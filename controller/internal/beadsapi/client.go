@@ -138,6 +138,19 @@ type ProjectInfo struct {
 	DefaultBranch string // Default branch (e.g., "main")
 	Image         string // Per-project agent image override
 	StorageClass  string // Per-project PVC storage class override
+
+	// Tier 1 enhancements: per-project pod resource overrides.
+	CPURequest    string // Kubernetes quantity string, e.g. "500m"
+	CPULimit      string // Kubernetes quantity string, e.g. "2000m"
+	MemoryRequest string // Kubernetes quantity string, e.g. "512Mi"
+	MemoryLimit   string // Kubernetes quantity string, e.g. "2Gi"
+
+	// ServiceAccount overrides the global COOP_SERVICE_ACCOUNT for this project.
+	ServiceAccount string
+
+	// EnvOverrides holds extra env vars parsed from the env_json bead field.
+	// Keys absent or empty in the JSON are silently skipped.
+	EnvOverrides map[string]string
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
@@ -155,12 +168,26 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 		name := strings.TrimPrefix(b.Title, "Project: ")
 		fields := b.fieldsMap()
 		info := ProjectInfo{
-			Name:          name,
-			Prefix:        fields["prefix"],
-			GitURL:        fields["git_url"],
-			DefaultBranch: fields["default_branch"],
-			Image:         fields["image"],
-			StorageClass:  fields["storage_class"],
+			Name:           name,
+			Prefix:         fields["prefix"],
+			GitURL:         fields["git_url"],
+			DefaultBranch:  fields["default_branch"],
+			Image:          fields["image"],
+			StorageClass:   fields["storage_class"],
+			CPURequest:     fields["cpu_request"],
+			CPULimit:       fields["cpu_limit"],
+			MemoryRequest:  fields["memory_request"],
+			MemoryLimit:    fields["memory_limit"],
+			ServiceAccount: fields["service_account"],
+		}
+		if raw := fields["env_json"]; raw != "" {
+			var envMap map[string]string
+			if err := json.Unmarshal([]byte(raw), &envMap); err != nil {
+				// Log and skip malformed env_json rather than failing the whole refresh.
+				_ = fmt.Errorf("project %q: malformed env_json (skipped): %w", name, err)
+			} else {
+				info.EnvOverrides = envMap
+			}
 		}
 		if name != "" {
 			rigs[name] = info
