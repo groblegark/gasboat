@@ -112,6 +112,21 @@ func (p *JiraPoller) CatchUp(ctx context.Context) {
 
 // poll executes a single JIRA poll cycle.
 func (p *JiraPoller) poll(ctx context.Context) {
+	// Refresh tracked from the daemon at the start of each poll. This makes
+	// the poller idempotent across restarts — if CatchUp populated nothing
+	// (e.g. due to a transient error), poll self-heals by checking live data.
+	if beads, err := p.daemon.ListTaskBeads(ctx); err == nil {
+		p.mu.Lock()
+		for _, b := range beads {
+			if key := b.Fields["jira_key"]; key != "" {
+				if _, exists := p.tracked[key]; !exists {
+					p.tracked[key] = b.ID
+				}
+			}
+		}
+		p.mu.Unlock()
+	}
+
 	jql := p.buildJQL()
 	fields := []string{"summary", "description", "status", "issuetype", "priority", "reporter", "labels", "parent", "created", "updated"}
 
