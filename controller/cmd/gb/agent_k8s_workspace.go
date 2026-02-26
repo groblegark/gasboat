@@ -177,7 +177,7 @@ When you hit a Stop hook block, you MUST create a decision checkpoint:
      --prompt="<what you did and why these options>" \
      --options='[{"id":"opt1","short":"Option 1","label":"Full description"}]'
    `+"```"+`
-3. Run `+"`"+`gb yield`+"`"+` — blocks until human responds
+3. Run `+"`"+`gb yield`+"`"+` — **blocks until human responds. Do NOT run in background. Do NOT return control. Just wait.**
 4. When `+"`"+`gb yield`+"`"+` returns, act on the response
 `, cfg.role, cfg.role, projectLine, cfg.agent)
 
