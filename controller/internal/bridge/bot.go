@@ -478,6 +478,13 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 // It records the initial spawning state and posts the agent card immediately.
 func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 	agent := bead.Assignee
+	// The created event often lacks Assignee — reconstruct from fields
+	// so the card identity matches subsequent update events.
+	if agent == "" {
+		if p, r, n := bead.Fields["project"], bead.Fields["role"], bead.Fields["agent"]; p != "" && r != "" && n != "" {
+			agent = p + "/" + r + "/" + n
+		}
+	}
 	if agent == "" {
 		agent = bead.Title
 	}
