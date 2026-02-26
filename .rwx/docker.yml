@@ -445,11 +445,11 @@ tasks:
       mkdir -p $OUT/usr/libexec/sudo && cp /usr/libexec/sudo/*.so* $OUT/usr/libexec/sudo/ 2>/dev/null || true
       ln -sf python3 $OUT/usr/bin/python
 
-      sudo tar -cf /tmp/syspackages.tar -C $OUT .
+      sudo tar -cf syspackages.tar -C $OUT .
     outputs:
       artifacts:
         - key: syspackages-tar
-          path: /tmp/syspackages.tar
+          path: syspackages.tar
 
   # ── Node.js + Claude Code + Playwright + Chromium ───────────────────
   - key: agent-install-node
@@ -505,11 +505,11 @@ tasks:
       PATH="$OUT/usr/local/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH=$OUT/ms-playwright npx playwright install chromium
       chmod -R 777 $OUT/ms-playwright
 
-      tar -cf /tmp/node-layer.tar -C $OUT .
+      tar -cf node-layer.tar -C $OUT .
     outputs:
       artifacts:
         - key: node-tar
-          path: /tmp/node-layer.tar
+          path: node-layer.tar
 
   # ── Go + gopls + golangci-lint + Task CLI ───────────────────────────
   - key: agent-install-go
@@ -540,11 +540,11 @@ tasks:
       curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
         | sh -s -- -b $OUT/usr/local/bin "v1.64.8"
 
-      tar -cf /tmp/go-layer.tar -C $OUT .
+      tar -cf go-layer.tar -C $OUT .
     outputs:
       artifacts:
         - key: go-tar
-          path: /tmp/go-layer.tar
+          path: go-layer.tar
 
   # ── Rust + rust-analyzer + quench ───────────────────────────────────
   - key: agent-install-rust
@@ -573,11 +573,11 @@ tasks:
       cp /tmp/quench-out/bin/quench $OUT/usr/local/bin/quench
       rm -rf /tmp/quench-out
 
-      tar -cf /tmp/rust-layer.tar -C $OUT .
+      tar -cf rust-layer.tar -C $OUT .
     outputs:
       artifacts:
         - key: rust-tar
-          path: /tmp/rust-layer.tar
+          path: rust-layer.tar
 
   # ── CLI tools (all small binary downloads) ──────────────────────────
   - key: agent-install-clis
@@ -668,11 +668,11 @@ tasks:
       curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" -o $OUT/usr/local/bin/hadolint
       chmod +x $OUT/usr/local/bin/hadolint
 
-      tar -cf /tmp/cli-layer.tar -C $OUT .
+      tar -cf cli-layer.tar -C $OUT .
     outputs:
       artifacts:
         - key: clis-tar
-          path: /tmp/cli-layer.tar
+          path: cli-layer.tar
 
   # ── Assembly: merge all layers + project binaries → push ────────────
   - key: push-agent
