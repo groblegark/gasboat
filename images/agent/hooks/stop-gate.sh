@@ -95,4 +95,8 @@ BYPASS
     exit 2
 fi
 
+# Gate verified — clear gate_satisfied_by so the next session must re-satisfy
+# from scratch (prevents stale field from carrying over to resumed sessions).
+gb gate clear decision 2>/dev/null || true
+
 exit 0

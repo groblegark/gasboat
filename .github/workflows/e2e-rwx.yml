@@ -1,0 +1,50 @@
+name: E2E (RWX)
+# Dispatches the gasboat-e2e RWX pipeline after CI passes on main.
+# Requires the RWX_ACCESS_TOKEN secret to be set in repository settings.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "K8s namespace for E2E tests"
+        required: false
+        default: "gasboat-rwx"
+      only:
+        description: "Run only this module (e.g. gate-system)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch E2E to RWX
+    runs-on: ubuntu-latest
+    # Only run if CI succeeded (or manual dispatch)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Install RWX CLI
+        run: |
+          curl -fsSL https://cloud.rwx.com/cli/install.sh | bash
+          rwx --version
+
+      - name: Dispatch gasboat-e2e
+        env:
+          RWX_ACCESS_TOKEN: ${{ secrets.RWX_ACCESS_TOKEN }}
+          GITHUB_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          NAMESPACE: ${{ inputs.namespace || 'gasboat-rwx' }}
+          ONLY: ${{ inputs.only || '' }}
+        run: |
+          echo "Dispatching gasboat-e2e for commit $GITHUB_SHA (namespace: $NAMESPACE)"
+          rwx dispatch gasboat-e2e \
+            --ref "$GITHUB_SHA" \
+            --param "namespace=$NAMESPACE" \
+            --param "only=$ONLY" \
+            --title "E2E: $GITHUB_SHA (CI trigger)"

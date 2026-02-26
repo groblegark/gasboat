@@ -115,16 +115,29 @@ var gateClearCmd = &cobra.Command{
 	Short: "Clear a gate (reset to pending)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		gateID := args[0]
 		agentID, err := resolveGateAgentID(cmd)
 		if err != nil {
 			return err
 		}
 
-		if err := daemon.ClearGate(cmd.Context(), agentID, args[0]); err != nil {
+		if err := daemon.ClearGate(cmd.Context(), agentID, gateID); err != nil {
 			return fmt.Errorf("clearing gate: %w", err)
 		}
 
-		fmt.Printf("○ Gate %s cleared (pending)\n", args[0])
+		// When clearing the decision gate, also clear the gate_satisfied_by marker
+		// so stale values don't mislead stop-gate.sh in the next session.
+		if gateID == "decision" {
+			clearCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := daemon.UpdateBeadFields(clearCtx, agentID, map[string]string{
+				"gate_satisfied_by": "",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to clear gate_satisfied_by: %v\n", err)
+			}
+		}
+
+		fmt.Printf("○ Gate %s cleared (pending)\n", gateID)
 		return nil
 	},
 }

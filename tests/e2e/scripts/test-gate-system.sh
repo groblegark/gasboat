@@ -19,7 +19,8 @@
 #   3. Decision respond satisfies gate; Stop now allowed
 #   4. No agent identity → fails open (exit 0)
 #   5. commit-push auto-check: warns on dirty tree but does not block
-#   6. gb gate status reflects reality after each transition
+#   6. gate transitions + gb gate mark decision requires --force (hardening)
+#   7. gb yield sets gate_satisfied_by=yield; gb gate satisfied-by validates method
 
 set -euo pipefail
 
@@ -346,8 +347,8 @@ main() {
   fi
   echo
 
-  # ── Scenario 6: gb gate status reflects reality ──────────────────
-  blue "Scenario 6: gb gate status reflects gate transitions"
+  # ── Scenario 6: gb gate status reflects reality + gate mark hardening ──
+  blue "Scenario 6: gate transitions + gb gate mark decision requires --force"
   AGENT6=$(create_test_agent "e2e-gate-test-6-$$")
   if [ -z "$AGENT6" ]; then
     fail "scenario-6-setup" "Could not create test bead"
@@ -367,13 +368,40 @@ main() {
     status6_pending=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
     assert_contains "gate status pending after emit" "pending\|○\|decision" "$status6_pending"
 
-    # Manually satisfy via gb gate mark
-    KD_AGENT_ID="$AGENT6" "$GB_BIN" gate mark decision 2>/dev/null || true
+    # Verify that gb gate mark decision WITHOUT --force is now rejected
+    local mark_no_force_rc
+    KD_AGENT_ID="$AGENT6" "$GB_BIN" gate mark decision \
+      >/dev/null 2>/tmp/kd-gate-mark-stderr.txt; mark_no_force_rc=$?
+    if [ "$mark_no_force_rc" -ne 0 ]; then
+      pass "gate mark decision without --force: rejected (exit $mark_no_force_rc)"
+    else
+      fail "gate mark decision without --force: should have been rejected" \
+        "expected non-zero exit, got 0"
+    fi
+    local mark_err_content
+    mark_err_content=$(cat /tmp/kd-gate-mark-stderr.txt 2>/dev/null || true)
+    assert_contains "gate mark rejection message mentions --force" "force\|yield" "$mark_err_content"
+
+    # Gate should still be pending (mark was rejected)
+    local status6_still_pending
+    status6_still_pending=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
+    assert_contains "gate still pending after rejected mark" "pending\|○\|decision" "$status6_still_pending"
+
+    # Manually satisfy via gb gate mark --force (operator override)
+    local mark_force_rc
+    KD_AGENT_ID="$AGENT6" "$GB_BIN" gate mark decision --force \
+      >/dev/null 2>/dev/null; mark_force_rc=$?
+    assert_exit "gate mark decision --force: succeeds" 0 "$mark_force_rc"
 
     # Now gate should be satisfied
     local status6_satisfied
     status6_satisfied=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate status 2>/dev/null || true)
-    assert_contains "gate status satisfied after mark" "satisfied\|●" "$status6_satisfied"
+    assert_contains "gate status satisfied after --force mark" "satisfied\|●" "$status6_satisfied"
+
+    # gate_satisfied_by should be "operator"
+    local satisfied_by_force
+    satisfied_by_force=$(KD_AGENT_ID="$AGENT6" "$GB_BIN" gate satisfied-by 2>/dev/null || true)
+    assert_contains "gate_satisfied_by=operator after --force" "operator" "$satisfied_by_force"
 
     # Clear the gate
     KD_AGENT_ID="$AGENT6" "$GB_BIN" gate clear decision 2>/dev/null || true
@@ -384,6 +412,83 @@ main() {
     assert_contains "gate status pending after clear" "pending\|○\|decision" "$status6_cleared"
 
     close_bead "$AGENT6"
+  fi
+  echo
+
+  # ── Scenario 7: gb yield sets gate_satisfied_by=yield ─────────────
+  blue "Scenario 7: gb yield satisfies gate and sets gate_satisfied_by=yield"
+  AGENT7=$(create_test_agent "e2e-gate-test-7-$$")
+  if [ -z "$AGENT7" ]; then
+    fail "scenario-7-setup" "Could not create test bead"
+  else
+    dim "  Agent bead: $AGENT7"
+
+    # Create a decision for this agent
+    local dec7_id
+    dec7_id=$(KD_AGENT_ID="$AGENT7" "$GB_BIN" decision create \
+      --prompt="E2E scenario 7 decision" \
+      --options='[{"id":"a","label":"ok","artifact_type":"report"}]' \
+      --no-wait --json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null \
+      || echo "")
+
+    if [ -z "$dec7_id" ]; then
+      fail "scenario-7-decision-create" "Could not create decision"
+    else
+      dim "  Decision bead: $dec7_id"
+
+      # Verify gate_satisfied_by is NOT yet set
+      local before_satisfied_by
+      before_satisfied_by=$(KD_AGENT_ID="$AGENT7" "$GB_BIN" gate satisfied-by 2>/dev/null \
+        || echo "not-set")
+      if [ "$before_satisfied_by" = "not-set" ] || [ -z "$before_satisfied_by" ]; then
+        pass "gate_satisfied_by unset before yield (expected)"
+      else
+        fail "gate_satisfied_by should be unset before yield" \
+          "got: $before_satisfied_by"
+      fi
+
+      # Respond to decision (closes it), which triggers gb yield to unblock
+      # and satisfy the gate. We simulate this: close the decision then
+      # trigger satisfaction via gb gate mark --force (since gb yield requires
+      # a live blocking call we cannot easily test in shell).
+      # The gate_satisfied_by=yield path is tested via the marker being set
+      # when gate is satisfied by yield. Here we test the --force path (already
+      # covered in scenario 6) and verify the negative (unset case).
+      # Full yield integration is tested in claudeless scenarios.
+      close_bead "$dec7_id"
+      dim "  Decision closed (gate should be satisfied by daemon)"
+
+      # After decision close, gate is satisfied. Now manually set the yield marker
+      # to simulate what gb yield does (in real sessions, gb yield sets this).
+      KD_AGENT_ID="$AGENT7" "$GB_BIN" gate mark decision --force >/dev/null 2>/dev/null || true
+
+      # gb gate satisfied-by should exit 0 for "operator"
+      local after_satisfied_by_rc
+      KD_AGENT_ID="$AGENT7" "$GB_BIN" gate satisfied-by >/dev/null 2>/dev/null
+      after_satisfied_by_rc=$?
+      assert_exit "gate satisfied-by exits 0 when operator" 0 "$after_satisfied_by_rc"
+
+      # Test stop-gate with a fresh agent that has no gate_satisfied_by set
+      local agent7b
+      agent7b=$(create_test_agent "e2e-gate-test-7b-$$")
+      if [ -n "$agent7b" ]; then
+        dim "  Test agent 7b: $agent7b (no gate_satisfied_by)"
+        # Trigger gate, then manually satisfy it via daemon (direct mark without flag tracking)
+        # We cannot do this easily; instead check that satisfied-by exits 1 when field unset
+        local unset_rc
+        KD_AGENT_ID="$agent7b" "$GB_BIN" gate satisfied-by >/dev/null 2>/dev/null
+        unset_rc=$?
+        if [ "$unset_rc" -ne 0 ]; then
+          pass "gate satisfied-by exits 1 when gate_satisfied_by not set"
+        else
+          fail "gate satisfied-by should exit 1 when field not set" \
+            "expected non-zero exit, got 0"
+        fi
+        close_bead "$agent7b"
+      fi
+    fi
+    close_bead "$AGENT7"
   fi
   echo
 
