@@ -217,24 +217,43 @@ func (b *Bot) handleDecisionsCommand(ctx context.Context, cmd slack.SlashCommand
 }
 
 // handleKillCommand processes the /kill slash command.
-// Usage: /kill <agent>
+// Usage: /kill <agent> [--force]
+//
+// Without --force, sends ESC to the agent's coop and waits for a clean exit
+// before closing the bead. With --force, closes the bead immediately.
 func (b *Bot) handleKillCommand(ctx context.Context, cmd slack.SlashCommand) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 	if len(args) == 0 {
 		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-			slack.MsgOptionText(":x: Usage: `/kill <agent>`", false))
+			slack.MsgOptionText(":x: Usage: `/kill <agent> [--force]`", false))
 		return
 	}
 
-	agentName := args[0]
-	if err := b.killAgent(ctx, agentName); err != nil {
-		b.logger.Error("kill command: failed to kill agent", "agent", agentName, "error", err)
+	// Extract --force flag.
+	force := false
+	positional := args[:0]
+	for _, a := range args {
+		if a == "--force" {
+			force = true
+		} else {
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) == 0 {
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(":x: Usage: `/kill <agent> [--force]`", false))
+		return
+	}
+
+	agentName := positional[0]
+	if err := b.killAgent(ctx, agentName, force); err != nil {
+		b.logger.Error("kill command: failed to kill agent", "agent", agentName, "force", force, "error", err)
 		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
 			slack.MsgOptionText(fmt.Sprintf(":x: Failed to kill agent %q: %s", agentName, err.Error()), false))
 		return
 	}
 
-	b.logger.Info("killed agent via Slack slash command", "agent", agentName, "user", cmd.UserID)
+	b.logger.Info("killed agent via Slack slash command", "agent", agentName, "force", force, "user", cmd.UserID)
 	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
 		slack.MsgOptionText(fmt.Sprintf(":skull: Agent *%s* terminated.", agentName), false))
 }
