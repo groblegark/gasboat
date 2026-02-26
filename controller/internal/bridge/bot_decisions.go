@@ -66,8 +66,13 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		))
 	}
 
-	// Context block with agent info.
-	if agent != "" {
+	// Context block — skip agent info in threaded mode since the parent card shows it.
+	if b.agentThreadingEnabled() && agent != "" {
+		blocks = append(blocks, slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("Decision `%s`", bead.ID), false, false),
+		))
+	} else if agent != "" {
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
 				fmt.Sprintf("Agent: `%s` | Bead: `%s`", agent, bead.ID), false, false),
@@ -261,9 +266,9 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 			nil, nil),
 	}
 
-	// Add context with agent and requester info.
+	// Add context — skip agent info in threaded mode since the parent card shows it.
 	contextParts := []string{fmt.Sprintf("Bead: `%s`", bead.ID)}
-	if agent != "" {
+	if agent != "" && !b.agentThreadingEnabled() {
 		contextParts = append([]string{fmt.Sprintf("Agent: `%s`", agent)}, contextParts...)
 	}
 	if requestedBy := bead.Fields["requested_by"]; requestedBy != "" {
