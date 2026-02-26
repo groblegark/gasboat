@@ -363,8 +363,9 @@ func (m *K8sManager) buildContainer(spec AgentPodSpec) corev1.Container {
 		},
 	}
 
-	// Agent image has coop as its entrypoint (PID 1).
-	// Pass port flags so coop binds to the expected ports.
+	// Agent image uses entrypoint.sh (PID 1), which launches coop internally.
+	// Port args are reserved for a future transition to 'gb agent start --k8s'
+	// as the container entrypoint; entrypoint.sh ignores them and uses env vars.
 	c.Args = []string{
 		"--port", fmt.Sprintf("%d", CoopDefaultPort),
 		"--health-port", fmt.Sprintf("%d", CoopDefaultHealthPort),
