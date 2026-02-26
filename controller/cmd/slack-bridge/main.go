@@ -214,6 +214,13 @@ func main() {
 		logger.Info("dashboard enabled", "channel", dashChannel, "interval", cfg.dashboardInterval)
 	}
 
+	// Register claimed bead update watcher — nudges agents when their claimed work is updated.
+	claimed := bridge.NewClaimed(bridge.ClaimedConfig{
+		Daemon: daemon,
+		Logger: logger,
+	})
+	claimed.RegisterHandlers(sseStream)
+
 	// Catch-up: notify pending decisions that may have been missed during downtime.
 	// Run before SSE stream starts to pre-populate dedup map.
 	go dedup.CatchUpDecisions(ctx, daemon, notifier, logger)
