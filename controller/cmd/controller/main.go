@@ -363,11 +363,17 @@ func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *beads
 	}
 	for name, info := range rigs {
 		cfg.ProjectCache[name] = config.ProjectCacheEntry{
-			Prefix:        info.Prefix,
-			GitURL:        info.GitURL,
-			DefaultBranch: info.DefaultBranch,
-			Image:         info.Image,
-			StorageClass:  info.StorageClass,
+			Prefix:         info.Prefix,
+			GitURL:         info.GitURL,
+			DefaultBranch:  info.DefaultBranch,
+			Image:          info.Image,
+			StorageClass:   info.StorageClass,
+			CPURequest:     info.CPURequest,
+			CPULimit:       info.CPULimit,
+			MemoryRequest:  info.MemoryRequest,
+			MemoryLimit:    info.MemoryLimit,
+			ServiceAccount: info.ServiceAccount,
+			EnvOverrides:   info.EnvOverrides,
 		}
 	}
 	logger.Info("refreshed project cache", "count", len(rigs))

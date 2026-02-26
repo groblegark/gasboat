@@ -324,3 +324,93 @@ func TestListProjectBeads_SkipsEmptyTitle(t *testing.T) {
 		t.Errorf("expected 0 projects for empty title, got %d", len(projects))
 	}
 }
+
+func TestListProjectBeads_Tier1Fields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:    "proj-full",
+					Title: "full",
+					Type:  "project",
+					Fields: json.RawMessage(`{
+						"prefix":"kd",
+						"cpu_request":"500m",
+						"cpu_limit":"2000m",
+						"memory_request":"512Mi",
+						"memory_limit":"2Gi",
+						"service_account":"my-sa",
+						"env_json":"{\"FOO\":\"bar\",\"BAZ\":\"qux\"}"
+					}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p, ok := projects["full"]
+	if !ok {
+		t.Fatal("expected project 'full' in map")
+	}
+	if p.CPURequest != "500m" {
+		t.Errorf("cpu_request: got %q, want %q", p.CPURequest, "500m")
+	}
+	if p.CPULimit != "2000m" {
+		t.Errorf("cpu_limit: got %q, want %q", p.CPULimit, "2000m")
+	}
+	if p.MemoryRequest != "512Mi" {
+		t.Errorf("memory_request: got %q, want %q", p.MemoryRequest, "512Mi")
+	}
+	if p.MemoryLimit != "2Gi" {
+		t.Errorf("memory_limit: got %q, want %q", p.MemoryLimit, "2Gi")
+	}
+	if p.ServiceAccount != "my-sa" {
+		t.Errorf("service_account: got %q, want %q", p.ServiceAccount, "my-sa")
+	}
+	if p.EnvOverrides["FOO"] != "bar" {
+		t.Errorf("env_json FOO: got %q, want %q", p.EnvOverrides["FOO"], "bar")
+	}
+	if p.EnvOverrides["BAZ"] != "qux" {
+		t.Errorf("env_json BAZ: got %q, want %q", p.EnvOverrides["BAZ"], "qux")
+	}
+}
+
+func TestListProjectBeads_MalformedEnvJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:     "proj-bad-env",
+					Title:  "bad-env",
+					Type:   "project",
+					Fields: json.RawMessage(`{"prefix":"kd","env_json":"not-valid-json"}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Project is still returned, just without env overrides.
+	p, ok := projects["bad-env"]
+	if !ok {
+		t.Fatal("expected project 'bad-env' in map despite malformed env_json")
+	}
+	if len(p.EnvOverrides) != 0 {
+		t.Errorf("expected no EnvOverrides for malformed env_json, got %v", p.EnvOverrides)
+	}
+}
