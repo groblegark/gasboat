@@ -96,9 +96,9 @@ func (p *JiraPoller) CatchUp(ctx context.Context) {
 	count := 0
 	p.mu.Lock()
 	for _, b := range beads {
-		if !hasLabel(b.Labels, "source:jira") {
-			continue
-		}
+		// Use jira_key field directly rather than the source:jira label — the list
+		// API does not populate Labels (they live in a separate table), so label
+		// checks here would silently skip every bead and prevent deduplication.
 		jiraKey := b.Fields["jira_key"]
 		if jiraKey != "" {
 			p.tracked[jiraKey] = b.ID

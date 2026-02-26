@@ -193,11 +193,14 @@ func TestJiraPoller_CatchUp(t *testing.T) {
 	daemon := newMockJiraDaemon()
 	daemon.mu.Lock()
 	daemon.beads["existing-1"] = &beadsapi.BeadDetail{
-		ID: "existing-1", Type: "task", Labels: []string{"source:jira", "jira:PE-500"},
+		ID: "existing-1", Type: "task",
+		// Labels is nil — the list API does not populate labels from the
+		// separate labels table.  CatchUp must rely on jira_key field only.
+		Labels: nil,
 		Fields: map[string]string{"jira_key": "PE-500"},
 	}
 	daemon.beads["non-jira"] = &beadsapi.BeadDetail{
-		ID: "non-jira", Type: "task", Labels: []string{"source:manual"}, Fields: map[string]string{},
+		ID: "non-jira", Type: "task", Labels: nil, Fields: map[string]string{},
 	}
 	daemon.mu.Unlock()
 
