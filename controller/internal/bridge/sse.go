@@ -243,14 +243,15 @@ type sseBeadWrapper struct {
 
 // sseBeadData mirrors the kbeads model.Bead fields used by the bridge.
 type sseBeadData struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Title    string          `json:"title"`
-	Status   string          `json:"status"`
-	Assignee string          `json:"assignee"`
-	Labels   []string        `json:"labels"`
-	Priority int             `json:"priority"`
-	Fields   json.RawMessage `json:"fields"`
+	ID        string          `json:"id"`
+	Type      string          `json:"type"`
+	Title     string          `json:"title"`
+	Status    string          `json:"status"`
+	Assignee  string          `json:"assignee"`
+	CreatedBy string          `json:"created_by"`
+	Labels    []string        `json:"labels"`
+	Priority  int             `json:"priority"`
+	Fields    json.RawMessage `json:"fields"`
 }
 
 // ParseBeadEvent extracts a bridge BeadEvent from a kbeads SSE event payload.
@@ -273,13 +274,14 @@ func ParseBeadEvent(data []byte) *BeadEvent {
 	fields := beadsapi.ParseFieldsJSON(bead.Fields)
 
 	return &BeadEvent{
-		ID:       bead.ID,
-		Type:     bead.Type,
-		Title:    bead.Title,
-		Status:   bead.Status,
-		Assignee: bead.Assignee,
-		Labels:   bead.Labels,
-		Fields:   fields,
-		Priority: bead.Priority,
+		ID:        bead.ID,
+		Type:      bead.Type,
+		Title:     bead.Title,
+		Status:    bead.Status,
+		Assignee:  bead.Assignee,
+		CreatedBy: bead.CreatedBy,
+		Labels:    bead.Labels,
+		Fields:    fields,
+		Priority:  bead.Priority,
 	}
 }
