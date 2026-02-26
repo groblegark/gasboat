@@ -544,6 +544,16 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	b.mu.Unlock()
 
 	if !ok {
+		// No card under this identity — create one if threading is enabled.
+		// This handles identity drift (e.g., spawn used short name, updates use
+		// full assignee path) by posting a card under the canonical identity.
+		if b.agentThreadingEnabled() {
+			channel := b.resolveChannel(agent)
+			if _, err := b.ensureAgentCard(ctx, agent, channel); err != nil {
+				b.logger.Error("failed to create agent card on state update",
+					"agent", agent, "error", err)
+			}
+		}
 		return
 	}
 
