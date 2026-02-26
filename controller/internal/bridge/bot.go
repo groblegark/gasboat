@@ -4,10 +4,11 @@
 // slash commands, and interactive modals. It runs alongside the SSE stream
 // for bead lifecycle events.
 //
-// The Bot implementation is split across four files:
+// The Bot implementation is split across five files:
 //   - bot.go — core struct, event dispatch, helpers
 //   - bot_commands.go — slash command handlers (/spawn, /decisions, /roster)
 //   - bot_decisions.go — decision notifications, modals, resolve/dismiss
+//   - bot_mentions.go — @mention handling in agent threads
 //   - bot_notifications.go — agent crash, jack on/off/expired alerts
 package bridge
 
@@ -220,6 +221,8 @@ func (b *Bot) handleEventsAPI(ctx context.Context, event slackevents.EventsAPIEv
 		switch ev := innerEvent.Data.(type) {
 		case *slackevents.MessageEvent:
 			b.handleMessageEvent(ctx, ev)
+		case *slackevents.AppMentionEvent:
+			b.handleAppMention(ctx, ev)
 		}
 	}
 }

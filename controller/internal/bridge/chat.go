@@ -1,8 +1,9 @@
 // Package bridge provides chat forwarding between Slack and agents.
 //
 // Chat watches the kbeads SSE event stream for closed beads with the
-// "slack-chat" label. When a chat bead is closed (by an agent), it relays
-// the close reason/notes back to the original Slack thread as a reply.
+// "slack-chat" or "slack-mention" label. When a chat bead is closed
+// (by an agent), it relays the close reason/notes back to the original
+// Slack thread as a reply.
 package bridge
 
 import (
@@ -60,8 +61,8 @@ func (c *Chat) handleClosed(ctx context.Context, data []byte) {
 		return
 	}
 
-	// Only handle beads with the "slack-chat" label.
-	if !hasLabel(bead.Labels, "slack-chat") {
+	// Only handle beads with the "slack-chat" or "slack-mention" label.
+	if !hasLabel(bead.Labels, "slack-chat") && !hasLabel(bead.Labels, "slack-mention") {
 		return
 	}
 
