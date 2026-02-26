@@ -465,13 +465,18 @@ Content can be provided via --content flag or piped from stdin.`,
 			return fmt.Errorf("closing report bead: %w", err)
 		}
 
-		// Satisfy the decision gate so the agent can proceed.
+		// Satisfy the decision gate and mark it as yield-satisfied so the stop hook allows exit.
 		agentID, _ := resolveAgentID("")
 		if agentID != "" {
 			satisfyCtx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
 			if err := daemon.SatisfyGate(satisfyCtx, agentID, "decision"); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
+			}
+			if err := daemon.UpdateBeadFields(context.Background(), agentID, map[string]string{
+				"gate_satisfied_by": "yield",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to set gate_satisfied_by field: %v\n", err)
 			}
 		}
 
