@@ -138,6 +138,13 @@ agents:
 
   # K8s secret with RWX access token for RWX API calls in agent pods (dispatches, triggers)
   rwxAccessTokenSecret: ""
+  rwxAccessTokenExternalSecret:
+    enabled: false
+    secretStoreName: "secretstore"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "15m"
+    remoteRef: ""
+    tokenProperty: "token"
 
   # --- NATS event bus ---
 
