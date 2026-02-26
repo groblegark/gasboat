@@ -51,6 +51,22 @@ func (b *Bot) handleSpawnCommand(ctx context.Context, cmd slack.SlashCommand) {
 		taskID = args[2]
 	}
 
+	// Validate project exists.
+	if project != "" {
+		projects, err := b.daemon.ListProjectBeads(ctx)
+		if err != nil {
+			b.logger.Error("failed to list projects for validation", "error", err)
+		} else if _, ok := projects[project]; !ok {
+			names := make([]string, 0, len(projects))
+			for name := range projects {
+				names = append(names, name)
+			}
+			_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Unknown project %q — available: %s", project, strings.Join(names, ", ")), false))
+			return
+		}
+	}
+
 	beadID, err := b.daemon.SpawnAgent(ctx, agentName, project, taskID)
 	if err != nil {
 		b.logger.Error("failed to spawn agent", "agent", agentName, "project", project, "task", taskID, "error", err)

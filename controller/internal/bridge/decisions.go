@@ -29,6 +29,7 @@ type BeadClient interface {
 	SpawnAgent(ctx context.Context, agentName, project, taskID string) (string, error)
 	ListDecisionBeads(ctx context.Context) ([]*beadsapi.BeadDetail, error)
 	ListAgentBeads(ctx context.Context) ([]beadsapi.AgentBead, error)
+	ListProjectBeads(ctx context.Context) (map[string]beadsapi.ProjectInfo, error)
 	ListAssignedTask(ctx context.Context, agentName string) (*beadsapi.BeadDetail, error)
 }
 

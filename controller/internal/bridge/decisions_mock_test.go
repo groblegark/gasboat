@@ -114,6 +114,18 @@ func (m *mockDaemon) ListAssignedTask(_ context.Context, agentName string) (*bea
 	return nil, nil
 }
 
+func (m *mockDaemon) ListProjectBeads(_ context.Context) (map[string]beadsapi.ProjectInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make(map[string]beadsapi.ProjectInfo)
+	for _, b := range m.beads {
+		if b.Type == "project" {
+			result[b.Title] = beadsapi.ProjectInfo{Name: b.Title}
+		}
+	}
+	return result, nil
+}
+
 func (m *mockDaemon) ListAgentBeads(_ context.Context) ([]beadsapi.AgentBead, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
