@@ -763,3 +763,50 @@ tasks:
       REF_NAME: ${{ init.ref-name }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Re-tag external images at gasboat calver — one tag for everything.
+  # Copies the current rolling tag so helm appVersion works for all images.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── Re-tag coopmux → gasboat calver ───────────────────────────────────
+  - key: retag-coopmux
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
+
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      crane cp ghcr.io/groblegark/coop:coopmux ghcr.io/groblegark/coop:${TAG}
+      echo "Re-tagged coop:coopmux → coop:${TAG}"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Re-tag kbeads → gasboat calver ───────────────────────────────────
+  - key: retag-kbeads
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
+
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      crane cp ghcr.io/groblegark/kbeads:latest ghcr.io/groblegark/kbeads:${TAG}
+      echo "Re-tagged kbeads:latest → kbeads:${TAG}"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
