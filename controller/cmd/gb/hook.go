@@ -8,6 +8,7 @@ package main
 //   - stop-gate.sh                     →  gb hook stop-gate
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -77,6 +78,8 @@ var hookPrimeCmd = &cobra.Command{
 				fmt.Printf("<system-reminder>\n## Assignment\n\n%s</system-reminder>\n", out)
 			}
 		}
+		// Warn if agent has no claimed work and no open decision.
+		outputClaimReminder(cmd.Context(), actor)
 		return nil
 	},
 }
@@ -139,4 +142,32 @@ func init() {
 	hookCmd.AddCommand(hookCheckMailCmd)
 	hookCmd.AddCommand(hookPrimeCmd)
 	hookCmd.AddCommand(hookStopGateCmd)
+}
+
+// outputClaimReminder checks if the agent has any in-progress claimed work or
+// open decisions. If not, emits a system-reminder nudging them to claim a bead
+// before starting work.
+func outputClaimReminder(ctx context.Context, agentName string) {
+	if agentName == "" {
+		return
+	}
+
+	// Check for any in-progress work claimed by this agent.
+	task, err := daemon.ListAssignedTask(ctx, agentName)
+	if err == nil && task != nil {
+		return // Agent already has claimed work — no reminder needed.
+	}
+
+	// Check for any open decisions this agent is waiting on.
+	decisions, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
+		Types:    []string{"decision"},
+		Statuses: []string{"open"},
+		Assignee: agentName,
+		Limit:    1,
+	})
+	if err == nil && len(decisions.Beads) > 0 {
+		return // Agent has a pending decision — already engaged.
+	}
+
+	fmt.Printf("<system-reminder>\nNo claimed work found. Run `gb ready` to see available beads, then `kd claim <id>` to claim one before starting work.\n</system-reminder>\n")
 }

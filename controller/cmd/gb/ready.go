@@ -48,6 +48,7 @@ var readyCmd = &cobra.Command{
 				fmt.Printf("  %s  %s  %s\n", b.ID, b.Title, b.Assignee)
 			}
 			fmt.Printf("\n%d beads (%d total)\n", len(result.Beads), result.Total)
+			fmt.Println("\nRun `kd claim <id>` before starting work on any bead.")
 		}
 		return nil
 	},

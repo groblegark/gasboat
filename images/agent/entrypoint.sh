@@ -316,6 +316,22 @@ Agent name: ${AGENT}
 - \`gb mail inbox\` — Check messages
 - \`kd show <issue>\` — View specific issue details
 
+## Claim Protocol
+
+**CRITICAL**: Before working on ANY bead, you MUST claim it first:
+
+\`\`\`bash
+gb news            # Check what teammates are already working on
+gb ready           # Find available work
+kd claim <id>      # Claim BEFORE starting — this atomically marks in_progress
+\`\`\`
+
+Rules:
+- An unclaimed bead is fair game for any agent to claim simultaneously
+- Never update a bead you haven't claimed (except to add comments)
+- Only claim beads within your assigned project (\`${PROJECT:-your project}\`)
+- If \`gb ready\` shows nothing, check \`kd list --no-blockers\` for your project
+
 ## Checkpoint Protocol (Stop Hook)
 
 When the stop hook blocks, you MUST create a decision checkpoint before stopping.
