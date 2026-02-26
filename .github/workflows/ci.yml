@@ -90,7 +90,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/controller
+          images: ghcr.io/${{ github.repository }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
@@ -125,7 +125,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/controller
+          images: ghcr.io/${{ github.repository }}
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}

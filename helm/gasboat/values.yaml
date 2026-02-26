@@ -44,7 +44,7 @@ agents:
   # --- Controller deployment ---
 
   image:
-    repository: ghcr.io/groblegark/gasboat/controller
+    repository: ghcr.io/groblegark/gasboat
     tag: "nightly"
     pullPolicy: Always
 
