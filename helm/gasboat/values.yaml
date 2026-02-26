@@ -522,6 +522,12 @@ jiraBridge:
     issueTypes: "Bug,Task,Story"
     # Polling interval (e.g., "60s", "5m")
     pollInterval: "60s"
+    # BOAT_PROJECTS mapping: comma-separated entries of the form
+    # {project_name}={git_url}:{jira_prefix}
+    # Maps JIRA project prefixes to boat project names so beads get the correct
+    # project label (e.g., PE issues → project:monorepo instead of project:pe).
+    # Example: "gasboat=https://github.com/org/gasboat.git:KD,monorepo=https://gitlab.com/org/repo:PE"
+    boatProjects: ""
 
   service:
     type: ClusterIP

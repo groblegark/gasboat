@@ -87,6 +87,10 @@ spec:
             - name: JIRA_POLL_INTERVAL
               value: {{ .Values.jiraBridge.jira.pollInterval | quote }}
             {{- end }}
+            {{- if .Values.jiraBridge.jira.boatProjects }}
+            - name: BOAT_PROJECTS
+              value: {{ .Values.jiraBridge.jira.boatProjects | quote }}
+            {{- end }}
             - name: JIRA_LISTEN_ADDR
               value: ":8091"
             - name: STATE_PATH
