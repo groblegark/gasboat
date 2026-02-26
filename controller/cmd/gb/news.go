@@ -30,12 +30,16 @@ func init() {
 	newsCmd.Flags().Bool("all", false, "include your own activity")
 	newsCmd.Flags().String("window", "2h", "lookback window for recently closed")
 	newsCmd.Flags().IntP("limit", "n", 50, "maximum beads per section")
+	newsCmd.Flags().String("project", os.Getenv("BOAT_PROJECT"), "filter by project label (default: $BOAT_PROJECT)")
+	newsCmd.Flags().Bool("all-projects", false, "show activity from all projects (disables project filter)")
 }
 
 func runNews(cmd *cobra.Command, args []string) error {
 	showAll, _ := cmd.Flags().GetBool("all")
 	windowStr, _ := cmd.Flags().GetString("window")
 	limit, _ := cmd.Flags().GetInt("limit")
+	project, _ := cmd.Flags().GetString("project")
+	allProjects, _ := cmd.Flags().GetBool("all-projects")
 
 	window, err := time.ParseDuration(windowStr)
 	if err != nil {
@@ -44,8 +48,14 @@ func runNews(cmd *cobra.Command, args []string) error {
 
 	ctx := cmd.Context()
 
+	var projectLabels []string
+	if !allProjects && project != "" {
+		projectLabels = []string{"project:" + project}
+	}
+
 	ipResult, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
 		Statuses: []string{"in_progress"},
+		Labels:   projectLabels,
 		Limit:    limit,
 	})
 	if err != nil {
@@ -54,6 +64,7 @@ func runNews(cmd *cobra.Command, args []string) error {
 
 	closedResult, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
 		Statuses: []string{"closed"},
+		Labels:   projectLabels,
 		Sort:     "-updated_at",
 		Limit:    limit,
 	})
