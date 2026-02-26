@@ -212,6 +212,15 @@ coopmux:
   # Additional accounts (list of {name, provider, clientId, tokenUrl, deviceAuthUrl, refreshMarginSecs})
   extraAccounts: []
 
+  # ExternalSecret for Claude API key (creates the claudeApiKeySecret from a secret store)
+  apiKeyExternalSecret:
+    enabled: false
+    secretStoreName: "secretstore"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "1h"
+    remoteRef: ""
+    property: "api-key"
+
   # ExternalSecret for OAuth refresh token
   externalSecret:
     enabled: false
