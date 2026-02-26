@@ -517,9 +517,21 @@ func buildAgentSubscriptions(agentID string, extra []string) []string {
 		subs = append(subs, "rig:"+parts[0])
 	}
 	if len(parts) >= 2 {
-		subs = append(subs, "role:"+parts[1])
+		rolePlural := parts[1]
+		subs = append(subs, "role:"+rolePlural)
+		if roleSingular := singularize(rolePlural); roleSingular != rolePlural {
+			subs = append(subs, "role:"+roleSingular)
+		}
 	}
 	return subs
+}
+
+// singularize converts a plural role name to singular by stripping a trailing "s".
+func singularize(plural string) string {
+	if strings.HasSuffix(plural, "s") {
+		return strings.TrimSuffix(plural, "s")
+	}
+	return plural
 }
 
 // matchesSubscriptions checks if an advice bead should be delivered to an agent
