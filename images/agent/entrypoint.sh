@@ -47,7 +47,7 @@ echo "[entrypoint] Starting ${ROLE} agent (mode: ${MODE}): ${AGENT} (project: ${
 # The workspace volume mount is owned by root (EmptyDir/PVC) but we run as
 # UID 1000 — git's dubious-ownership check would block all operations without this.
 git config --global user.name "${GIT_AUTHOR_NAME:-${ROLE}}"
-git config --global user.email "${ROLE}@gasboat.local"
+git config --global user.email "${GIT_AUTHOR_EMAIL:-${ROLE}@gasboat.local}"
 git config --global --add safe.directory '*'
 
 # ── Git credentials ────────────────────────────────────────────────────
@@ -75,6 +75,23 @@ fi
 if [ "${CRED_WRITTEN}" = "1" ]; then
     chmod 600 "${CRED_FILE}"
     git config --global credential.helper "store --file=${CRED_FILE}"
+fi
+
+# ── Git committer email resolution ─────────────────────────────────────
+# GitLab rejects pushes if the committer email does not match a verified address
+# on the account. If GIT_AUTHOR_EMAIL was not explicitly provided, look it up
+# from the GitLab account associated with GITLAB_TOKEN.
+if [ -z "${GIT_AUTHOR_EMAIL:-}" ] && [ -n "${GITLAB_TOKEN:-}" ]; then
+    GL_HOST="${GITLAB_HOST:-gitlab.com}"
+    GL_EMAIL=$(curl -sf "https://${GL_HOST}/api/v4/user/emails" \
+        -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" 2>/dev/null \
+        | jq -r 'first(.[] | select(.confirmed_at != null) | .email) // empty' 2>/dev/null || true)
+    if [ -n "${GL_EMAIL}" ]; then
+        git config --global user.email "${GL_EMAIL}"
+        echo "[entrypoint] Git committer email resolved from GitLab account: ${GL_EMAIL}"
+    else
+        echo "[entrypoint] WARNING: could not resolve GitLab committer email; using ${ROLE}@gasboat.local"
+    fi
 fi
 
 # ── Repo cloning ──────────────────────────────────────────────────────────
@@ -112,8 +129,8 @@ if [ ! -d "${WORKSPACE}/.git" ]; then
     echo "[entrypoint] Initializing git repo in ${WORKSPACE}"
     cd "${WORKSPACE}"
     git init -q
-    git config user.name "${GIT_AUTHOR_NAME:-${ROLE}}"
-    git config user.email "${ROLE}@gasboat.local"
+    git config user.name "$(git config --global user.name)"
+    git config user.email "$(git config --global user.email)"
     # Keep cloned repos out of the workspace's own git index.
     echo "repos/" >> "${WORKSPACE}/.gitignore"
 else
