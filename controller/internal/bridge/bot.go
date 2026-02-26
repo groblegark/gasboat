@@ -424,13 +424,21 @@ func (b *Bot) agentThreadingEnabled() bool {
 }
 
 // agentTaskTitle fetches the title of the task currently claimed by agent.
-// Returns "" if none is found or on error.
+// Returns "" if none is found or on error. Tries both the full identity
+// and the short name to handle assignee format mismatches.
 func (b *Bot) agentTaskTitle(ctx context.Context, agent string) string {
 	bead, err := b.daemon.ListAssignedTask(ctx, agent)
-	if err != nil || bead == nil {
-		return ""
+	if err == nil && bead != nil {
+		return bead.Title
 	}
-	return bead.Title
+	// Retry with short name if agent is a full path (project/role/name).
+	if short := extractAgentName(agent); short != agent {
+		bead, err = b.daemon.ListAssignedTask(ctx, short)
+		if err == nil && bead != nil {
+			return bead.Title
+		}
+	}
+	return ""
 }
 
 // ensureAgentCard posts or retrieves the agent status card for threading.
