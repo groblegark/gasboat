@@ -193,7 +193,7 @@ func (c *Client) ListTaskBeads(ctx context.Context) ([]*BeadDetail, error) {
 func (c *Client) ListAssignedTask(ctx context.Context, agentName string) (*BeadDetail, error) {
 	q := url.Values{}
 	q.Set("status", "in_progress")
-	q.Set("assignee", url.QueryEscape(agentName))
+	q.Set("assignee", agentName)
 	var resp listBeadsResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads?"+q.Encode(), nil, &resp); err != nil {
 		return nil, fmt.Errorf("listing assigned beads: %w", err)

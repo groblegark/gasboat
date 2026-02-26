@@ -455,7 +455,7 @@ slackBridge:
 
   # Live agent activity dashboard — pinned Slack message updated periodically.
   dashboard:
-    enabled: false
+    enabled: true
     channel: ""       # Dashboard channel (defaults to slack.channel if empty)
     interval: ""      # Poll interval (e.g., "15s", "30s"); default 15s
 
