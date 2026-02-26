@@ -451,7 +451,16 @@ inject_initial_prompt() {
         fi
     done
 
-    local nudge_msg="Check \`gb ready\` for your workflow steps and begin working."
+    # Build a project-scoped initial prompt that prevents parallel pickup of the
+    # same task by multiple agents.  Three key rules are injected:
+    #   1. Check gb news first to see what teammates are already working on.
+    #   2. Prefer tasks that match this agent's project (${PROJECT}).
+    #   3. kd claim <id> BEFORE starting work so no other agent can pick the same task.
+    local project_hint=""
+    if [ -n "${PROJECT:-}" ]; then
+        project_hint=" Focus on tasks for project \`${PROJECT}\` — skip work that belongs to a different project unless you are explicitly assigned to it."
+    fi
+    local nudge_msg="Check \`gb ready\` for your workflow steps and begin working.${project_hint} IMPORTANT: (1) Run \`gb news\` first to see what your teammates are already working on — do not duplicate in-progress work. (2) Run \`kd claim <id>\` BEFORE starting any task — this atomically marks it in_progress so no other agent picks it up simultaneously."
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
     response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \

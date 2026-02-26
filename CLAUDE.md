@@ -60,6 +60,15 @@ quench check                                    # quality checks
 | `SLACK_BOAT_TOKEN` | *(optional)* | Slack bot OAuth token |
 | `SLACK_CHANNEL` | *(optional)* | Slack channel for notifications |
 
+## Before Picking Up Any Task (Agents)
+
+When multiple agents are running, always follow this sequence to avoid duplicating work:
+
+1. `gb news` — Check what teammates are actively working on
+2. `kd claim <id>` — Claim BEFORE starting (atomically sets `in_progress` + assignee)
+
+`gb ready` returns beads across all projects. Only work on tasks in your assigned project unless explicitly instructed otherwise.
+
 ## Commits
 
 Use short, imperative subject lines. Scope in parentheses: `fix(bridge): handle nil bead metadata`.
