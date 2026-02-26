@@ -106,7 +106,11 @@ func TestJiraPoller_CreateBead(t *testing.T) {
 
 	daemon := newMockJiraDaemon()
 	poller := NewJiraPoller(newTestJiraClient(jiraServer.URL), daemon, JiraPollerConfig{
-		Projects: []string{"PE"}, Statuses: []string{"To Do"}, IssueTypes: []string{"Bug"}, Logger: slog.Default(),
+		Projects:   []string{"PE"},
+		Statuses:   []string{"To Do"},
+		IssueTypes: []string{"Bug"},
+		ProjectMap: map[string]string{"PE": "monorepo"},
+		Logger:     slog.Default(),
 	})
 	poller.poll(context.Background())
 
@@ -124,7 +128,8 @@ func TestJiraPoller_CreateBead(t *testing.T) {
 	if bead.Type != "task" {
 		t.Errorf("expected type=task, got %s", bead.Type)
 	}
-	want := map[string]bool{"source:jira": true, "jira:PE-7001": true, "project:pe": true, "jira-label:frontend": true, "jira-label:urgent": true}
+	// project:monorepo because ProjectMap maps PE → monorepo
+	want := map[string]bool{"source:jira": true, "jira:PE-7001": true, "project:monorepo": true, "jira-label:frontend": true, "jira-label:urgent": true}
 	for _, l := range bead.Labels {
 		delete(want, l)
 	}
@@ -148,6 +153,49 @@ func TestJiraPoller_CreateBead(t *testing.T) {
 	}
 	if bead.Description != "Steps to reproduce the error." {
 		t.Errorf("description=%q", bead.Description)
+	}
+}
+
+func TestJiraPoller_CreateBead_FallbackProject(t *testing.T) {
+	jiraServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"issues": []map[string]any{{
+				"key": "DEVOPS-42", "id": "42",
+				"fields": map[string]any{
+					"summary": "CI pipeline fix", "status": map[string]string{"name": "To Do"},
+					"issuetype": map[string]string{"name": "Task"}, "priority": map[string]string{"name": "Medium"},
+				},
+			}},
+			"total": 1,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer jiraServer.Close()
+
+	// No ProjectMap entry for DEVOPS — falls back to "devops" (lowercased prefix).
+	daemon := newMockJiraDaemon()
+	poller := NewJiraPoller(newTestJiraClient(jiraServer.URL), daemon, JiraPollerConfig{
+		Projects: []string{"DEVOPS"}, Logger: slog.Default(),
+	})
+	poller.poll(context.Background())
+
+	beads := daemon.getBeads()
+	if len(beads) != 1 {
+		t.Fatalf("expected 1 bead, got %d", len(beads))
+	}
+	var bead *beadsapi.BeadDetail
+	for _, b := range beads {
+		bead = b
+	}
+	hasProjectLabel := false
+	for _, l := range bead.Labels {
+		if l == "project:devops" {
+			hasProjectLabel = true
+		}
+	}
+	if !hasProjectLabel {
+		t.Errorf("expected fallback label project:devops, got %v", bead.Labels)
 	}
 }
 

@@ -105,6 +105,7 @@ func main() {
 		Projects:     cfg.jiraProjects,
 		Statuses:     cfg.jiraStatuses,
 		IssueTypes:   cfg.jiraIssueTypes,
+		ProjectMap:   cfg.jiraProjectMap,
 		PollInterval: cfg.jiraPollInterval,
 		Logger:       logger,
 	})
@@ -166,6 +167,7 @@ type config struct {
 	jiraProjects     []string
 	jiraStatuses     []string
 	jiraIssueTypes   []string
+	jiraProjectMap         map[string]string // JIRA prefix (upper) → boat project name
 	jiraPollInterval       time.Duration
 	jiraDisableTransitions bool
 	listenAddr             string
@@ -191,6 +193,7 @@ func parseConfig() *config {
 		jiraProjects:           splitCSV(envOrDefault("JIRA_PROJECTS", "PE,DEVOPS")),
 		jiraStatuses:           splitCSV(envOrDefault("JIRA_STATUSES", "To Do,Ready for Development")),
 		jiraIssueTypes:         splitCSV(envOrDefault("JIRA_ISSUE_TYPES", "Bug,Task,Story")),
+		jiraProjectMap:         parseBoatProjects(os.Getenv("BOAT_PROJECTS")),
 		jiraPollInterval:       pollInterval,
 		jiraDisableTransitions: disableTransitions == "true" || disableTransitions == "1",
 		listenAddr:             envOrDefault("JIRA_LISTEN_ADDR", ":8091"),
@@ -204,6 +207,40 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseBoatProjects parses the BOAT_PROJECTS env var into a JIRA prefix → boat
+// project name map. The format is comma-separated entries of the form:
+//
+//	{project_name}={git_url}:{jira_prefix}
+//
+// Example: "gasboat=https://github.com/org/gasboat.git:kd,monorepo=https://gitlab.com/org/repo:PE"
+// Result:  {"KD": "gasboat", "PE": "monorepo"}
+func parseBoatProjects(s string) map[string]string {
+	m := make(map[string]string)
+	for _, entry := range strings.Split(s, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		// Split on first '=' to get project name and rest (url:prefix).
+		eqIdx := strings.IndexByte(entry, '=')
+		if eqIdx < 0 {
+			continue
+		}
+		projectName := entry[:eqIdx]
+		rest := entry[eqIdx+1:]
+		// The JIRA prefix is after the last ':' in rest.
+		colonIdx := strings.LastIndexByte(rest, ':')
+		if colonIdx < 0 {
+			continue
+		}
+		jiraPrefix := strings.ToUpper(strings.TrimSpace(rest[colonIdx+1:]))
+		if jiraPrefix != "" && projectName != "" {
+			m[jiraPrefix] = projectName
+		}
+	}
+	return m
 }
 
 func splitCSV(s string) []string {

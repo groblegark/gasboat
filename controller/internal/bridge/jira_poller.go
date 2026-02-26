@@ -26,10 +26,11 @@ type JiraBeadClient interface {
 
 // JiraPollerConfig holds configuration for the JIRA poller.
 type JiraPollerConfig struct {
-	Projects     []string      // JIRA project keys (e.g., ["PE", "DEVOPS"])
-	Statuses     []string      // JIRA statuses to ingest
-	IssueTypes   []string      // JIRA issue types to ingest
-	PollInterval time.Duration // Polling interval (default 60s)
+	Projects     []string          // JIRA project keys (e.g., ["PE", "DEVOPS"])
+	Statuses     []string          // JIRA statuses to ingest
+	IssueTypes   []string          // JIRA issue types to ingest
+	PollInterval time.Duration     // Polling interval (default 60s)
+	ProjectMap   map[string]string // JIRA prefix (upper) → boat project name (e.g., "PE" → "monorepo")
 	Logger       *slog.Logger
 }
 
@@ -179,11 +180,18 @@ func (p *JiraPoller) createBeadFromIssue(ctx context.Context, issue JiraIssue) (
 		"jira:" + issue.Key,
 	}
 
-	// Extract project key from issue key (e.g., "PE" from "PE-7001").
+	// Extract project key from issue key (e.g., "PE" from "PE-7001") and map
+	// to the boat project name via ProjectMap. Falls back to the lowercased
+	// JIRA prefix when no mapping is configured.
 	project := ""
 	if parts := strings.SplitN(issue.Key, "-", 2); len(parts) == 2 {
-		project = strings.ToLower(parts[0])
-		labels = append(labels, "project:"+project)
+		jiraPrefix := strings.ToUpper(parts[0])
+		boatProject, ok := p.cfg.ProjectMap[jiraPrefix]
+		if !ok {
+			boatProject = strings.ToLower(jiraPrefix)
+		}
+		project = jiraPrefix
+		labels = append(labels, "project:"+boatProject)
 	}
 
 	// Add JIRA labels with prefix.
