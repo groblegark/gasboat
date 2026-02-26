@@ -78,11 +78,13 @@ var decisionCreateCmd = &cobra.Command{
 			return fmt.Errorf("encoding fields: %w", err)
 		}
 
+		priority, _ := cmd.Flags().GetInt("priority")
+
 		id, err := daemon.CreateBead(cmd.Context(), beadsapi.CreateBeadRequest{
 			Title:     prompt,
 			Type:      "decision",
 			Kind:      "data",
-			Priority:  2,
+			Priority:  priority,
 			Assignee:  actor,
 			CreatedBy: actor,
 			Fields:    fieldsJSON,
@@ -526,6 +528,7 @@ func init() {
 	decisionCreateCmd.Flags().String("requested-by", "", "who is requesting (default: actor)")
 	decisionCreateCmd.Flags().String("context", "", "background context for the decision")
 	decisionCreateCmd.Flags().Bool("no-wait", false, "return immediately without waiting for response")
+	decisionCreateCmd.Flags().Int("priority", 2, "decision priority: 0=critical, 1=high, 2=normal, 3=low, 4=backlog")
 
 	decisionListCmd.Flags().StringSliceP("status", "s", nil, "filter by status")
 	decisionListCmd.Flags().Int("limit", 20, "maximum number of results")

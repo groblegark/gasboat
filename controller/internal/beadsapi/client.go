@@ -296,6 +296,7 @@ type BeadDetail struct {
 	Type        string            `json:"type"`
 	Status      string            `json:"status"`
 	Assignee    string            `json:"assignee"`
+	Priority    int               `json:"priority"`
 	Labels      []string          `json:"labels"`
 	Notes       string            `json:"notes"`
 	Fields      map[string]string `json:"fields"`
@@ -415,6 +416,7 @@ type beadJSON struct {
 	Type        string          `json:"type"`
 	Status      string          `json:"status"`
 	Assignee    string          `json:"assignee"`
+	Priority    int             `json:"priority"`
 	Labels      []string        `json:"labels"`
 	Notes       string          `json:"notes"`
 	Fields      json.RawMessage `json:"fields"`
@@ -492,6 +494,7 @@ func (b *beadJSON) toDetail() *BeadDetail {
 		Type:        b.Type,
 		Status:      b.Status,
 		Assignee:    b.Assignee,
+		Priority:    b.Priority,
 		Labels:      b.Labels,
 		Notes:       b.Notes,
 		Fields:      b.fieldsMap(),

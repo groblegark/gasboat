@@ -10,6 +10,19 @@ import (
 	"github.com/slack-go/slack"
 )
 
+// decisionPriorityEmoji returns a colored circle emoji for the given bead priority.
+// P0–1 (critical/high) → red, P2 (normal) → white, P3–4 (low/backlog) → green.
+func decisionPriorityEmoji(priority int) string {
+	switch {
+	case priority <= 1:
+		return ":red_circle:"
+	case priority >= 3:
+		return ":large_green_circle:"
+	default:
+		return ":white_circle:"
+	}
+}
+
 // decisionQuestion returns the question text from a decision bead's fields.
 // Prefers the canonical "prompt" field, falling back to the legacy "question"
 // field for backwards compatibility with older beads.
@@ -45,11 +58,11 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		}
 	}
 
-	// Build Block Kit blocks — header section with question.
+	// Build Block Kit blocks — header section with priority-colored indicator.
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf(":white_circle: *Decision Needed*\n%s", question), false, false),
+				fmt.Sprintf("%s *Decision Needed*\n%s", decisionPriorityEmoji(bead.Priority), question), false, false),
 			nil, nil,
 		),
 	}
@@ -363,7 +376,13 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 		return nil
 	}
 
-	emoji := reportEmoji(reportType)
+	// Fetch the decision bead to get its priority for consistent color coding.
+	priority := 2 // default: normal
+	if dec, err := b.daemon.GetBead(ctx, decisionID); err == nil {
+		priority = dec.Priority
+	}
+
+	emoji := decisionPriorityEmoji(priority) + " " + reportEmoji(reportType)
 
 	// Fetch the existing resolved message so we can append the report.
 	msgs, err := b.api.GetConversationHistory(&slack.GetConversationHistoryParameters{
