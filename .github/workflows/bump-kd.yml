@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   bump:
@@ -45,6 +46,7 @@ jobs:
           sed -i "s/ARG BEADS_VERSION=\S*/ARG BEADS_VERSION=${NEW}/" images/agent/Dockerfile
 
       - name: Commit and push
+        id: push
         if: steps.target.outputs.version != steps.current.outputs.version
         run: |
           git config user.name "github-actions[bot]"
@@ -52,3 +54,10 @@ jobs:
           git add images/agent/Dockerfile
           git commit -m "chore: bump kd to ${{ steps.target.outputs.version }}"
           git push origin main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger agent image rebuild
+        if: steps.push.outputs.pushed == 'true'
+        run: gh workflow run ci.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
