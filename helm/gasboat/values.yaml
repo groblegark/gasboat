@@ -501,9 +501,6 @@ jiraBridge:
   # Log level: debug, info, warn, error
   logLevel: ""
 
-  # NATS URL override (auto-wired when nats.enabled=true)
-  natsURL: ""
-
   # JIRA connection and polling config
   jira:
     # JIRA instance URL (required)
@@ -528,6 +525,8 @@ jiraBridge:
     # project label (e.g., PE issues → project:monorepo instead of project:pe).
     # Example: "gasboat=https://github.com/org/gasboat.git:KD,monorepo=https://gitlab.com/org/repo:PE"
     boatProjects: ""
+    # Disable JIRA issue transitions on bead close (default: transitions enabled)
+    disableTransitions: false
 
   service:
     type: ClusterIP

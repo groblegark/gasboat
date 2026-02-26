@@ -35,22 +35,6 @@ spec:
             # Beads daemon connection
             - name: BEADS_HTTP_ADDR
               value: "http://{{ include "gasboat.beads.host" . }}:{{ include "gasboat.beads.httpPort" . }}"
-            # NATS connection
-            {{- if .Values.jiraBridge.natsURL }}
-            - name: NATS_URL
-              value: {{ .Values.jiraBridge.natsURL | quote }}
-            {{- else if .Values.nats.enabled }}
-            - name: NATS_URL
-              value: {{ include "gasboat.natsURL" . | quote }}
-            {{- end }}
-            {{- if .Values.agents.natsTokenSecret }}
-            - name: NATS_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.agents.natsTokenSecret }}
-                  key: token
-                  optional: true
-            {{- end }}
             # JIRA connection
             {{- if .Values.jiraBridge.jira.baseURL }}
             - name: JIRA_BASE_URL
@@ -90,6 +74,10 @@ spec:
             {{- if .Values.jiraBridge.jira.boatProjects }}
             - name: BOAT_PROJECTS
               value: {{ .Values.jiraBridge.jira.boatProjects | quote }}
+            {{- end }}
+            {{- if .Values.jiraBridge.jira.disableTransitions }}
+            - name: JIRA_DISABLE_TRANSITIONS
+              value: "true"
             {{- end }}
             - name: JIRA_LISTEN_ADDR
               value: ":8091"
