@@ -17,19 +17,19 @@
       {
         "command": "/decisions",
         "description": "Show pending decisions waiting for a response",
-        "usage_hint": "",
+        "usage_hint": "[agent]",
         "should_escape": false
       },
       {
         "command": "/decide",
         "description": "Alias for /decisions",
-        "usage_hint": "",
+        "usage_hint": "[agent]",
         "should_escape": false
       },
       {
         "command": "/roster",
         "description": "Show the active agent roster",
-        "usage_hint": "",
+        "usage_hint": "[project]",
         "should_escape": false
       },
       {
@@ -51,7 +51,10 @@
       "bot": [
         "chat:write",
         "chat:write.public",
+        "app_mentions:read",
+        "channels:history",
         "commands",
+        "groups:history",
         "users:read"
       ]
     }
