@@ -203,6 +203,7 @@ var adviceRemoveCmd = &cobra.Command{
 
 func hasTargetingLabel(labels []string) bool {
 	for _, l := range labels {
+		l = stripGroupPrefix(l)
 		switch {
 		case l == "global":
 			return true
