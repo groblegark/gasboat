@@ -151,6 +151,18 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 			retireStaleSession(resumeLog)
 		}
 
+		// Check if the agent requested a polite stop before restarting.
+		agentBeadID := envOr("KD_AGENT_ID", os.Getenv("BOAT_AGENT_BEAD_ID"))
+		if agentBeadID != "" && isStopRequested(ctx, agentBeadID) {
+			fmt.Printf("[gb agent start] stop requested — closing bead and exiting cleanly\n")
+			closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer closeCancel()
+			if err := daemon.CloseBead(closeCtx, agentBeadID, map[string]string{"agent_state": "done"}); err != nil {
+				fmt.Printf("[gb agent start] warning: close agent bead: %v\n", err)
+			}
+			return nil
+		}
+
 		if elapsed >= time.Duration(minRuntimeSecs)*time.Second {
 			restarts = 0
 		}

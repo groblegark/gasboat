@@ -241,6 +241,22 @@ func findResumeSession(claudeStateDir string, sessionResume bool) string {
 	return candidates[0].path
 }
 
+// isStopRequested checks whether the agent bead has stop_requested=true.
+// This is set by 'gb stop' and tells the restart loop to exit instead of
+// restarting. Returns false on any error (fail-safe: keep running).
+func isStopRequested(ctx context.Context, agentBeadID string) bool {
+	if agentBeadID == "" || daemon == nil {
+		return false
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	bead, err := daemon.GetBead(checkCtx, agentBeadID)
+	if err != nil {
+		return false // fail-safe: don't stop if we can't check
+	}
+	return bead.Fields["stop_requested"] == "true"
+}
+
 // retireStaleSession renames a session log to .jsonl.stale so it won't be
 // resumed on the next restart.
 func retireStaleSession(logPath string) {

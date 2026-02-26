@@ -197,6 +197,32 @@ If the chosen option requires an artifact, ` + "`gb yield`" + ` will tell you �
 - ` + "`gb decision report <id> --content '...'`" + ` - Submit required artifact
 - ` + "`gb decision list`" + ` - Show pending decisions
 - ` + "`gb decision show <id>`" + ` - Decision details
+
+## Session Resumption
+
+Two complementary mechanisms restore context after interruptions:
+
+**Conversation resume** (` + "`coop --resume`" + `):
+- Managed **automatically** by the entrypoint on pod restart
+- Restores the previous Claude conversation history
+- No agent action required — the entrypoint handles it
+
+**Context recovery** (` + "`gb prime`" + `):
+- Run by agents after compaction, ` + "`/clear`" + `, or a new session
+- Injects fresh workflow context: assignment, roster, advice, auto-assign
+- Hooks auto-call this on SessionStart — run manually if context is stale
+
+## Stopping Cleanly
+
+To voluntarily despawn (stop being restarted after this session):
+
+` + "```bash" + `
+kd close <bead-id>     # close any claimed work first
+gb stop                # signal entrypoint not to restart this pod
+# finish your turn — the pod will not restart
+` + "```" + `
+
+**Do NOT** just exit without calling ` + "`gb stop`" + ` — exiting alone triggers an automatic restart.
 `
 	fmt.Fprint(w, ctx)
 }
