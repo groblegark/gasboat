@@ -245,19 +245,23 @@ func (c *Client) CreateBead(ctx context.Context, req CreateBeadRequest) (string,
 	return result.ID, nil
 }
 
-// SpawnAgent creates a new agent bead with the given name and project.
+// SpawnAgent creates a new agent bead with the given name, project, and role.
 // The bead starts in open status; the reconciler picks it up and schedules a pod.
 // agentName is the agent identifier (e.g., "my-bot"). project is the project name
 // (e.g., "gasboat"); if empty the daemon uses its default project.
+// role is the agent role (e.g., "crew", "captain"); if empty it defaults to "crew".
 // taskID is an optional bead ID of a task to pre-assign this agent. When non-empty,
 // the agent bead description is set to reference the task and a dependency is added
 // (type "assigned") linking the agent bead to the task. The dependency is best-effort:
 // if it fails the agent bead is still returned.
-func (c *Client) SpawnAgent(ctx context.Context, agentName, project, taskID string) (string, error) {
+func (c *Client) SpawnAgent(ctx context.Context, agentName, project, taskID, role string) (string, error) {
+	if role == "" {
+		role = "crew"
+	}
 	fields := map[string]string{
 		"agent":   agentName,
 		"mode":    "crew",
-		"role":    "crew",
+		"role":    role,
 		"project": project,
 	}
 	fieldsJSON, err := json.Marshal(fields)
@@ -281,6 +285,8 @@ func (c *Client) SpawnAgent(ctx context.Context, agentName, project, taskID stri
 		// project-scoped listings (kd list, gb ready with --project filter).
 		_ = c.AddLabel(ctx, id, "project:"+project)
 	}
+	// Best-effort: add a role label so gb prime advice matching can filter by role.
+	_ = c.AddLabel(ctx, id, "role:"+role)
 	if taskID != "" {
 		// Best-effort: failure to link the task does not prevent agent creation.
 		// The task reference is already captured in the bead description.

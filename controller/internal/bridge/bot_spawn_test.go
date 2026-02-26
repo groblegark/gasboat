@@ -9,6 +9,8 @@ import (
 
 	"log/slog"
 
+	"gasboat/controller/internal/beadsapi"
+
 	"github.com/slack-go/slack"
 )
 
@@ -38,6 +40,7 @@ func newFakeSlackServer(t *testing.T) *httptest.Server {
 
 func TestHandleSpawnCommand_SpawnsAgentWithProject(t *testing.T) {
 	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
 	slackSrv := newFakeSlackServer(t)
 	defer slackSrv.Close()
 
@@ -50,25 +53,79 @@ func TestHandleSpawnCommand_SpawnsAgentWithProject(t *testing.T) {
 		UserID:    "U456",
 	})
 
-	// SpawnAgent should have created an agent bead.
-	if len(daemon.beads) != 1 {
-		t.Fatalf("expected 1 bead created, got %d", len(daemon.beads))
+	// SpawnAgent should have created an agent bead (plus the seeded project bead).
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
 	}
-	for _, b := range daemon.beads {
-		if b.Type != "agent" {
-			t.Errorf("expected type=agent, got %s", b.Type)
-		}
+	for _, b := range agentBeads {
 		if b.Title != "my-bot" {
 			t.Errorf("expected title=my-bot, got %s", b.Title)
 		}
 		if b.Fields["project"] != "gasboat" {
 			t.Errorf("expected project=gasboat, got %s", b.Fields["project"])
 		}
+		if b.Fields["role"] != "crew" {
+			t.Errorf("expected default role=crew, got %s", b.Fields["role"])
+		}
+	}
+}
+
+func TestHandleSpawnCommand_SpawnsAgentWithRole(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot gasboat --role captain",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["role"] != "captain" {
+			t.Errorf("expected role=captain, got %s", b.Fields["role"])
+		}
+	}
+}
+
+func TestHandleSpawnCommand_SpawnsAgentWithRoleEquals(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot gasboat --role=jirafix",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["role"] != "jirafix" {
+			t.Errorf("expected role=jirafix, got %s", b.Fields["role"])
+		}
 	}
 }
 
 func TestHandleSpawnCommand_SpawnsAgentWithTask(t *testing.T) {
 	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
 	slackSrv := newFakeSlackServer(t)
 	defer slackSrv.Close()
 
@@ -81,14 +138,26 @@ func TestHandleSpawnCommand_SpawnsAgentWithTask(t *testing.T) {
 		UserID:    "U456",
 	})
 
-	if len(daemon.beads) != 1 {
-		t.Fatalf("expected 1 bead created, got %d", len(daemon.beads))
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
 	}
-	for _, b := range daemon.beads {
+	for _, b := range agentBeads {
 		if b.Description != "Assigned to task: kd-task-42" {
 			t.Errorf("expected description %q, got %q", "Assigned to task: kd-task-42", b.Description)
 		}
 	}
+}
+
+// filterAgentBeads returns only the agent-type beads from a beads map.
+func filterAgentBeads(beads map[string]*beadsapi.BeadDetail) []*beadsapi.BeadDetail {
+	var result []*beadsapi.BeadDetail
+	for _, b := range beads {
+		if b.Type == "agent" {
+			result = append(result, b)
+		}
+	}
+	return result
 }
 
 func TestHandleSpawnCommand_SpawnsAgentNoProject(t *testing.T) {

@@ -28,6 +28,19 @@ func newMockDaemon() *mockDaemon {
 	}
 }
 
+// seedProject pre-populates the mock with a project bead so that project
+// validation in handleSpawnCommand passes for tests that use a project name.
+func (m *mockDaemon) seedProject(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := "proj-" + name
+	m.beads[id] = &beadsapi.BeadDetail{
+		ID:    id,
+		Title: name,
+		Type:  "project",
+	}
+}
+
 func (m *mockDaemon) GetBead(_ context.Context, beadID string) (*beadsapi.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -69,9 +82,12 @@ func (m *mockDaemon) CreateBead(_ context.Context, req beadsapi.CreateBeadReques
 	return id, nil
 }
 
-func (m *mockDaemon) SpawnAgent(_ context.Context, agentName, project, taskID string) (string, error) {
+func (m *mockDaemon) SpawnAgent(_ context.Context, agentName, project, taskID, role string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if role == "" {
+		role = "crew"
+	}
 	id := fmt.Sprintf("bd-agent-%d", len(m.beads)+1)
 	desc := ""
 	if taskID != "" {
@@ -82,7 +98,7 @@ func (m *mockDaemon) SpawnAgent(_ context.Context, agentName, project, taskID st
 		Title:       agentName,
 		Type:        "agent",
 		Description: desc,
-		Fields:      map[string]string{"agent": agentName, "project": project, "mode": "crew", "role": "crew"},
+		Fields:      map[string]string{"agent": agentName, "project": project, "mode": "crew", "role": role},
 	}
 	return id, nil
 }
