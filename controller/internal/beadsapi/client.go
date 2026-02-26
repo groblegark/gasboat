@@ -251,6 +251,11 @@ func (c *Client) SpawnAgent(ctx context.Context, agentName, project, taskID stri
 	if err != nil {
 		return "", fmt.Errorf("spawning agent %q: %w", agentName, err)
 	}
+	if project != "" {
+		// Best-effort: label the agent bead with its project so it appears in
+		// project-scoped listings (kd list, gb ready with --project filter).
+		_ = c.AddLabel(ctx, id, "project:"+project)
+	}
 	if taskID != "" {
 		// Best-effort: failure to link the task does not prevent agent creation.
 		// The task reference is already captured in the bead description.
