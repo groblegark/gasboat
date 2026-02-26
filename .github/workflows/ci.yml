@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["v*", "20[0-9][0-9].*"]
   pull_request:
     branches: [main]
   schedule:
@@ -65,7 +65,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.arch }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -90,11 +90,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}/controller
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
-            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1,suffix=-${{ matrix.arch }}
             type=raw,value=nightly-${{ matrix.arch }},enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -111,7 +111,7 @@ jobs:
 
   manifest:
     name: Manifest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [docker]
     runs-on: ubuntu-latest
     steps:
@@ -125,11 +125,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}/controller
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1
             type=raw,value=nightly,enable={{is_default_branch}}
       - name: Create multi-arch manifests
         run: |
@@ -145,7 +145,7 @@ jobs:
 
   slack-bridge:
     name: Slack Bridge (${{ matrix.arch }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -174,7 +174,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
-            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1,suffix=-${{ matrix.arch }}
             type=raw,value=nightly-${{ matrix.arch }},enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -192,7 +192,7 @@ jobs:
 
   slack-bridge-manifest:
     name: Slack Bridge Manifest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [slack-bridge]
     runs-on: ubuntu-latest
     steps:
@@ -210,7 +210,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1
             type=raw,value=nightly,enable={{is_default_branch}}
       - name: Create multi-arch manifests
         run: |
@@ -226,7 +226,7 @@ jobs:
 
   jira-bridge:
     name: JIRA Bridge (${{ matrix.arch }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -255,7 +255,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
-            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1,suffix=-${{ matrix.arch }}
             type=raw,value=nightly-${{ matrix.arch }},enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -273,7 +273,7 @@ jobs:
 
   jira-bridge-manifest:
     name: JIRA Bridge Manifest
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [jira-bridge]
     runs-on: ubuntu-latest
     steps:
@@ -291,7 +291,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1
             type=raw,value=nightly,enable={{is_default_branch}}
       - name: Create multi-arch manifests
         run: |
@@ -307,7 +307,7 @@ jobs:
 
   agent:
     name: Agent (omnibus/${{ matrix.arch }})
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [test]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -336,7 +336,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
-            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1,suffix=-${{ matrix.arch }}
             type=raw,value=nightly-${{ matrix.arch }},enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -352,7 +352,7 @@ jobs:
 
   agent-manifest:
     name: Agent manifest (omnibus)
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [agent]
     runs-on: ubuntu-latest
     steps:
@@ -370,7 +370,7 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=match,pattern=(\d{4}\.\d{3}\.\d+),group=1
             type=raw,value=nightly,enable={{is_default_branch}}
       - name: Create multi-arch manifests
         run: |
