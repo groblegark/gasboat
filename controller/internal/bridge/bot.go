@@ -300,7 +300,7 @@ func (b *Bot) handleChatForward(ctx context.Context, ev *slackevents.MessageEven
 	// Post confirmation in thread.
 	_, _, _ = b.api.PostMessage(ev.Channel,
 		slack.MsgOptionText(
-			fmt.Sprintf(":speech_balloon: Forwarded to *%s* (tracking: `%s`)", extractAgentName(agent), beadID),
+			fmt.Sprintf(":speech_balloon: Forwarded to *%s* (tracking: _%s_)", extractAgentName(agent), title),
 			false),
 		slack.MsgOptionTS(ev.TimeStamp),
 	)
@@ -313,6 +313,16 @@ func extractAgentName(identity string) string {
 		return identity[i+1:]
 	}
 	return identity
+}
+
+// beadTitle returns the human-readable title for a bead, falling back to the
+// bead ID when the title is empty. Use this instead of raw bead IDs in
+// human-visible Slack messages.
+func beadTitle(id, title string) string {
+	if title != "" {
+		return title
+	}
+	return id
 }
 
 // formatAge formats the duration since t as a compact human-readable string.

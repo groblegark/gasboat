@@ -70,9 +70,14 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	// Predecessor chain info.
 	predecessorID := bead.Fields["predecessor_id"]
 	if predecessorID != "" {
-		chainText := fmt.Sprintf(":link: _Chained from: %s_", predecessorID)
+		// Resolve predecessor title for human-readable display.
+		predDisplay := predecessorID
+		if pred, err := b.daemon.GetBead(ctx, predecessorID); err == nil {
+			predDisplay = beadTitle(predecessorID, pred.Title)
+		}
+		chainText := fmt.Sprintf(":link: _Chained from: %s_", predDisplay)
 		if iterStr := bead.Fields["iteration"]; iterStr != "" && iterStr != "1" {
-			chainText = fmt.Sprintf(":link: _Iteration %s — chained from: %s_", iterStr, predecessorID)
+			chainText = fmt.Sprintf(":link: _Iteration %s — chained from: %s_", iterStr, predDisplay)
 		}
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn", chainText, false, false),
@@ -85,12 +90,12 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	} else if agent != "" {
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("Agent: `%s` | Bead: `%s`", agent, bead.ID), false, false),
+				fmt.Sprintf("Agent: `%s` | _%s_", agent, beadTitle(bead.ID, bead.Title)), false, false),
 		))
 	} else {
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("Bead: `%s`", bead.ID), false, false),
+				fmt.Sprintf("_%s_", beadTitle(bead.ID, bead.Title)), false, false),
 		))
 	}
 
@@ -267,8 +272,7 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 	question := decisionQuestion(bead.Fields)
 	agent := bead.Assignee
 
-	displayID := bead.ID
-	text := fmt.Sprintf(":rotating_light: *ESCALATED: %s*\n%s", displayID, question)
+	text := fmt.Sprintf(":rotating_light: *ESCALATED: %s*\n%s", beadTitle(bead.ID, bead.Title), question)
 
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
@@ -277,7 +281,7 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 	}
 
 	// Add context — skip agent info in threaded mode since the parent card shows it.
-	contextParts := []string{fmt.Sprintf("Bead: `%s`", bead.ID)}
+	contextParts := []string{fmt.Sprintf("_%s_", beadTitle(bead.ID, bead.Title))}
 	if agent != "" && !b.agentThreadingEnabled() {
 		contextParts = append([]string{fmt.Sprintf("Agent: `%s`", agent)}, contextParts...)
 	}
@@ -290,7 +294,7 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 	targetChannel := b.resolveChannel(agent)
 
 	msgOpts := []slack.MsgOption{
-		slack.MsgOptionText(fmt.Sprintf("ESCALATED: %s — %s", displayID, question), false),
+		slack.MsgOptionText(fmt.Sprintf("ESCALATED: %s — %s", beadTitle(bead.ID, bead.Title), question), false),
 		slack.MsgOptionBlocks(blocks...),
 	}
 
@@ -376,10 +380,12 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 		return nil
 	}
 
-	// Fetch the decision bead to get its priority for consistent color coding.
+	// Fetch the decision bead to get its priority and title.
 	priority := 2 // default: normal
+	decisionTitle := decisionID
 	if dec, err := b.daemon.GetBead(ctx, decisionID); err == nil {
 		priority = dec.Priority
+		decisionTitle = beadTitle(decisionID, dec.Title)
 	}
 
 	emoji := decisionPriorityEmoji(priority) + " " + reportEmoji(reportType)
@@ -427,7 +433,7 @@ func (b *Bot) PostReport(ctx context.Context, decisionID, reportType, content st
 	blocks = append(blocks,
 		slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("Decision `%s` · %s", decisionID, reportType), false, false)))
+				fmt.Sprintf("Decision _%s_ · %s", decisionTitle, reportType), false, false)))
 	// Wrap content in a code block so Slack collapses it with "Show more".
 	blocks = append(blocks,
 		slack.NewSectionBlock(

@@ -37,7 +37,7 @@ func (b *Bot) NotifyAgentCrash(ctx context.Context, bead BeadEvent) error {
 			nil, nil),
 		slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("Agent: `%s` | Bead: `%s`", name, bead.ID), false, false)),
+				fmt.Sprintf("Agent: `%s`", name), false, false)),
 	}
 
 	targetChannel := b.resolveChannel(agent)
@@ -62,7 +62,7 @@ func (b *Bot) NotifyJackOn(ctx context.Context, bead BeadEvent) error {
 	ttl := bead.Fields["ttl"]
 	reason := bead.Fields["reason"]
 
-	text := fmt.Sprintf(":wrench: *Jack Raised: %s*\nTarget: `%s`", bead.ID, target)
+	text := fmt.Sprintf(":wrench: *Jack Raised: %s*\nTarget: `%s`", beadTitle(bead.ID, bead.Title), target)
 	if agent != "" {
 		text += fmt.Sprintf("\nAgent: `%s`", agent)
 	}
@@ -100,7 +100,7 @@ func (b *Bot) NotifyJackOnBatch(ctx context.Context, beads []BeadEvent) error {
 	}
 	for _, bead := range beads[:limit] {
 		target := bead.Fields["target"]
-		line := fmt.Sprintf("• `%s` — target: `%s`", bead.ID, target)
+		line := fmt.Sprintf("• %s — target: `%s`", beadTitle(bead.ID, bead.Title), target)
 		if bead.Assignee != "" {
 			line += fmt.Sprintf(" (%s)", bead.Assignee)
 		}
@@ -131,7 +131,7 @@ func (b *Bot) NotifyJackOff(ctx context.Context, bead BeadEvent) error {
 	agent := bead.Assignee
 	reason := bead.Fields["reason"]
 
-	text := fmt.Sprintf(":white_check_mark: *Jack Lowered: %s*\nTarget: `%s`", bead.ID, target)
+	text := fmt.Sprintf(":white_check_mark: *Jack Lowered: %s*\nTarget: `%s`", beadTitle(bead.ID, bead.Title), target)
 	if agent != "" {
 		text += fmt.Sprintf("\nAgent: `%s`", agent)
 	}
@@ -161,7 +161,7 @@ func (b *Bot) NotifyJackExpired(ctx context.Context, bead BeadEvent) error {
 	agent := bead.Assignee
 	reason := bead.Fields["reason"]
 
-	text := fmt.Sprintf(":warning: *Jack Expired: %s*\nTarget: `%s`", bead.ID, target)
+	text := fmt.Sprintf(":warning: *Jack Expired: %s*\nTarget: `%s`", beadTitle(bead.ID, bead.Title), target)
 	if agent != "" {
 		text += fmt.Sprintf("\nAgent: `%s`", agent)
 	}
