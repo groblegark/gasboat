@@ -66,12 +66,9 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		))
 	}
 
-	// Context block — skip agent info in threaded mode since the parent card shows it.
+	// Context block — skip entirely in threaded mode since the parent card shows it.
 	if b.agentThreadingEnabled() && agent != "" {
-		blocks = append(blocks, slack.NewContextBlock("",
-			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("Decision `%s`", bead.ID), false, false),
-		))
+		// No context block needed — the thread parent card provides agent context.
 	} else if agent != "" {
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
