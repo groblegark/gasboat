@@ -17,6 +17,8 @@ func (b *Bot) handleSlashCommand(ctx context.Context, cmd slack.SlashCommand) {
 		b.handleRosterCommand(ctx, cmd)
 	case "/spawn":
 		b.handleSpawnCommand(ctx, cmd)
+	case "/kill":
+		b.handleKillCommand(ctx, cmd)
 	default:
 		b.logger.Debug("unhandled slash command", "command", cmd.Command)
 	}
@@ -179,6 +181,29 @@ func (b *Bot) handleDecisionsCommand(ctx context.Context, cmd slack.SlashCommand
 
 	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
 		slack.MsgOptionBlocks(blocks...))
+}
+
+// handleKillCommand processes the /kill slash command.
+// Usage: /kill <agent>
+func (b *Bot) handleKillCommand(ctx context.Context, cmd slack.SlashCommand) {
+	args := strings.Fields(strings.TrimSpace(cmd.Text))
+	if len(args) == 0 {
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(":x: Usage: `/kill <agent>`", false))
+		return
+	}
+
+	agentName := args[0]
+	if err := b.killAgent(ctx, agentName); err != nil {
+		b.logger.Error("kill command: failed to kill agent", "agent", agentName, "error", err)
+		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText(fmt.Sprintf(":x: Failed to kill agent %q: %s", agentName, err.Error()), false))
+		return
+	}
+
+	b.logger.Info("killed agent via Slack slash command", "agent", agentName, "user", cmd.UserID)
+	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+		slack.MsgOptionText(fmt.Sprintf(":skull: Agent *%s* terminated.", agentName), false))
 }
 
 // handleRosterCommand shows the agent dashboard as an ephemeral message.
