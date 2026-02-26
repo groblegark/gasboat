@@ -102,6 +102,14 @@ POST /v1/agents/{id}/gates/decision/satisfy to release the Stop gate.`,
 			fmt.Fprintf(os.Stderr, "Warning: failed to satisfy decision gate: %v\n", err)
 		}
 
+		// Set the gate_satisfied_by marker so the stop hook can verify this was a proper yield.
+		// The stop hook rejects gates satisfied by other means (e.g. manual 'gb gate mark').
+		if err := daemon.UpdateBeadFields(context.Background(), agentID, map[string]string{
+			"gate_satisfied_by": "yield",
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set gate_satisfied_by field: %v\n", err)
+		}
+
 		return nil
 	},
 }
