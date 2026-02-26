@@ -527,13 +527,25 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 80))
 	}
 
-	return []slack.Block{
+	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
 			nil, nil),
 		slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn", contextText, false, false)),
 	}
+
+	// Show a Clear button for terminated agents so humans can dismiss them from Slack.
+	if agentState == "done" || agentState == "failed" {
+		clearBtn := slack.NewButtonBlockElement(
+			"clear_agent",
+			agent,
+			slack.NewTextBlockObject("plain_text", "Clear", false, false),
+		)
+		blocks = append(blocks, slack.NewActionBlock("", clearBtn))
+	}
+
+	return blocks
 }
 
 // extractAgentProject returns the first segment (project) of an agent identity.
