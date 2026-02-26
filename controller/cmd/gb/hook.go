@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"gasboat/controller/internal/beadsapi"
 
@@ -106,16 +107,17 @@ var hookStopGateCmd = &cobra.Command{
 			agentBeadID = resolveAgentByActor(cmd.Context(), actor)
 		}
 
-		resp, err := daemon.EmitHook(cmd.Context(), beadsapi.EmitHookRequest{
+		req := beadsapi.EmitHookRequest{
 			AgentBeadID:     agentBeadID,
 			HookType:        "Stop",
 			ClaudeSessionID: claudeSessionID,
 			CWD:             cwd,
 			Actor:           actor,
-		})
+		}
+		resp, err := emitHookWithRetry(cmd.Context(), req)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "gb hook stop-gate: server error (failing open): %v\n", err)
-			return nil
+			fmt.Fprintf(os.Stderr, "gb hook stop-gate: server error after retries: %v\n", err)
+			os.Exit(1)
 		}
 
 		for _, w := range resp.Warnings {
@@ -142,6 +144,30 @@ func init() {
 	hookCmd.AddCommand(hookCheckMailCmd)
 	hookCmd.AddCommand(hookPrimeCmd)
 	hookCmd.AddCommand(hookStopGateCmd)
+}
+
+// emitHookWithRetry calls daemon.EmitHook with increasing backoff on transient
+// errors. Returns an error only after all retries are exhausted.
+func emitHookWithRetry(ctx context.Context, req beadsapi.EmitHookRequest) (*beadsapi.EmitHookResponse, error) {
+	backoffs := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+	var lastErr error
+	for attempt := 0; attempt <= len(backoffs); attempt++ {
+		resp, err := daemon.EmitHook(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt < len(backoffs) {
+			fmt.Fprintf(os.Stderr, "gb hook: EmitHook failed (attempt %d/%d), retrying in %s: %v\n",
+				attempt+1, len(backoffs)+1, backoffs[attempt], err)
+			select {
+			case <-time.After(backoffs[attempt]):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during retry: %w", ctx.Err())
+			}
+		}
+	}
+	return nil, lastErr
 }
 
 // outputClaimReminder checks if the agent has any in-progress claimed work or

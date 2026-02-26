@@ -7,6 +7,7 @@ package main
 // Exit codes:
 //
 //	0 — allow
+//	1 — server error (retries exhausted)
 //	2 — block (stderr: {"decision":"block","reason":"..."})
 
 import (
@@ -33,6 +34,7 @@ and calls POST /v1/hooks/emit on the kbeads server.
 
 Exit codes:
   0 — allow (or no gates to check)
+  1 — server error (retries exhausted)
   2 — block
 
 Warnings are written to stdout as <system-reminder> tags for Claude Code.
@@ -74,18 +76,18 @@ Block reason is written to stderr as {"decision":"block","reason":"..."}.`,
 			agentBeadID = resolveAgentByActor(cmd.Context(), actor)
 		}
 
-		resp, err := daemon.EmitHook(cmd.Context(), beadsapi.EmitHookRequest{
+		req := beadsapi.EmitHookRequest{
 			AgentBeadID:     agentBeadID,
 			HookType:        hookType,
 			ClaudeSessionID: claudeSessionID,
 			CWD:             cwd,
 			Actor:           actor,
 			ToolName:        toolName,
-		})
+		}
+		resp, err := emitHookWithRetry(cmd.Context(), req)
 		if err != nil {
-			// On server error, allow (fail open) — don't block the agent.
-			fmt.Fprintf(os.Stderr, "gb bus emit: server error (failing open): %v\n", err)
-			return nil
+			fmt.Fprintf(os.Stderr, "gb bus emit: server error after retries: %v\n", err)
+			os.Exit(1)
 		}
 
 		// On SessionStart, inject the full prime context.
