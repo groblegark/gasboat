@@ -73,9 +73,15 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("listing agent beads: %w", err)
 	}
 
-	// Build desired pod name set.
+	// Build desired pod name set, excluding beads that have requested a
+	// polite stop. Their pods will be deleted as orphans (if still running)
+	// but the beads themselves remain open so the agent card stays visible.
 	desired := make(map[string]beadsapi.AgentBead)
 	for _, b := range beads {
+		if b.Metadata["stop_requested"] == "true" {
+			r.logger.Info("skipping stopped agent — stop_requested=true", "bead", b.ID, "agent", b.AgentName)
+			continue
+		}
 		podName := fmt.Sprintf("%s-%s-%s-%s", b.Mode, b.Project, b.Role, b.AgentName)
 		desired[podName] = b
 	}
