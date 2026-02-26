@@ -415,6 +415,7 @@ func outputAdvice(w io.Writer, agentID string) {
 	}
 
 	subs := buildAgentSubscriptions(agentID, nil)
+	subs = enrichAgentSubscriptions(agentID, subs)
 
 	type matchedAdvice struct {
 		Bead          *beadsapi.BeadDetail
@@ -532,6 +533,46 @@ func singularize(plural string) string {
 		return strings.TrimSuffix(plural, "s")
 	}
 	return plural
+}
+
+// enrichAgentSubscriptions looks up the agent bead from the daemon and
+// adds/removes custom advice subscriptions from the agent's configuration.
+func enrichAgentSubscriptions(agentID string, subs []string) []string {
+	ctx := context.Background()
+
+	parts := strings.Split(agentID, "/")
+	agentName := parts[len(parts)-1]
+
+	agentBead, err := daemon.FindAgentBead(ctx, agentName)
+	if err != nil {
+		return subs // fail silently
+	}
+
+	if raw, ok := agentBead.Fields["advice_subscriptions"]; ok && raw != "" {
+		var extra []string
+		if json.Unmarshal([]byte(raw), &extra) == nil {
+			subs = append(subs, extra...)
+		}
+	}
+
+	if raw, ok := agentBead.Fields["advice_subscriptions_exclude"]; ok && raw != "" {
+		var exclude []string
+		if json.Unmarshal([]byte(raw), &exclude) == nil && len(exclude) > 0 {
+			excludeSet := make(map[string]bool, len(exclude))
+			for _, exc := range exclude {
+				excludeSet[exc] = true
+			}
+			filtered := subs[:0]
+			for _, sub := range subs {
+				if !excludeSet[sub] {
+					filtered = append(filtered, sub)
+				}
+			}
+			subs = filtered
+		}
+	}
+
+	return subs
 }
 
 // matchesSubscriptions checks if an advice bead should be delivered to an agent
