@@ -1,0 +1,73 @@
+{
+  "_metadata": {
+    "major_version": 1,
+    "minor_version": 1
+  },
+  "display_information": {
+    "name": "gasboat",
+    "description": "Agent control plane for gasboat — beads, decisions, spawn",
+    "background_color": "#1b2733"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "gasboat",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/decisions",
+        "description": "Show pending decisions waiting for a response",
+        "usage_hint": "",
+        "should_escape": false
+      },
+      {
+        "command": "/decide",
+        "description": "Alias for /decisions",
+        "usage_hint": "",
+        "should_escape": false
+      },
+      {
+        "command": "/roster",
+        "description": "Show the active agent roster",
+        "usage_hint": "",
+        "should_escape": false
+      },
+      {
+        "command": "/spawn",
+        "description": "Spawn a new agent",
+        "usage_hint": "<agent> [project]",
+        "should_escape": false
+      },
+      {
+        "command": "/kill",
+        "description": "Terminate a running agent",
+        "usage_hint": "<agent>",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "chat:write.public",
+        "commands",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false,
+    "interactivity": {
+      "is_enabled": true
+    },
+    "event_subscriptions": {
+      "bot_events": [
+        "app_mention",
+        "message.channels",
+        "message.groups"
+      ]
+    }
+  }
+}

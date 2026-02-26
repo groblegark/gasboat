@@ -15,6 +15,9 @@ import (
 // AgentNotifier posts agent lifecycle notifications to Slack.
 type AgentNotifier interface {
 	NotifyAgentCrash(ctx context.Context, bead BeadEvent) error
+	// NotifyAgentSpawn is called when an agent bead is first created.
+	// Implementations should post an initial status card / message.
+	NotifyAgentSpawn(ctx context.Context, bead BeadEvent)
 	// NotifyAgentState is called whenever an agent bead's agent_state changes.
 	// Implementations should update any live status display (e.g. agent card).
 	NotifyAgentState(ctx context.Context, bead BeadEvent)
@@ -45,12 +48,30 @@ func NewAgents(cfg AgentsConfig) *Agents {
 }
 
 // RegisterHandlers registers SSE event handlers on the given stream for
-// agent bead closed and updated events.
+// agent bead created, closed, and updated events.
 func (a *Agents) RegisterHandlers(stream *SSEStream) {
+	stream.On("beads.bead.created", a.handleCreated)
 	stream.On("beads.bead.closed", a.handleClosed)
 	stream.On("beads.bead.updated", a.handleUpdated)
 	a.logger.Info("agents watcher registered SSE handlers",
-		"topics", []string{"beads.bead.closed", "beads.bead.updated"})
+		"topics", []string{"beads.bead.created", "beads.bead.closed", "beads.bead.updated"})
+}
+
+func (a *Agents) handleCreated(ctx context.Context, data []byte) {
+	bead := ParseBeadEvent(data)
+	if bead == nil {
+		return
+	}
+	if bead.Type != "agent" {
+		return
+	}
+
+	a.logger.Info("agent bead created",
+		"id", bead.ID, "assignee", bead.Assignee, "title", bead.Title)
+
+	if a.notifier != nil {
+		a.notifier.NotifyAgentSpawn(ctx, *bead)
+	}
 }
 
 func (a *Agents) handleClosed(ctx context.Context, data []byte) {
@@ -65,11 +86,18 @@ func (a *Agents) handleClosed(ctx context.Context, data []byte) {
 	// An agent bead closing with agent_state=failed or pod_phase=failed is a crash.
 	agentState := bead.Fields["agent_state"]
 	podPhase := bead.Fields["pod_phase"]
-	if agentState != "failed" && podPhase != "failed" {
+	if agentState == "failed" || podPhase == "failed" {
+		a.notifyCrash(ctx, *bead)
 		return
 	}
 
-	a.notifyCrash(ctx, *bead)
+	// Normal completion — update the card so it shows "done" with the Clear button.
+	if a.notifier != nil {
+		if agentState == "" {
+			bead.Fields["agent_state"] = "done"
+		}
+		a.notifier.NotifyAgentState(ctx, *bead)
+	}
 }
 
 func (a *Agents) handleUpdated(ctx context.Context, data []byte) {

@@ -474,6 +474,47 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	return ts, nil
 }
 
+// NotifyAgentSpawn is called when an agent bead is first created.
+// It records the initial spawning state and posts the agent card immediately.
+func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
+	agent := bead.Assignee
+	if agent == "" {
+		agent = bead.Title
+	}
+	if agent == "" {
+		return
+	}
+
+	b.mu.Lock()
+	b.agentState[agent] = "spawning"
+	b.agentSeen[agent] = time.Now()
+	b.mu.Unlock()
+
+	channel := b.resolveChannel(agent)
+
+	if b.agentThreadingEnabled() {
+		if _, err := b.ensureAgentCard(ctx, agent, channel); err != nil {
+			b.logger.Error("failed to post agent spawn card",
+				"agent", agent, "error", err)
+		}
+	} else {
+		name := extractAgentName(agent)
+		_, _, err := b.api.PostMessageContext(ctx, channel,
+			slack.MsgOptionText(fmt.Sprintf("Agent spawned: %s", name), false),
+			slack.MsgOptionBlocks(
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn",
+						fmt.Sprintf(":rocket: *Agent spawned: %s*", name), false, false),
+					nil, nil),
+			),
+		)
+		if err != nil {
+			b.logger.Error("failed to post agent spawn message",
+				"agent", agent, "error", err)
+		}
+	}
+}
+
 // NotifyAgentState is called when an agent bead's agent_state changes.
 // It records the new state and refreshes the agent card in Slack.
 func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
@@ -536,6 +577,12 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 	case agentState == "spawning":
 		indicator = ":hourglass_flowing_sand:"
 		status = "starting"
+	case agentState == "done":
+		indicator = ":white_check_mark:"
+		status = "done"
+	case agentState == "failed":
+		indicator = ":x:"
+		status = "failed"
 	default:
 		indicator = ":white_circle:"
 		status = "idle"

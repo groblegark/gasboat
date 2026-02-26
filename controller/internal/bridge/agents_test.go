@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// mockAgentNotifier records calls to NotifyAgentCrash and NotifyAgentState.
+// mockAgentNotifier records calls to NotifyAgentCrash, NotifyAgentSpawn, and NotifyAgentState.
 type mockAgentNotifier struct {
 	mu           sync.Mutex
 	crashes      []BeadEvent
+	spawns       []BeadEvent
 	stateChanges []BeadEvent
 }
 
@@ -19,6 +20,12 @@ func (m *mockAgentNotifier) NotifyAgentCrash(_ context.Context, bead BeadEvent) 
 	defer m.mu.Unlock()
 	m.crashes = append(m.crashes, bead)
 	return nil
+}
+
+func (m *mockAgentNotifier) NotifyAgentSpawn(_ context.Context, bead BeadEvent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.spawns = append(m.spawns, bead)
 }
 
 func (m *mockAgentNotifier) NotifyAgentState(_ context.Context, bead BeadEvent) {
@@ -31,6 +38,12 @@ func (m *mockAgentNotifier) getCrashes() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]BeadEvent{}, m.crashes...)
+}
+
+func (m *mockAgentNotifier) getSpawns() []BeadEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]BeadEvent{}, m.spawns...)
 }
 
 func (m *mockAgentNotifier) getStateChanges() []BeadEvent {
@@ -172,6 +185,106 @@ func TestAgents_NilNotifier(t *testing.T) {
 
 	// Should not panic even with nil notifier.
 	a.handleClosed(context.Background(), crashEvent)
+}
+
+// TestAgents_HandleCreated verifies that agent bead creation fires
+// NotifyAgentSpawn for agent beads and is skipped for non-agent beads.
+func TestAgents_HandleCreated(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Non-agent bead should be ignored.
+	nonAgent := marshalSSEBeadPayload(BeadEvent{
+		ID:   "dec-10",
+		Type: "decision",
+	})
+	a.handleCreated(context.Background(), nonAgent)
+	if len(notif.getSpawns()) != 0 {
+		t.Fatal("non-agent bead should not trigger spawn notification")
+	}
+
+	// Agent bead creation should trigger spawn notification.
+	agentBead := marshalSSEBeadPayload(BeadEvent{
+		ID:       "agent-10",
+		Type:     "agent",
+		Title:    "crew-gasboat-crew-builder",
+		Assignee: "gasboat/crew/builder",
+	})
+	a.handleCreated(context.Background(), agentBead)
+
+	spawns := notif.getSpawns()
+	if len(spawns) != 1 {
+		t.Fatalf("expected 1 spawn notification, got %d", len(spawns))
+	}
+	if spawns[0].ID != "agent-10" {
+		t.Errorf("expected bead ID agent-10, got %s", spawns[0].ID)
+	}
+	if spawns[0].Assignee != "gasboat/crew/builder" {
+		t.Errorf("expected assignee gasboat/crew/builder, got %s", spawns[0].Assignee)
+	}
+}
+
+// TestAgents_HandleClosed_NormalCompletion verifies that a normally completed
+// agent bead (not failed) triggers NotifyAgentState with state "done".
+func TestAgents_HandleClosed_NormalCompletion(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	doneAgent := marshalSSEBeadPayload(BeadEvent{
+		ID:       "agent-11",
+		Type:     "agent",
+		Assignee: "gasboat/crew/finisher",
+		Fields: map[string]string{
+			"agent_state": "done",
+		},
+	})
+	a.handleClosed(context.Background(), doneAgent)
+
+	if len(notif.getCrashes()) != 0 {
+		t.Error("normal completion should not trigger crash notification")
+	}
+	changes := notif.getStateChanges()
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 state change notification, got %d", len(changes))
+	}
+	if changes[0].Fields["agent_state"] != "done" {
+		t.Errorf("expected agent_state=done, got %q", changes[0].Fields["agent_state"])
+	}
+}
+
+// TestAgents_HandleClosed_NoState verifies that an agent bead closing without
+// an explicit agent_state gets defaulted to "done".
+func TestAgents_HandleClosed_NoState(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	closedAgent := marshalSSEBeadPayload(BeadEvent{
+		ID:       "agent-12",
+		Type:     "agent",
+		Assignee: "gasboat/crew/silent",
+		Fields:   map[string]string{},
+	})
+	a.handleClosed(context.Background(), closedAgent)
+
+	if len(notif.getCrashes()) != 0 {
+		t.Error("normal close should not trigger crash notification")
+	}
+	changes := notif.getStateChanges()
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 state change notification, got %d", len(changes))
+	}
+	if changes[0].Fields["agent_state"] != "done" {
+		t.Errorf("expected agent_state defaulted to done, got %q", changes[0].Fields["agent_state"])
+	}
 }
 
 // TestAgents_HandleUpdated_StateChange verifies that non-crash state changes
