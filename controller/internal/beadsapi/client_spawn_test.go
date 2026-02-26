@@ -12,15 +12,23 @@ import (
 // --- SpawnAgent tests ---
 
 func TestSpawnAgent_SendsCorrectRequest(t *testing.T) {
-	var gotMethod, gotPath string
-	var gotBody map[string]json.RawMessage
+	type request struct {
+		method string
+		path   string
+		body   map[string]json.RawMessage
+	}
+	var requests []request
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
 		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": "bd-agent-42"})
+		var parsed map[string]json.RawMessage
+		_ = json.Unmarshal(body, &parsed)
+		requests = append(requests, request{r.Method, r.URL.Path, parsed})
+		if r.URL.Path == "/v1/beads" {
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "bd-agent-42"})
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
 	}))
 	defer srv.Close()
 
@@ -33,16 +41,23 @@ func TestSpawnAgent_SendsCorrectRequest(t *testing.T) {
 	if id != "bd-agent-42" {
 		t.Errorf("expected id bd-agent-42, got %s", id)
 	}
-	if gotMethod != http.MethodPost {
-		t.Errorf("expected POST, got %s", gotMethod)
+
+	// Expect two requests: POST /v1/beads then POST /v1/beads/{id}/labels.
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 HTTP requests, got %d", len(requests))
 	}
-	if gotPath != "/v1/beads" {
-		t.Errorf("expected /v1/beads, got %s", gotPath)
+
+	createReq := requests[0]
+	if createReq.method != http.MethodPost {
+		t.Errorf("expected POST, got %s", createReq.method)
+	}
+	if createReq.path != "/v1/beads" {
+		t.Errorf("expected /v1/beads, got %s", createReq.path)
 	}
 
 	var beadType, beadTitle string
-	_ = json.Unmarshal(gotBody["type"], &beadType)
-	_ = json.Unmarshal(gotBody["title"], &beadTitle)
+	_ = json.Unmarshal(createReq.body["type"], &beadType)
+	_ = json.Unmarshal(createReq.body["title"], &beadTitle)
 	if beadType != "agent" {
 		t.Errorf("expected type=agent, got %s", beadType)
 	}
@@ -51,7 +66,7 @@ func TestSpawnAgent_SendsCorrectRequest(t *testing.T) {
 	}
 
 	var fields map[string]string
-	_ = json.Unmarshal(gotBody["fields"], &fields)
+	_ = json.Unmarshal(createReq.body["fields"], &fields)
 	if fields["agent"] != "my-bot" {
 		t.Errorf("expected fields.agent=my-bot, got %s", fields["agent"])
 	}
@@ -63,6 +78,17 @@ func TestSpawnAgent_SendsCorrectRequest(t *testing.T) {
 	}
 	if fields["role"] != "crew" {
 		t.Errorf("expected fields.role=crew, got %s", fields["role"])
+	}
+
+	// Second request: add project label.
+	labelReq := requests[1]
+	if labelReq.path != "/v1/beads/bd-agent-42/labels" {
+		t.Errorf("expected label path /v1/beads/bd-agent-42/labels, got %s", labelReq.path)
+	}
+	var label string
+	_ = json.Unmarshal(labelReq.body["label"], &label)
+	if label != "project:gasboat" {
+		t.Errorf("expected label=project:gasboat, got %s", label)
 	}
 }
 
@@ -110,9 +136,9 @@ func TestSpawnAgent_WithTaskID_SetsDescriptionAndLinksDependency(t *testing.T) {
 		t.Errorf("expected id bd-agent-99, got %s", id)
 	}
 
-	// Expect two requests: POST /v1/beads and POST /v1/beads/{id}/dependencies.
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 HTTP requests, got %d", len(requests))
+	// Expect three requests: POST /v1/beads, POST /v1/beads/{id}/labels, POST /v1/beads/{id}/dependencies.
+	if len(requests) != 3 {
+		t.Fatalf("expected 3 HTTP requests, got %d", len(requests))
 	}
 
 	// First request: create agent bead with description.
@@ -126,8 +152,19 @@ func TestSpawnAgent_WithTaskID_SetsDescriptionAndLinksDependency(t *testing.T) {
 		t.Errorf("expected description %q, got %q", "Assigned to task: kd-task-123", desc)
 	}
 
-	// Second request: add dependency to the task bead.
-	depReq := requests[1]
+	// Second request: add project label.
+	labelReq := requests[1]
+	if labelReq.path != "/v1/beads/bd-agent-99/labels" {
+		t.Errorf("expected label path /v1/beads/bd-agent-99/labels, got %s", labelReq.path)
+	}
+	var label string
+	_ = json.Unmarshal(labelReq.body["label"], &label)
+	if label != "project:gasboat" {
+		t.Errorf("expected label=project:gasboat, got %s", label)
+	}
+
+	// Third request: add dependency to the task bead.
+	depReq := requests[2]
 	if depReq.path != "/v1/beads/bd-agent-99/dependencies" {
 		t.Errorf("expected dep path /v1/beads/bd-agent-99/dependencies, got %s", depReq.path)
 	}
