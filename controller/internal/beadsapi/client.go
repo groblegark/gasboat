@@ -27,6 +27,9 @@ type AgentBead struct {
 	// Role is the agent role (e.g., "crew", "lead", "ops").
 	Role string
 
+	// Title is the bead title (e.g., "crew-gasboat-crew-k8s").
+	Title string
+
 	// AgentName is the agent's name within its role (e.g., "hq", "k8s").
 	AgentName string
 
@@ -117,6 +120,7 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 		}
 		beads = append(beads, AgentBead{
 			ID:         b.ID,
+			Title:      b.Title,
 			Project:    project,
 			Mode:       mode,
 			Role:       role,

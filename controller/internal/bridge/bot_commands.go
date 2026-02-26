@@ -238,12 +238,20 @@ func (b *Bot) handleRosterCommand(ctx context.Context, cmd slack.SlashCommand) {
 		limit = len(agents)
 	}
 	for _, a := range agents[:limit] {
-		line := fmt.Sprintf(":large_green_circle: `%s`", a.ID)
+		name := a.AgentName
+		if name == "" {
+			name = a.ID
+		}
+		line := fmt.Sprintf(":large_green_circle: *%s*", name)
 		if a.Project != "" {
-			line += fmt.Sprintf(" — *%s*", a.Project)
+			line += fmt.Sprintf(" · _%s_", a.Project)
 		}
 		if a.Role != "" {
 			line += fmt.Sprintf(" (%s/%s)", a.Mode, a.Role)
+		}
+		line += fmt.Sprintf("\n`%s`", a.ID)
+		if a.Title != "" && a.Title != a.ID {
+			line += fmt.Sprintf(" · %s", a.Title)
 		}
 
 		blocks = append(blocks,
