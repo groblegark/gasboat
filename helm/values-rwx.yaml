@@ -1,0 +1,58 @@
+# Helm values for the gasboat-rwx E2E test namespace.
+# Deploy with:
+#   helm upgrade --install gasboat-rwx helm/gasboat/ \
+#     --namespace gasboat-rwx --create-namespace \
+#     -f helm/values-rwx.yaml
+
+# =============================================================================
+# Beads Daemon
+# =============================================================================
+beads:
+  tokenSecret: kd-beads-token   # pre-created by setup-gasboat-rwx.sh
+  replicaCount: 1
+  image:
+    repository: ghcr.io/groblegark/kbeads
+    tag: "nightly"
+    pullPolicy: Always
+
+# =============================================================================
+# PostgreSQL (in-chart, ephemeral for E2E)
+# =============================================================================
+postgres:
+  enabled: true
+  database: beads
+  persistence:
+    enabled: true
+    size: 2Gi
+
+# =============================================================================
+# NATS (in-chart, required by agents)
+# =============================================================================
+nats:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# =============================================================================
+# Agent Controller + RBAC
+# Required so spawned agent pods have a service account with namespace-scoped
+# permissions. The controller itself is not needed for pure E2E tests but
+# the service account and RBAC it provisions are used by claudeless agents.
+# =============================================================================
+agents:
+  enabled: true
+  image:
+    repository: ghcr.io/groblegark/gasboat
+    tag: "nightly"
+    pullPolicy: Always
+  agentImage:
+    repository: ghcr.io/groblegark/gasboat/agent
+    tag: "nightly"
+  serviceAccount:
+    create: true
+  agentServiceAccount:
+    create: true
+  replicaCount: 1
+  coopMaxPods: 4
+  coopBurstLimit: 2
