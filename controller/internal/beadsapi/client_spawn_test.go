@@ -25,7 +25,7 @@ func TestSpawnAgent_SendsCorrectRequest(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
-	id, err := c.SpawnAgent(context.Background(), "my-bot", "gasboat")
+	id, err := c.SpawnAgent(context.Background(), "my-bot", "gasboat", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -73,8 +73,71 @@ func TestSpawnAgent_PropagatesCreateError(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
-	_, err := c.SpawnAgent(context.Background(), "bad-bot", "gasboat")
+	_, err := c.SpawnAgent(context.Background(), "bad-bot", "gasboat", "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestSpawnAgent_WithTaskID_SetsDescriptionAndLinksDependency(t *testing.T) {
+	type request struct {
+		method string
+		path   string
+		body   map[string]json.RawMessage
+	}
+	var requests []request
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var parsed map[string]json.RawMessage
+		_ = json.Unmarshal(body, &parsed)
+		requests = append(requests, request{r.Method, r.URL.Path, parsed})
+
+		if r.URL.Path == "/v1/beads" {
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": "bd-agent-99"})
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	id, err := c.SpawnAgent(context.Background(), "my-bot", "gasboat", "kd-task-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "bd-agent-99" {
+		t.Errorf("expected id bd-agent-99, got %s", id)
+	}
+
+	// Expect two requests: POST /v1/beads and POST /v1/beads/{id}/dependencies.
+	if len(requests) != 2 {
+		t.Fatalf("expected 2 HTTP requests, got %d", len(requests))
+	}
+
+	// First request: create agent bead with description.
+	createReq := requests[0]
+	if createReq.path != "/v1/beads" {
+		t.Errorf("expected path /v1/beads, got %s", createReq.path)
+	}
+	var desc string
+	_ = json.Unmarshal(createReq.body["description"], &desc)
+	if desc != "Assigned to task: kd-task-123" {
+		t.Errorf("expected description %q, got %q", "Assigned to task: kd-task-123", desc)
+	}
+
+	// Second request: add dependency to the task bead.
+	depReq := requests[1]
+	if depReq.path != "/v1/beads/bd-agent-99/dependencies" {
+		t.Errorf("expected dep path /v1/beads/bd-agent-99/dependencies, got %s", depReq.path)
+	}
+	var dependsOn, depType string
+	_ = json.Unmarshal(depReq.body["depends_on_id"], &dependsOn)
+	_ = json.Unmarshal(depReq.body["type"], &depType)
+	if dependsOn != "kd-task-123" {
+		t.Errorf("expected depends_on_id=kd-task-123, got %s", dependsOn)
+	}
+	if depType != "assigned" {
+		t.Errorf("expected dep type=assigned, got %s", depType)
 	}
 }

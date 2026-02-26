@@ -23,12 +23,12 @@ func (b *Bot) handleSlashCommand(ctx context.Context, cmd slack.SlashCommand) {
 }
 
 // handleSpawnCommand processes the /spawn slash command.
-// Usage: /spawn <agent> [project]
+// Usage: /spawn <agent> [project] [task]
 func (b *Bot) handleSpawnCommand(ctx context.Context, cmd slack.SlashCommand) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 	if len(args) == 0 {
 		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-			slack.MsgOptionText(":x: Usage: `/spawn <agent> [project]`", false))
+			slack.MsgOptionText(":x: Usage: `/spawn <agent> [project] [task]`", false))
 		return
 	}
 
@@ -44,19 +44,27 @@ func (b *Bot) handleSpawnCommand(ctx context.Context, cmd slack.SlashCommand) {
 		project = args[1]
 	}
 
-	beadID, err := b.daemon.SpawnAgent(ctx, agentName, project)
+	taskID := ""
+	if len(args) >= 3 {
+		taskID = args[2]
+	}
+
+	beadID, err := b.daemon.SpawnAgent(ctx, agentName, project, taskID)
 	if err != nil {
-		b.logger.Error("failed to spawn agent", "agent", agentName, "project", project, "error", err)
+		b.logger.Error("failed to spawn agent", "agent", agentName, "project", project, "task", taskID, "error", err)
 		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
 			slack.MsgOptionText(fmt.Sprintf(":x: Failed to spawn agent %q: %s", agentName, err.Error()), false))
 		return
 	}
 
-	b.logger.Info("spawned agent via Slack", "agent", agentName, "project", project, "bead", beadID, "user", cmd.UserID)
+	b.logger.Info("spawned agent via Slack", "agent", agentName, "project", project, "task", taskID, "bead", beadID, "user", cmd.UserID)
 
 	text := fmt.Sprintf(":rocket: Spawning agent *%s*", agentName)
 	if project != "" {
 		text += fmt.Sprintf(" in project *%s*", project)
+	}
+	if taskID != "" {
+		text += fmt.Sprintf(" assigned to task `%s`", taskID)
 	}
 	text += fmt.Sprintf("\nBead: `%s` · Use `/roster` to check status.", beadID)
 	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,

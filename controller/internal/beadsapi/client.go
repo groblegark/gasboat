@@ -224,7 +224,11 @@ func (c *Client) CreateBead(ctx context.Context, req CreateBeadRequest) (string,
 // The bead starts in open status; the reconciler picks it up and schedules a pod.
 // agentName is the agent identifier (e.g., "my-bot"). project is the project name
 // (e.g., "gasboat"); if empty the daemon uses its default project.
-func (c *Client) SpawnAgent(ctx context.Context, agentName, project string) (string, error) {
+// taskID is an optional bead ID of a task to pre-assign this agent. When non-empty,
+// the agent bead description is set to reference the task and a dependency is added
+// (type "assigned") linking the agent bead to the task. The dependency is best-effort:
+// if it fails the agent bead is still returned.
+func (c *Client) SpawnAgent(ctx context.Context, agentName, project, taskID string) (string, error) {
 	fields := map[string]string{
 		"agent":   agentName,
 		"mode":    "crew",
@@ -235,13 +239,22 @@ func (c *Client) SpawnAgent(ctx context.Context, agentName, project string) (str
 	if err != nil {
 		return "", fmt.Errorf("marshalling agent fields: %w", err)
 	}
-	id, err := c.CreateBead(ctx, CreateBeadRequest{
+	req := CreateBeadRequest{
 		Title:  agentName,
 		Type:   "agent",
 		Fields: json.RawMessage(fieldsJSON),
-	})
+	}
+	if taskID != "" {
+		req.Description = "Assigned to task: " + taskID
+	}
+	id, err := c.CreateBead(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("spawning agent %q: %w", agentName, err)
+	}
+	if taskID != "" {
+		// Best-effort: failure to link the task does not prevent agent creation.
+		// The task reference is already captured in the bead description.
+		_ = c.AddDependency(ctx, id, taskID, "assigned", agentName)
 	}
 	return id, nil
 }

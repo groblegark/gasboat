@@ -460,7 +460,18 @@ inject_initial_prompt() {
     if [ -n "${PROJECT:-}" ]; then
         project_hint=" Focus on tasks for project \`${PROJECT}\` — skip work that belongs to a different project unless you are explicitly assigned to it."
     fi
-    local nudge_msg="Check \`gb ready\` for your workflow steps and begin working.${project_hint} IMPORTANT: (1) Run \`gb news\` first to see what your teammates are already working on — do not duplicate in-progress work. (2) Run \`kd claim <id>\` BEFORE starting any task — this atomically marks it in_progress so no other agent picks it up simultaneously."
+
+    # If spawned with a pre-assigned task (dependency type "assigned"), use it as context.
+    local task_hint=""
+    if [ -n "${BOAT_AGENT_BEAD_ID:-}" ] && command -v kd &>/dev/null; then
+        assigned_task=$(kd dep list "${BOAT_AGENT_BEAD_ID}" --json 2>/dev/null \
+            | jq -r '.[] | select(.type=="assigned") | .depends_on_id' 2>/dev/null | head -1)
+        if [ -n "${assigned_task}" ]; then
+            task_hint=" You have been pre-assigned to task \`${assigned_task}\`. Run \`kd show ${assigned_task}\` for details, then \`kd claim ${assigned_task}\` to start work on it."
+        fi
+    fi
+
+    local nudge_msg="Check \`gb ready\` for your workflow steps and begin working.${project_hint}${task_hint} IMPORTANT: (1) Run \`gb news\` first to see what your teammates are already working on — do not duplicate in-progress work. (2) Run \`kd claim <id>\` BEFORE starting any task — this atomically marks it in_progress so no other agent picks it up simultaneously."
 
     echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
     response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \

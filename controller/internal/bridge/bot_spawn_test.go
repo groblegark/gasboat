@@ -67,6 +67,30 @@ func TestHandleSpawnCommand_SpawnsAgentWithProject(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnCommand_SpawnsAgentWithTask(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot gasboat kd-task-42",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	if len(daemon.beads) != 1 {
+		t.Fatalf("expected 1 bead created, got %d", len(daemon.beads))
+	}
+	for _, b := range daemon.beads {
+		if b.Description != "Assigned to task: kd-task-42" {
+			t.Errorf("expected description %q, got %q", "Assigned to task: kd-task-42", b.Description)
+		}
+	}
+}
+
 func TestHandleSpawnCommand_SpawnsAgentNoProject(t *testing.T) {
 	daemon := newMockDaemon()
 	slackSrv := newFakeSlackServer(t)
