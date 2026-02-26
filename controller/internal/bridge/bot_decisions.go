@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/slack-go/slack"
 )
@@ -212,6 +213,9 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	b.messages[bead.ID] = ref
 	if b.agentThreadingEnabled() && agent != "" {
 		b.agentPending[agent]++
+	}
+	if agent != "" {
+		b.agentSeen[agent] = time.Now()
 	}
 	b.mu.Unlock()
 

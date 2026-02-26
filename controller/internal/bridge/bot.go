@@ -52,6 +52,7 @@ type Bot struct {
 	agentCards   map[string]MessageRef // agent identity → status card ref (hot cache)
 	agentPending map[string]int        // agent identity → pending decision count
 	agentState   map[string]string     // agent identity → last known agent_state
+	agentSeen    map[string]time.Time  // agent identity → last activity timestamp
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
@@ -92,6 +93,7 @@ func NewBot(cfg BotConfig) *Bot {
 		agentCards:    make(map[string]MessageRef),
 		agentPending:  make(map[string]int),
 		agentState:    make(map[string]string),
+		agentSeen:     make(map[string]time.Time),
 	}
 
 	// Hydrate hot caches from persisted state.
@@ -310,6 +312,22 @@ func extractAgentName(identity string) string {
 	return identity
 }
 
+// formatAge formats the duration since t as a compact human-readable string.
+// Examples: "just now", "2m ago", "1h ago", "3d ago".
+func formatAge(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
 // truncateText truncates s to maxLen, appending "..." if truncated.
 func truncateText(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -426,10 +444,11 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	b.mu.Lock()
 	pending := b.agentPending[agent]
 	state := b.agentState[agent]
+	seen := b.agentSeen[agent]
 	b.mu.Unlock()
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -462,6 +481,7 @@ func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	state := bead.Fields["agent_state"]
 	b.mu.Lock()
 	b.agentState[agent] = state
+	b.agentSeen[agent] = time.Now()
 	b.mu.Unlock()
 
 	// Refresh the card if one exists for this agent.
@@ -476,6 +496,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	ref, ok := b.agentCards[agent]
 	pending := b.agentPending[agent]
 	state := b.agentState[agent]
+	seen := b.agentSeen[agent]
 	b.mu.Unlock()
 
 	if !ok {
@@ -483,7 +504,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	}
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -496,7 +517,8 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 // buildAgentCardBlocks constructs Block Kit blocks for an agent status card.
 // agentState is the agent's current lifecycle state (spawning, working, etc.).
 // taskTitle is the title of the bead the agent currently has in_progress ("" if idle).
-func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string) []slack.Block {
+// seen is the last time activity was recorded for this agent (zero = unknown).
+func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time) []slack.Block {
 	name := extractAgentName(agent)
 	project := extractAgentProject(agent)
 
@@ -523,6 +545,9 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 	headerText += fmt.Sprintf(" \u00b7 %s", status)
 
 	contextText := fmt.Sprintf("`%s` \u00b7 Decisions thread below", agent)
+	if !seen.IsZero() {
+		contextText += fmt.Sprintf(" \u00b7 _%s_", formatAge(seen))
+	}
 	if taskTitle != "" {
 		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 80))
 	}
