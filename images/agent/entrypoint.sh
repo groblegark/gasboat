@@ -780,6 +780,18 @@ while true; do
     elapsed=$(( $(date +%s) - start_time ))
     echo "[entrypoint] Coop exited with code ${exit_code} after ${elapsed}s"
 
+    # Check if the agent requested a polite stop (gb stop sets stop_requested=true).
+    # Close the bead so the reconciler stops tracking this pod, then exit cleanly.
+    if [ -n "${KD_AGENT_ID:-}" ] && command -v kd &>/dev/null && command -v jq &>/dev/null; then
+        stop_req=$(kd show "${KD_AGENT_ID}" --json 2>/dev/null | jq -r '.fields.stop_requested // empty')
+        if [ "${stop_req}" = "true" ]; then
+            echo "[entrypoint] stop_requested — closing agent bead and exiting cleanly"
+            kd close "${KD_AGENT_ID}" 2>/dev/null || true
+            deregister_from_mux
+            exit 0
+        fi
+    fi
+
     if [ "${elapsed}" -ge "${MIN_RUNTIME_SECS}" ]; then
         restart_count=0
     fi
