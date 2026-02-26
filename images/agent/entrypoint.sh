@@ -330,6 +330,7 @@ Rules:
 - An unclaimed bead is fair game for any agent to claim simultaneously
 - Never update a bead you haven't claimed (except to add comments)
 - Only claim beads within your assigned project (\`${PROJECT:-your project}\`)
+- If you receive a nudge that your claimed bead was updated, run \`kd show <id>\`
 - If \`gb ready\` shows nothing, check \`kd list --no-blockers\` for your project
 
 ## Checkpoint Protocol (Stop Hook)
