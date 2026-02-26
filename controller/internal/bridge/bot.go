@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"gasboat/controller/internal/beadsapi"
 
@@ -50,6 +51,7 @@ type Bot struct {
 	messages     map[string]MessageRef // bead ID → Slack message ref (hot cache)
 	agentCards   map[string]MessageRef // agent identity → status card ref (hot cache)
 	agentPending map[string]int        // agent identity → pending decision count
+	agentState   map[string]string     // agent identity → last known agent_state
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
@@ -89,6 +91,7 @@ func NewBot(cfg BotConfig) *Bot {
 		messages:      make(map[string]MessageRef),
 		agentCards:    make(map[string]MessageRef),
 		agentPending:  make(map[string]int),
+		agentState:    make(map[string]string),
 	}
 
 	// Hydrate hot caches from persisted state.
@@ -412,9 +415,10 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	// Post a new status card.
 	b.mu.Lock()
 	pending := b.agentPending[agent]
+	state := b.agentState[agent]
 	b.mu.Unlock()
 
-	blocks := buildAgentCardBlocks(agent, pending)
+	blocks := buildAgentCardBlocks(agent, pending, state)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -437,18 +441,37 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	return ts, nil
 }
 
-// updateAgentCard updates the agent status card with the current pending count.
+// NotifyAgentState is called when an agent bead's agent_state changes.
+// It records the new state and refreshes the agent card in Slack.
+func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
+	agent := bead.Assignee
+	if agent == "" {
+		return
+	}
+	state := bead.Fields["agent_state"]
+	b.mu.Lock()
+	b.agentState[agent] = state
+	b.mu.Unlock()
+
+	// Refresh the card if one exists for this agent.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b.updateAgentCard(ctx, agent)
+}
+
+// updateAgentCard updates the agent status card with the current pending count and state.
 func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	b.mu.Lock()
 	ref, ok := b.agentCards[agent]
 	pending := b.agentPending[agent]
+	state := b.agentState[agent]
 	b.mu.Unlock()
 
 	if !ok {
 		return
 	}
 
-	blocks := buildAgentCardBlocks(agent, pending)
+	blocks := buildAgentCardBlocks(agent, pending, state)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -459,15 +482,22 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 }
 
 // buildAgentCardBlocks constructs Block Kit blocks for an agent status card.
-func buildAgentCardBlocks(agent string, pendingCount int) []slack.Block {
+func buildAgentCardBlocks(agent string, pendingCount int, agentState string) []slack.Block {
 	name := extractAgentName(agent)
 	project := extractAgentProject(agent)
 
 	var indicator, status string
-	if pendingCount > 0 {
+	switch {
+	case pendingCount > 0:
 		indicator = ":large_blue_circle:"
 		status = fmt.Sprintf("%d pending", pendingCount)
-	} else {
+	case agentState == "working":
+		indicator = ":large_green_circle:"
+		status = "working"
+	case agentState == "spawning":
+		indicator = ":hourglass_flowing_sand:"
+		status = "starting"
+	default:
 		indicator = ":white_circle:"
 		status = "idle"
 	}

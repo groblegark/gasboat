@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// mockAgentNotifier records calls to NotifyAgentCrash.
+// mockAgentNotifier records calls to NotifyAgentCrash and NotifyAgentState.
 type mockAgentNotifier struct {
-	mu      sync.Mutex
-	crashes []BeadEvent
+	mu           sync.Mutex
+	crashes      []BeadEvent
+	stateChanges []BeadEvent
 }
 
 func (m *mockAgentNotifier) NotifyAgentCrash(_ context.Context, bead BeadEvent) error {
@@ -20,10 +21,22 @@ func (m *mockAgentNotifier) NotifyAgentCrash(_ context.Context, bead BeadEvent) 
 	return nil
 }
 
+func (m *mockAgentNotifier) NotifyAgentState(_ context.Context, bead BeadEvent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stateChanges = append(m.stateChanges, bead)
+}
+
 func (m *mockAgentNotifier) getCrashes() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]BeadEvent{}, m.crashes...)
+}
+
+func (m *mockAgentNotifier) getStateChanges() []BeadEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]BeadEvent{}, m.stateChanges...)
 }
 
 func TestAgents_HandleClosed_CrashNotification(t *testing.T) {
@@ -159,4 +172,36 @@ func TestAgents_NilNotifier(t *testing.T) {
 
 	// Should not panic even with nil notifier.
 	a.handleClosed(context.Background(), crashEvent)
+}
+
+// TestAgents_HandleUpdated_StateChange verifies that non-crash state changes
+// (e.g. spawning→working) trigger NotifyAgentState, not NotifyAgentCrash.
+func TestAgents_HandleUpdated_StateChange(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	workingAgent := marshalSSEBeadPayload(BeadEvent{
+		ID:       "agent-6",
+		Type:     "agent",
+		Assignee: "gasboat/crew/runner",
+		Fields: map[string]string{
+			"agent_state": "working",
+			"pod_phase":   "running",
+		},
+	})
+	a.handleUpdated(context.Background(), workingAgent)
+
+	if len(notif.getCrashes()) != 0 {
+		t.Error("working state should not trigger crash notification")
+	}
+	changes := notif.getStateChanges()
+	if len(changes) != 1 {
+		t.Fatalf("expected 1 state change notification, got %d", len(changes))
+	}
+	if changes[0].Fields["agent_state"] != "working" {
+		t.Errorf("expected agent_state=working, got %q", changes[0].Fields["agent_state"])
+	}
 }

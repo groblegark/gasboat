@@ -12,9 +12,12 @@ import (
 	"sync"
 )
 
-// AgentNotifier posts agent crash alerts to Slack.
+// AgentNotifier posts agent lifecycle notifications to Slack.
 type AgentNotifier interface {
 	NotifyAgentCrash(ctx context.Context, bead BeadEvent) error
+	// NotifyAgentState is called whenever an agent bead's agent_state changes.
+	// Implementations should update any live status display (e.g. agent card).
+	NotifyAgentState(ctx context.Context, bead BeadEvent)
 }
 
 // AgentsConfig holds configuration for the Agents watcher.
@@ -78,14 +81,19 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 		return
 	}
 
-	// Notify on agent_state=failed or pod_phase=failed updates.
 	agentState := bead.Fields["agent_state"]
 	podPhase := bead.Fields["pod_phase"]
-	if agentState != "failed" && podPhase != "failed" {
+
+	// Notify crash on agent_state=failed or pod_phase=failed.
+	if agentState == "failed" || podPhase == "failed" {
+		a.notifyCrash(ctx, *bead)
 		return
 	}
 
-	a.notifyCrash(ctx, *bead)
+	// For any other state change, notify so the agent card can be refreshed.
+	if agentState != "" && a.notifier != nil {
+		a.notifier.NotifyAgentState(ctx, *bead)
+	}
 }
 
 func (a *Agents) notifyCrash(ctx context.Context, bead BeadEvent) {
