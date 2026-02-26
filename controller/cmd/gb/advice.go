@@ -36,14 +36,26 @@ var adviceAddCmd = &cobra.Command{
 		rig, _ := cmd.Flags().GetString("rig")
 		role, _ := cmd.Flags().GetString("role")
 		agent, _ := cmd.Flags().GetString("agent")
+
+		// Collect shorthand targeting labels, then AND-group them by default.
+		// Multiple targeting labels (e.g. --role=cleanup --rig=gasboat) mean
+		// "match agents that satisfy ALL of these", not any one of them.
+		var targeting []string
 		if rig != "" {
-			labels = append(labels, "rig:"+rig)
+			targeting = append(targeting, "rig:"+rig)
 		}
 		if role != "" {
-			labels = append(labels, "role:"+role)
+			targeting = append(targeting, "role:"+role)
 		}
 		if agent != "" {
-			labels = append(labels, "agent:"+agent)
+			targeting = append(targeting, "agent:"+agent)
+		}
+		if len(targeting) > 1 {
+			for _, l := range targeting {
+				labels = append(labels, "g0:"+l)
+			}
+		} else {
+			labels = append(labels, targeting...)
 		}
 
 		if !hasTargetingLabel(labels) {

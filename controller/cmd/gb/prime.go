@@ -581,6 +581,16 @@ func enrichAgentSubscriptions(agentID string, subs []string) []string {
 		}
 	}
 
+	// Derive role: and rig: subscriptions from the agent bead's own labels.
+	// This allows role membership to be set at spawn time (e.g. via Slack)
+	// by labeling the agent bead, without requiring the agent ID to be
+	// formatted as "project/role/name".
+	for _, label := range agentBead.Labels {
+		if strings.HasPrefix(label, "role:") || strings.HasPrefix(label, "rig:") {
+			subs = append(subs, label)
+		}
+	}
+
 	if raw, ok := agentBead.Fields["advice_subscriptions_exclude"]; ok && raw != "" {
 		var exclude []string
 		if json.Unmarshal([]byte(raw), &exclude) == nil && len(exclude) > 0 {
