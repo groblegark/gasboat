@@ -369,6 +369,8 @@ func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *beads
 			Image:          info.Image,
 			StorageClass:   info.StorageClass,
 			ServiceAccount: info.ServiceAccount,
+			Secrets:        info.Secrets,
+			Repos:          info.Repos,
 		}
 	}
 	logger.Info("refreshed project cache", "count", len(rigs))

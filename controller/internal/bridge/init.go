@@ -126,6 +126,9 @@ func configs() map[string]any {
 				{Name: "default_branch", Type: "string"},
 				{Name: "image", Type: "string"},
 				{Name: "storage_class", Type: "string"},
+				{Name: "service_account", Type: "string"},
+				{Name: "secrets", Type: "json"},
+				{Name: "repos", Type: "json"},
 			},
 		},
 

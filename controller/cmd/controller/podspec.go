@@ -178,14 +178,48 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		)
 	}
 
-	// Wire git info from project cache.
+	// Wire git info from project cache (multi-repo aware).
 	if entry, ok := cfg.ProjectCache[spec.Project]; ok {
-		if entry.GitURL != "" {
-			spec.GitURL = entry.GitURL
+		if len(entry.Repos) > 0 {
+			for _, r := range entry.Repos {
+				if r.Role == "primary" {
+					spec.GitURL = r.URL
+					if r.Branch != "" {
+						spec.GitDefaultBranch = r.Branch
+					}
+				} else {
+					name := r.Name
+					if name == "" {
+						name = repoNameFromURL(r.URL)
+					}
+					branch := r.Branch
+					spec.ReferenceRepos = append(spec.ReferenceRepos, podmanager.RepoRef{
+						URL: r.URL, Branch: branch, Name: name,
+					})
+				}
+			}
+		} else {
+			// Legacy single-repo fallback.
+			if entry.GitURL != "" {
+				spec.GitURL = entry.GitURL
+			}
+			if entry.DefaultBranch != "" {
+				spec.GitDefaultBranch = entry.DefaultBranch
+			}
 		}
-		if entry.DefaultBranch != "" {
-			spec.GitDefaultBranch = entry.DefaultBranch
+	}
+
+	// Build BOAT_REFERENCE_REPOS env var for the entrypoint (fallback cloning).
+	if len(spec.ReferenceRepos) > 0 {
+		var entries []string
+		for _, r := range spec.ReferenceRepos {
+			b := r.Branch
+			if b == "" {
+				b = "main"
+			}
+			entries = append(entries, fmt.Sprintf("%s=%s:%s", r.Name, r.URL, b))
 		}
+		spec.Env["BOAT_REFERENCE_REPOS"] = strings.Join(entries, ",")
 	}
 
 	// Build BOAT_PROJECTS env var from project cache for entrypoint project registration.
@@ -281,6 +315,48 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 			SecretKey:  "token",
 		})
 	}
+
+	// Per-project secret overrides: merge project secrets on top of globals.
+	// Matching env names replace the global entry; new env names are additive.
+	if entry, ok := cfg.ProjectCache[spec.Project]; ok {
+		for _, ps := range entry.Secrets {
+			src := podmanager.SecretEnvSource{
+				EnvName: ps.Env, SecretName: ps.Secret, SecretKey: ps.Key,
+			}
+			overrideOrAppendSecretEnv(&spec.SecretEnv, src)
+
+			// Update init container credential refs for git-related overrides.
+			switch ps.Env {
+			case "GIT_TOKEN", "GIT_USERNAME":
+				spec.GitCredentialsSecret = ps.Secret
+			case "GITLAB_TOKEN":
+				spec.GitlabTokenSecret = ps.Secret
+			}
+		}
+	}
+}
+
+// overrideOrAppendSecretEnv replaces an existing SecretEnvSource with the
+// same EnvName, or appends if no match exists.
+func overrideOrAppendSecretEnv(envs *[]podmanager.SecretEnvSource, src podmanager.SecretEnvSource) {
+	for i, e := range *envs {
+		if e.EnvName == src.EnvName {
+			(*envs)[i] = src
+			return
+		}
+	}
+	*envs = append(*envs, src)
+}
+
+// repoNameFromURL extracts the repository name from a URL.
+// "https://github.com/org/my-repo.git" → "my-repo"
+func repoNameFromURL(rawURL string) string {
+	u := strings.TrimSuffix(rawURL, ".git")
+	parts := strings.Split(u, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return "repo"
 }
 
 // namespaceFromEvent returns the namespace from event metadata or a default.

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -81,6 +80,13 @@ type SecretEnvSource struct {
 	SecretKey  string // key within the Secret
 }
 
+// RepoRef describes a reference repo to clone alongside the primary workspace repo.
+type RepoRef struct {
+	URL    string // repository URL
+	Branch string // branch to checkout (default: "main")
+	Name   string // directory name under workspace/repos/
+}
+
 // AgentPodSpec describes the desired pod for an agent.
 type AgentPodSpec struct {
 	Project   string
@@ -144,6 +150,9 @@ type AgentPodSpec struct {
 	// The "token" key is injected as GITLAB_TOKEN in the init-clone container
 	// for authenticated clone of private GitLab repositories.
 	GitlabTokenSecret string
+
+	// ReferenceRepos lists additional repos to clone alongside the primary.
+	ReferenceRepos []RepoRef
 }
 
 // WorkspaceStorageSpec configures a PVC-backed workspace volume.
@@ -597,133 +606,6 @@ func (m *K8sManager) buildVolumeMounts(spec AgentPodSpec) []corev1.VolumeMount {
 	}
 
 	return mounts
-}
-
-// restartPolicyForMode returns the appropriate restart policy.
-// Jobs are one-shot (Never); crew mode restarts on failure.
-
-// buildInitCloneContainer creates an init container that clones the project's repo
-// into the workspace from GitURL.
-// Returns nil if no clone source is configured.
-func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Container {
-	if spec.GitURL == "" {
-		return nil
-	}
-
-	branch := spec.GitDefaultBranch
-	if branch == "" {
-		branch = "main"
-	}
-
-	script := fmt.Sprintf(`set -e
-apk add --no-cache git
-git config --global --add safe.directory '%s/%s/work'
-WORK_DIR="%s/%s/work"
-if [ -d "$WORK_DIR/.git" ]; then
-  echo "Repo already cloned, fetching updates..."
-  cd "$WORK_DIR"
-  git fetch --all --prune
-  git checkout %s
-  git pull --ff-only || true
-else
-  echo "Cloning from %s..."
-  mkdir -p "$(dirname "$WORK_DIR")"
-  git clone -b %s %s "$WORK_DIR"
-  cd "$WORK_DIR"
-fi
-`, MountWorkspace, spec.Project, MountWorkspace, spec.Project, branch, spec.GitURL, branch, spec.GitURL)
-
-	// Configure git identity from agent env vars.
-	script += fmt.Sprintf(`git config user.name "%s"
-git config user.email "%s@gasboat"
-`, spec.AgentName, spec.AgentName)
-
-	// Run init container as root so apk can install git, then chown
-	// the workspace to the agent UID/GID so the main container can write.
-	script += fmt.Sprintf("chown -R %d:%d \"%s/%s\"\n", AgentUID, AgentGID, MountWorkspace, spec.Project)
-
-	// Insert git credential helper setup after apk installs git.
-	// Must come after "apk add" so git binary is available for git config.
-	if spec.GitCredentialsSecret != "" || spec.GitlabTokenSecret != "" {
-		credSetup := `# Configure git credentials for private repos
-git config --global credential.helper 'store --file=/tmp/.git-credentials'
-touch /tmp/.git-credentials
-if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
-  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com\n" >> /tmp/.git-credentials
-fi
-if [ -n "$GITLAB_TOKEN" ]; then
-  printf "https://oauth2:${GITLAB_TOKEN}@gitlab.com\n" >> /tmp/.git-credentials
-elif [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
-  printf "https://${GIT_USERNAME}:${GIT_TOKEN}@gitlab.com\n" >> /tmp/.git-credentials
-fi
-`
-		script = strings.Replace(script, "apk add --no-cache git\n", "apk add --no-cache git\n"+credSetup, 1)
-	}
-
-	// Build env vars for the init container.
-	var initEnv []corev1.EnvVar
-	if spec.GitCredentialsSecret != "" {
-		initEnv = append(initEnv,
-			corev1.EnvVar{
-				Name: "GIT_USERNAME",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitCredentialsSecret},
-						Key:                  "username",
-					},
-				},
-			},
-			corev1.EnvVar{
-				Name: "GIT_TOKEN",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitCredentialsSecret},
-						Key:                  "token",
-					},
-				},
-			},
-		)
-	}
-	if spec.GitlabTokenSecret != "" {
-		initEnv = append(initEnv,
-			corev1.EnvVar{
-				Name: "GITLAB_TOKEN",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitlabTokenSecret},
-						Key:                  "token",
-					},
-				},
-			},
-		)
-	}
-
-	runAsRoot := int64(0)
-	runAsNonRoot := false
-	return &corev1.Container{
-		Name:            InitCloneName,
-		Image:           InitCloneImage,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-c", script},
-		Env:             initEnv,
-		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:    &runAsRoot,
-			RunAsNonRoot: &runAsNonRoot,
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: VolumeWorkspace, MountPath: MountWorkspace},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("100m"),
-				corev1.ResourceMemory: resource.MustParse("128Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("500m"),
-				corev1.ResourceMemory: resource.MustParse("512Mi"),
-			},
-		},
-	}
 }
 
 func restartPolicyForMode(mode string) corev1.RestartPolicy {

@@ -134,6 +134,22 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 	return beads, nil
 }
 
+// SecretEntry maps a K8s Secret key to a pod environment variable.
+// Used in per-project secret overrides on project beads.
+type SecretEntry struct {
+	Env    string `json:"env"`    // env var name in the pod
+	Secret string `json:"secret"` // K8s Secret name
+	Key    string `json:"key"`    // key within the Secret
+}
+
+// RepoEntry declares a repository to clone into the agent workspace.
+type RepoEntry struct {
+	URL    string `json:"url"`
+	Branch string `json:"branch,omitempty"`
+	Role   string `json:"role,omitempty"` // "primary" or "reference"
+	Name   string `json:"name,omitempty"`
+}
+
 // ProjectInfo represents a registered project from daemon project beads.
 type ProjectInfo struct {
 	Name           string // Project name (from bead title)
@@ -143,6 +159,8 @@ type ProjectInfo struct {
 	Image          string // Per-project agent image override
 	StorageClass   string // Per-project PVC storage class override
 	ServiceAccount string // Per-project K8s ServiceAccount override
+	Secrets        []SecretEntry // Per-project secret overrides
+	Repos          []RepoEntry   // Multi-repo definitions
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
@@ -167,6 +185,20 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			Image:          fields["image"],
 			StorageClass:   fields["storage_class"],
 			ServiceAccount: fields["service_account"],
+		}
+		// Parse per-project secrets from JSON field.
+		if raw := fields["secrets"]; raw != "" {
+			var secrets []SecretEntry
+			if json.Unmarshal([]byte(raw), &secrets) == nil {
+				info.Secrets = secrets
+			}
+		}
+		// Parse multi-repo definitions from JSON field.
+		if raw := fields["repos"]; raw != "" {
+			var repos []RepoEntry
+			if json.Unmarshal([]byte(raw), &repos) == nil {
+				info.Repos = repos
+			}
 		}
 		if name != "" {
 			rigs[name] = info

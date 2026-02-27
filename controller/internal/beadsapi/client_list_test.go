@@ -299,6 +299,94 @@ func TestListProjectBeads_ParsesProjects(t *testing.T) {
 	}
 }
 
+func TestListProjectBeads_ParsesSecretsAndRepos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:    "proj-pihealth",
+					Title: "pihealth",
+					Type:  "project",
+					Fields: json.RawMessage(`{
+						"prefix":"ph",
+						"git_url":"https://github.com/org/pihealth",
+						"secrets":"[{\"env\":\"GITHUB_TOKEN\",\"secret\":\"ph-gh-token\",\"key\":\"token\"},{\"env\":\"JIRA_API_TOKEN\",\"secret\":\"ph-jira\",\"key\":\"api-token\"}]",
+						"repos":"[{\"url\":\"https://github.com/org/pihealth.git\",\"branch\":\"main\",\"role\":\"primary\"},{\"url\":\"https://github.com/org/shared-lib.git\",\"role\":\"reference\",\"name\":\"shared-lib\"}]"
+					}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p, ok := projects["pihealth"]
+	if !ok {
+		t.Fatal("expected project 'pihealth' in map")
+	}
+
+	// Secrets
+	if len(p.Secrets) != 2 {
+		t.Fatalf("expected 2 secrets, got %d", len(p.Secrets))
+	}
+	if p.Secrets[0].Env != "GITHUB_TOKEN" || p.Secrets[0].Secret != "ph-gh-token" || p.Secrets[0].Key != "token" {
+		t.Errorf("unexpected first secret: %+v", p.Secrets[0])
+	}
+	if p.Secrets[1].Env != "JIRA_API_TOKEN" {
+		t.Errorf("expected JIRA_API_TOKEN, got %s", p.Secrets[1].Env)
+	}
+
+	// Repos
+	if len(p.Repos) != 2 {
+		t.Fatalf("expected 2 repos, got %d", len(p.Repos))
+	}
+	if p.Repos[0].Role != "primary" || p.Repos[0].URL != "https://github.com/org/pihealth.git" {
+		t.Errorf("unexpected primary repo: %+v", p.Repos[0])
+	}
+	if p.Repos[1].Role != "reference" || p.Repos[1].Name != "shared-lib" {
+		t.Errorf("unexpected reference repo: %+v", p.Repos[1])
+	}
+}
+
+func TestListProjectBeads_EmptySecretsAndRepos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:     "proj-simple",
+					Title:  "simple",
+					Type:   "project",
+					Fields: json.RawMessage(`{"prefix":"sm","git_url":"https://github.com/org/simple"}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p := projects["simple"]
+	if len(p.Secrets) != 0 {
+		t.Errorf("expected no secrets, got %d", len(p.Secrets))
+	}
+	if len(p.Repos) != 0 {
+		t.Errorf("expected no repos, got %d", len(p.Repos))
+	}
+}
+
 func TestListProjectBeads_SkipsEmptyTitle(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := listBeadsResponse{

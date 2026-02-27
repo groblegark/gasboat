@@ -119,9 +119,16 @@ _clone_repo() {
 REPOS_DIR="${WORKSPACE}/repos"
 mkdir -p "${REPOS_DIR}"
 
-_clone_repo "https://github.com/groblegark/kbeads"              "${REPOS_DIR}/kbeads"
-_clone_repo "https://github.com/groblegark/gasboat"             "${REPOS_DIR}/gasboat"
-_clone_repo "https://gitlab.com/PiHealth/CoreFICS/monorepo"     "${REPOS_DIR}/pihealth-monorepo"
+# Clone reference repos declared on the project bead.
+# Init container clones them first; this is a fallback for job mode (EmptyDir).
+if [ -n "${BOAT_REFERENCE_REPOS:-}" ]; then
+    IFS=',' read -ra REPO_ENTRIES <<< "${BOAT_REFERENCE_REPOS}"
+    for entry in "${REPO_ENTRIES[@]}"; do
+        repo_name="${entry%%=*}"
+        repo_url="${entry#*=}"; repo_url="${repo_url%%:*}"
+        _clone_repo "${repo_url}" "${REPOS_DIR}/${repo_name}"
+    done
+fi
 
 # Initialize git repo in workspace if not already present.
 # Persistent roles keep state across restarts via PVC.
