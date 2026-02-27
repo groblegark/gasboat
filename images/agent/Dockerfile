@@ -1,14 +1,8 @@
-# Gasboat agent images (multi-stage).
-#
-# Targets:
-#   slim     — minimal: git, Node.js, Claude Code, coop, kd, gb, hooks
-#   omnibus  — slim + Go, Rust, uv, bun, Helm, Task, Terraform, Terragrunt,
-#              AWS/Docker/GitHub/GitLab CLIs, Playwright, golangci-lint, quench,
-#              yq, stern, hadolint, shellcheck, postgresql-client
+# Gasboat agent image (multi-stage).
 #
 # Build (from repo root):
-#   docker build --target slim    -t gasboat-agent:slim    -f images/agent/Dockerfile .
-#   docker build --target omnibus -t gasboat-agent:omnibus  -f images/agent/Dockerfile .
+#   docker build -t gasboat-agent -f images/agent/Dockerfile .
+#   docker build --target base -t gasboat-agent:base -f images/agent/Dockerfile .  # minimal variant
 
 # ═════════════════════════════════════════════════════════════════
 # Go builder — compiles gb (agent orchestration CLI) from source
@@ -22,10 +16,10 @@ COPY controller/ ./controller/
 RUN cd controller && CGO_ENABLED=0 go build -ldflags="-s -w" -o /gb ./cmd/gb/
 
 # ═════════════════════════════════════════════════════════════════
-# slim — minimal agent with git, Node.js, Claude Code, coop, kd, gb
+# base — minimal agent with git, Node.js, Claude Code, coop, kd, gb
 # ═════════════════════════════════════════════════════════════════
 
-FROM ubuntu:24.04 AS slim
+FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_VERSION=24
@@ -106,10 +100,10 @@ WORKDIR /home/agent/workspace
 ENTRYPOINT ["/entrypoint.sh"]
 
 # ═════════════════════════════════════════════════════════════════
-# omnibus — full dev-environment with language toolchains and CLIs
+# Full agent — base + language toolchains, CLIs, and dev tools
 # ═════════════════════════════════════════════════════════════════
 
-FROM slim AS omnibus
+FROM base AS agent
 
 USER root
 ARG DEBIAN_FRONTEND=noninteractive

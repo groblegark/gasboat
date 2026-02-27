@@ -1,6 +1,6 @@
 // Package reconciler — image digest tracking for automatic pod rolling.
 //
-// When agent pods use mutable tags (e.g., :nightly), the reconciler can't
+// When agent pods use mutable tags (e.g., :latest), the reconciler can't
 // detect image changes by comparing tag strings alone. This file tracks
 // registry digests over time: when a tag's digest changes in the registry,
 // pods using that tag are flagged for recreation.
@@ -29,7 +29,7 @@ import (
 const DigestConfirmThreshold = 2
 
 // ImageDigestTracker polls the OCI registry and detects when a mutable tag
-// (e.g., :nightly) starts pointing to a different image.
+// (e.g., :latest) starts pointing to a different image.
 //
 // It tracks two things per image tag:
 //   - deployed: the registry digest at the time pods were last created/updated

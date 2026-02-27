@@ -257,7 +257,7 @@ fi
 # ── Claude settings ──────────────────────────────────────────────────────
 #
 # User-level settings (permissions + LSP plugins) written to ~/.claude/settings.json.
-# LSP plugins are always enabled — gopls and rust-analyzer are in the omnibus image.
+# LSP plugins are always enabled — gopls and rust-analyzer are in the agent image.
 # Mock mode: skip Claude settings entirely (claudeless doesn't use them).
 
 if [ "${MOCK_MODE}" = "1" ]; then

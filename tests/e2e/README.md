@@ -52,7 +52,7 @@ claudeless run tests/e2e/claudeless/gate-decision-flow.toml \
   --settings .claude/settings.json
 ```
 
-Claudeless is installed in the `ghcr.io/groblegark/gasboat/agent:nightly-omnibus` image.
+Claudeless is installed in the `ghcr.io/groblegark/gasboat/agent:latest` image.
 
 ## Decisions/Yield Tests (`test-decisions-yield.sh`)
 

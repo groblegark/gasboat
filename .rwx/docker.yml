@@ -7,7 +7,7 @@
 #
 # Images produced:
 #   push-controller    -> ghcr.io/groblegark/gasboat/controller
-#   push-agent         -> ghcr.io/groblegark/gasboat/agent (omnibus)
+#   push-agent         -> ghcr.io/groblegark/gasboat/agent
 #   push-slack-bridge  -> ghcr.io/groblegark/gasboat/slack-bridge
 #   push-jira-bridge   -> ghcr.io/groblegark/gasboat/jira-bridge
 #
@@ -17,7 +17,7 @@
 # OPTIMIZATIONS:
 # - Filter directives on Go mod downloads (cached by go.mod/go.sum)
 # - Parallel builds with filter caching for dependency stability
-# - Agent omnibus split into 6 parallel cached install tasks + 1 assembly task
+# - Agent image split into 6 parallel cached install tasks + 1 assembly task
 #   Cached by .rwx/agent-versions.lock — change versions there to bust cache
 
 on:
@@ -336,7 +336,7 @@ tasks:
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ═══════════════════════════════════════════════════════════════════════
-  # Agent omnibus — 6 parallel cached install tasks + 1 assembly task.
+  # Agent image — 6 parallel cached install tasks + 1 assembly task.
   # All install tasks filter on .rwx/agent-versions.lock so they're
   # cache hits when tool versions haven't changed. ~15min → ~2min.
   # ═══════════════════════════════════════════════════════════════════════

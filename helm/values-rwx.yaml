@@ -3,26 +3,22 @@
 #   helm upgrade --install gasboat-rwx helm/gasboat/ \
 #     --namespace gasboat-rwx --create-namespace \
 #     -f helm/values-rwx.yaml
+#
+# Image tags default to Chart.AppVersion (calver). Do NOT pin tags here.
+# To test bleeding-edge builds, use --set beads.image.tag=latest on the CLI.
 
 # =============================================================================
 # Beads Daemon
 # =============================================================================
 beads:
   tokenSecret: kd-beads-token   # pre-created by setup-gasboat-rwx.sh
-  replicaCount: 1
-  image:
-    repository: ghcr.io/groblegark/kbeads
-    tag: "nightly"
-    pullPolicy: Always
 
 # =============================================================================
 # PostgreSQL (in-chart, ephemeral for E2E)
 # =============================================================================
 postgres:
   enabled: true
-  database: beads
   persistence:
-    enabled: true
     size: 2Gi
 
 # =============================================================================
@@ -31,7 +27,6 @@ postgres:
 nats:
   enabled: true
   persistence:
-    enabled: true
     size: 1Gi
 
 # =============================================================================
@@ -42,17 +37,5 @@ nats:
 # =============================================================================
 agents:
   enabled: true
-  image:
-    repository: ghcr.io/groblegark/gasboat
-    tag: "nightly"
-    pullPolicy: Always
-  agentImage:
-    repository: ghcr.io/groblegark/gasboat/agent
-    tag: "nightly"
-  serviceAccount:
-    create: true
-  agentServiceAccount:
-    create: true
-  replicaCount: 1
   coopMaxPods: 4
   coopBurstLimit: 2

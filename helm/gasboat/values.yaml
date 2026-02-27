@@ -1,5 +1,11 @@
 # Gasboat Helm Chart Configuration
 # Components: Beads Daemon, Agent Controller, Coopmux, and optionally PostgreSQL and NATS.
+#
+# Image Tag Convention:
+#   All gasboat-owned images default to Chart.AppVersion (calver, e.g. 2026.58.3).
+#   Do NOT override image tags in environment values files.
+#   To test bleeding-edge builds, use "latest" via --set on the command line.
+#   The release pipeline tags every image with both the calver tag and "latest".
 
 imagePullSecrets: []
 

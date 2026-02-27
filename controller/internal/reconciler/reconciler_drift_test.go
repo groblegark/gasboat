@@ -108,7 +108,7 @@ func TestReconcile_NoDrift_WhenImageMatches(t *testing.T) {
 // --- Digest drift / rolling upgrade tests ---
 
 func TestReconcile_DigestDrift_TriggersRecreate(t *testing.T) {
-	image := "ghcr.io/org/agent:nightly"
+	image := "ghcr.io/org/agent:latest"
 	lister := &mockLister{
 		beads: []beadsapi.AgentBead{
 			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
@@ -142,7 +142,7 @@ func TestReconcile_DigestDrift_TriggersRecreate(t *testing.T) {
 }
 
 func TestReconcile_DigestDrift_NoFalsePositiveOnFirstSeen(t *testing.T) {
-	image := "ghcr.io/org/agent:nightly"
+	image := "ghcr.io/org/agent:latest"
 	lister := &mockLister{
 		beads: []beadsapi.AgentBead{
 			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
@@ -170,7 +170,7 @@ func TestReconcile_DigestDrift_NoFalsePositiveOnFirstSeen(t *testing.T) {
 }
 
 func TestReconcile_DigestDrift_ClearedAfterUpgrade(t *testing.T) {
-	image := "ghcr.io/org/agent:nightly"
+	image := "ghcr.io/org/agent:latest"
 	lister := &mockLister{
 		beads: []beadsapi.AgentBead{
 			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},

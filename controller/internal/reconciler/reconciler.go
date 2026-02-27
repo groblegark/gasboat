@@ -236,7 +236,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 // podDriftReason returns a non-empty string describing why the pod needs
 // recreation, or "" if the pod matches the desired spec.
 func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod, tracker *ImageDigestTracker) string {
-	// Tag changed (e.g., nightly → v1.0.0).
+	// Tag changed (e.g., latest → 2026.58.3).
 	if agentChanged(desired.Image, actual) {
 		return fmt.Sprintf("agent image changed: %s", desired.Image)
 	}
