@@ -93,6 +93,8 @@ func mockDaemon(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/labels"):
 			w.WriteHeader(http.StatusNoContent)
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/dependencies"):
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == "DELETE" && strings.Contains(r.URL.Path, "/labels/"):
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -285,6 +287,22 @@ func TestHandleGenerateDispatch_MissingTopic(t *testing.T) {
 	srv.RegisterRoutes(mux)
 
 	form := url.Values{"project": {"gasboat"}}
+	req := httptest.NewRequest("POST", "/generate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleGenerateDispatch_MissingProject(t *testing.T) {
+	srv, _ := testServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	form := url.Values{"topic": {"some advice topic"}}
 	req := httptest.NewRequest("POST", "/generate", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()

@@ -343,7 +343,7 @@ func (s *Server) handleGenerateForm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGenerateDispatch creates a task bead for advice generation.
+// handleGenerateDispatch creates a task bead and spawns an agent to work on it.
 func (s *Server) handleGenerateDispatch(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
@@ -352,43 +352,53 @@ func (s *Server) handleGenerateDispatch(w http.ResponseWriter, r *http.Request) 
 
 	topic := r.FormValue("topic")
 	project := r.FormValue("project")
-	assignee := r.FormValue("assignee")
 
 	if topic == "" {
 		http.Error(w, "Topic is required", http.StatusBadRequest)
 		return
 	}
-
-	labels := []string{"advice-generation"}
-	if project != "" {
-		labels = append(labels, "project:"+project)
+	if project == "" {
+		http.Error(w, "Project is required", http.StatusBadRequest)
+		return
 	}
+
+	labels := []string{"advice-generation", "project:" + project}
 
 	title := fmt.Sprintf("Generate advice: %s", topic)
 	if len(title) > 200 {
 		title = title[:200]
 	}
 
-	req := beadsapi.CreateBeadRequest{
+	taskID, err := s.daemon.CreateBead(r.Context(), beadsapi.CreateBeadRequest{
 		Title:       title,
 		Description: topic,
 		Type:        "task",
 		Labels:      labels,
 		CreatedBy:   "advice-viewer",
-	}
-	if assignee != "" {
-		req.Assignee = assignee
-	}
-
-	id, err := s.daemon.CreateBead(r.Context(), req)
+	})
 	if err != nil {
 		s.logger.Error("creating generation task", "error", err)
 		http.Error(w, "Failed to create generation task", http.StatusInternalServerError)
 		return
 	}
 
+	// Derive a unique agent name from the task bead ID.
+	agentName := "advgen"
+	if len(taskID) > 3 {
+		agentName = "advgen-" + taskID[3:] // strip "kd-" prefix
+	}
+
+	agentID, err := s.daemon.SpawnAgent(r.Context(), agentName, project, taskID, "crew")
+	if err != nil {
+		s.logger.Error("spawning agent for generation", "task", taskID, "error", err)
+		s.render(w, "generate.html", map[string]any{
+			"Success": fmt.Sprintf("Created task %s but failed to spawn agent: %v", taskID, err),
+		})
+		return
+	}
+
 	s.render(w, "generate.html", map[string]any{
-		"Success": fmt.Sprintf("Created task %s: %s", id, title),
+		"Success": fmt.Sprintf("Created task %s and spawned agent %s (%s)", taskID, agentName, agentID),
 	})
 }
 

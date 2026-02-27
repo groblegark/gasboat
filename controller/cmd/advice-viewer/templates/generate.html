@@ -2,7 +2,7 @@
 {{define "title"}}Generate Advice - Advice Viewer{{end}}
 {{define "content"}}
 <h1>Generate Advice</h1>
-<p class="meta">Dispatch a task bead that assigns research to an agent, who then creates advice beads.</p>
+<p class="meta">Create a task bead and spawn an agent to research the topic and create advice beads.</p>
 {{if .Success}}
 <div class="success">{{.Success}}</div>
 {{end}}
@@ -14,11 +14,7 @@
     </div>
     <div class="form-group">
       <label for="project">Target Project</label>
-      <input type="text" id="project" name="project" placeholder="e.g. gasboat">
-    </div>
-    <div class="form-group">
-      <label for="assignee">Assignee (optional)</label>
-      <input type="text" id="assignee" name="assignee" placeholder="Agent name to assign to">
+      <input type="text" id="project" name="project" required placeholder="e.g. gasboat">
     </div>
     <button type="submit" class="btn btn-primary">Dispatch</button>
   </form>
