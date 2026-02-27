@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"gasboat/controller/internal/advice"
 	"gasboat/controller/internal/beadsapi"
 
 	"github.com/spf13/cobra"
@@ -58,7 +59,7 @@ var adviceAddCmd = &cobra.Command{
 			labels = append(labels, targeting...)
 		}
 
-		if !hasTargetingLabel(labels) {
+		if !advice.HasTargetingLabel(labels) {
 			labels = append(labels, "global")
 		}
 
@@ -200,23 +201,6 @@ var adviceRemoveCmd = &cobra.Command{
 }
 
 // ── helpers ────────────────────────────────────────────────────────────
-
-func hasTargetingLabel(labels []string) bool {
-	for _, l := range labels {
-		l = stripGroupPrefix(l)
-		switch {
-		case l == "global":
-			return true
-		case strings.HasPrefix(l, "rig:"):
-			return true
-		case strings.HasPrefix(l, "role:"):
-			return true
-		case strings.HasPrefix(l, "agent:"):
-			return true
-		}
-	}
-	return false
-}
 
 func printAdviceList(beads []*beadsapi.BeadDetail, total int) {
 	if len(beads) == 0 {

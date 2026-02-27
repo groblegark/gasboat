@@ -3,7 +3,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 IMAGE   ?= gasboat-controller
 LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
-.PHONY: build build-gb build-bridge test lint docker-build clean
+.PHONY: build build-gb build-bridge build-advice-viewer test lint docker-build clean
 
 build:
 	go build -ldflags="$(LDFLAGS)" -o bin/controller ./cmd/controller/
@@ -13,6 +13,9 @@ build-gb:
 
 build-bridge:
 	go build -ldflags="$(LDFLAGS)" -o bin/slack-bridge ./cmd/slack-bridge/
+
+build-advice-viewer:
+	go build -ldflags="$(LDFLAGS)" -o bin/advice-viewer ./cmd/advice-viewer/
 
 test:
 	go test -v -race ./...

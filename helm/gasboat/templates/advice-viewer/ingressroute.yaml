@@ -1,0 +1,44 @@
+{{- if and .Values.adviceViewer.enabled .Values.adviceViewer.ingress.enabled }}
+{{- $fullname := printf "%s-advice-viewer" (include "gasboat.fullname" .) -}}
+{{- $host := .Values.adviceViewer.ingress.host -}}
+{{- $port := .Values.adviceViewer.service.port | default 8091 -}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: advice-viewer
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ $host }}`)
+      kind: Rule
+      services:
+        - name: {{ $fullname }}
+          port: {{ $port }}
+      {{- if .Values.adviceViewer.ingress.ipWhitelist.enabled }}
+      middlewares:
+        - name: {{ $fullname }}-ipwhitelist
+      {{- end }}
+{{- if .Values.adviceViewer.ingress.ipWhitelist.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-ipwhitelist
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: advice-viewer
+spec:
+  ipWhiteList:
+    sourceRange:
+      {{- toYaml .Values.adviceViewer.ingress.ipWhitelist.sourceRange | nindent 6 }}
+    ipStrategy:
+      depth: {{ .Values.adviceViewer.ingress.ipWhitelist.depth | default 1 }}
+{{- end }}
+{{- end }}

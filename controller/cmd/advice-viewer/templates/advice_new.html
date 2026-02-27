@@ -1,0 +1,46 @@
+{{template "layout" .}}
+{{define "title"}}New Advice - Advice Viewer{{end}}
+{{define "content"}}
+<h1>New Advice</h1>
+<div class="card">
+  <form method="POST" action="/advice/new">
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" required>
+    </div>
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea id="description" name="description"></textarea>
+    </div>
+    <div class="form-group">
+      <label for="labels">Additional Labels (comma-separated)</label>
+      <input type="text" id="labels" name="labels" placeholder="e.g. priority:high, topic:testing">
+    </div>
+    <h2>Targeting</h2>
+    <p class="meta">Leave all empty for global advice. Multiple targets are AND-grouped.</p>
+    <div class="form-group">
+      <label for="rig">Rig</label>
+      <input type="text" id="rig" name="rig" placeholder="e.g. gasboat">
+    </div>
+    <div class="form-group">
+      <label for="role">Role</label>
+      <input type="text" id="role" name="role" placeholder="e.g. crew">
+    </div>
+    <div class="form-group">
+      <label for="agent">Agent</label>
+      <input type="text" id="agent" name="agent" placeholder="e.g. gasboat/crews/bot">
+    </div>
+    <h2>Hook (optional)</h2>
+    <div class="form-group">
+      <label for="hook_command">Hook Command</label>
+      <input type="text" id="hook_command" name="hook_command">
+    </div>
+    <div class="form-group">
+      <label for="hook_trigger">Hook Trigger</label>
+      <input type="text" id="hook_trigger" name="hook_trigger" placeholder="e.g. before_commit, on_start">
+    </div>
+    <button type="submit" class="btn btn-primary">Create</button>
+    <a href="/advice" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{{end}}

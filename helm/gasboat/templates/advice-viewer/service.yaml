@@ -1,0 +1,20 @@
+{{- if .Values.adviceViewer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gasboat.fullname" . }}-advice-viewer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: advice-viewer
+spec:
+  type: {{ .Values.adviceViewer.service.type | default "ClusterIP" }}
+  ports:
+    - port: {{ .Values.adviceViewer.service.port | default 8091 }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "gasboat.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: advice-viewer
+{{- end }}

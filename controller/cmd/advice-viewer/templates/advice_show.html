@@ -1,0 +1,32 @@
+{{template "layout" .}}
+{{define "title"}}{{.Bead.Title}} - Advice Viewer{{end}}
+{{define "content"}}
+<h1>{{.Bead.Title}}</h1>
+<div class="card">
+  <p class="meta">ID: {{.Bead.ID}} &middot; Status: {{.Bead.Status}}</p>
+  {{if .Bead.Description}}
+  <h2>Description</h2>
+  <pre>{{.Bead.Description}}</pre>
+  {{end}}
+  {{if .Bead.Labels}}
+  <h2>Labels</h2>
+  <div class="label-list">
+    {{range .Bead.Labels}}<span class="label-tag">{{.}}</span>{{end}}
+  </div>
+  {{end}}
+  {{if index .Bead.Fields "hook_command"}}
+  <h2>Hook</h2>
+  <p><strong>Command:</strong> <code>{{index .Bead.Fields "hook_command"}}</code></p>
+  {{if index .Bead.Fields "hook_trigger"}}
+  <p><strong>Trigger:</strong> {{index .Bead.Fields "hook_trigger"}}</p>
+  {{end}}
+  {{end}}
+  {{if .Bead.CreatedBy}}
+  <p class="meta" style="margin-top:0.5rem;">Created by: {{.Bead.CreatedBy}}</p>
+  {{end}}
+  <div class="actions">
+    <a href="/advice/{{.Bead.ID}}/edit" class="btn btn-primary">Edit</a>
+    <a href="/advice" class="btn btn-secondary">Back to List</a>
+  </div>
+</div>
+{{end}}

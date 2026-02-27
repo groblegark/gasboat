@@ -1,0 +1,41 @@
+{{template "layout" .}}
+{{define "title"}}Advice for {{.AgentID}} - Advice Viewer{{end}}
+{{define "content"}}
+<h1>Advice for {{.AgentID}}</h1>
+<p class="meta">{{.TotalMatched}} matched advice items &middot; {{len .Subscriptions}} subscriptions</p>
+
+<details style="margin: 0.5rem 0 1rem;">
+  <summary class="meta" style="cursor:pointer;">Show subscriptions</summary>
+  <div class="label-list" style="margin-top:0.5rem;">
+    {{range .Subscriptions}}<span class="label-tag">{{.}}</span>{{end}}
+  </div>
+</details>
+
+{{if .Groups}}
+{{range .Groups}}
+<h2>
+  {{if eq .Scope "global"}}<span class="badge badge-global">{{.Header}}</span>
+  {{else if eq .Scope "rig"}}<span class="badge badge-rig">{{.Header}}</span>
+  {{else if eq .Scope "role"}}<span class="badge badge-role">{{.Header}}</span>
+  {{else if eq .Scope "agent"}}<span class="badge badge-agent">{{.Header}}</span>
+  {{else}}{{.Header}}{{end}}
+</h2>
+{{range .Items}}
+<div class="card">
+  <strong><a href="/advice/{{.Bead.ID}}">{{.Bead.Title}}</a></strong>
+  {{if and .Bead.Description (ne .Bead.Description .Bead.Title)}}
+  <pre>{{.Bead.Description}}</pre>
+  {{end}}
+  <div class="label-list" style="margin-top:0.5rem;">
+    {{range .Bead.Labels}}<span class="label-tag">{{.}}</span>{{end}}
+  </div>
+  <div class="actions">
+    <a href="/advice/{{.Bead.ID}}/edit" class="btn btn-secondary">Edit</a>
+  </div>
+</div>
+{{end}}
+{{end}}
+{{else}}
+<p class="meta">No advice matched for this agent.</p>
+{{end}}
+{{end}}

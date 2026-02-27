@@ -1,0 +1,31 @@
+{{template "layout" .}}
+{{define "title"}}Edit {{.Bead.Title}} - Advice Viewer{{end}}
+{{define "content"}}
+<h1>Edit Advice</h1>
+<div class="card">
+  <form method="POST" action="/advice/{{.Bead.ID}}/edit">
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" value="{{.Bead.Title}}" required>
+    </div>
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea id="description" name="description">{{.Bead.Description}}</textarea>
+    </div>
+    <div class="form-group">
+      <label for="labels">Labels (comma-separated)</label>
+      <input type="text" id="labels" name="labels" value="{{join .Bead.Labels ", "}}">
+    </div>
+    <div class="form-group">
+      <label for="hook_command">Hook Command</label>
+      <input type="text" id="hook_command" name="hook_command" value="{{index .Bead.Fields "hook_command"}}">
+    </div>
+    <div class="form-group">
+      <label for="hook_trigger">Hook Trigger</label>
+      <input type="text" id="hook_trigger" name="hook_trigger" value="{{index .Bead.Fields "hook_trigger"}}">
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="/advice/{{.Bead.ID}}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{{end}}
