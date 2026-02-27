@@ -118,7 +118,12 @@ func printNewsBead(b *beadsapi.BeadDetail) {
 		typeStr = fmt.Sprintf("[%s] ", b.Type)
 	}
 
-	fmt.Fprintf(os.Stdout, "  %s %s%s  %s\n", b.ID, typeStr, b.Title, assignee)
+	title := b.Title
+	if len(title) > 72 {
+		title = title[:71] + "…"
+	}
+
+	fmt.Fprintf(os.Stdout, "  %s %s— %s  %s\n", b.ID, typeStr, title, assignee)
 }
 
 func filterOutAssignee(beads []*beadsapi.BeadDetail, actorName string) []*beadsapi.BeadDetail {
