@@ -69,6 +69,10 @@ type Config struct {
 	// overridden by a project bead's storage_class label.
 	AgentStorageClass string
 
+	// ClaudeModel is the Claude model ID for agent pods (env: CLAUDE_MODEL).
+	// Injected as CLAUDE_MODEL env var. When empty, Claude Code uses its default.
+	ClaudeModel string
+
 	// --- Secrets & Credentials ---
 
 	// ClaudeOAuthSecret is the K8s secret containing Claude OAuth credentials (env: CLAUDE_OAUTH_SECRET).
@@ -180,6 +184,7 @@ func Parse() *Config {
 		CoopBurstLimit:     envIntOr("COOP_BURST_LIMIT", 3),
 		CoopSyncInterval:   envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
 		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
+		ClaudeModel:        os.Getenv("CLAUDE_MODEL"),
 
 		// Secrets & Credentials
 		ClaudeOAuthSecret:      os.Getenv("CLAUDE_OAUTH_SECRET"),

@@ -93,6 +93,10 @@ agents:
   # If empty, uses cluster default. Project beads can override per-project.
   agentStorageClass: ""
 
+  # Default Claude model for agent pods (e.g., "claude-opus-4-6").
+  # If empty, Claude Code uses its built-in default (Sonnet).
+  claudeModel: ""
+
   # Max agent pods that can exist simultaneously (0 = unlimited)
   coopMaxPods: 0
 

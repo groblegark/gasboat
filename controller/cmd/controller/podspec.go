@@ -220,6 +220,11 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		spec.WorkspaceStorage.StorageClassName = cfg.AgentStorageClass
 	}
 
+	// Default Claude model for agent pods (e.g., "claude-opus-4-6").
+	if cfg.ClaudeModel != "" {
+		spec.Env["CLAUDE_MODEL"] = cfg.ClaudeModel
+	}
+
 	// Wire coopmux registration config. The agent runs coop directly (builtin)
 	// so it gets COOP_BROKER_URL/TOKEN as env vars.
 	if cfg.CoopmuxURL != "" {

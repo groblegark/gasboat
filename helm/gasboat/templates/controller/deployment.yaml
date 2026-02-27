@@ -161,6 +161,10 @@ spec:
             - name: COOP_SYNC_INTERVAL
               value: {{ .Values.agents.coopSyncInterval | quote }}
             {{- end }}
+            {{- if .Values.agents.claudeModel }}
+            - name: CLAUDE_MODEL
+              value: {{ .Values.agents.claudeModel }}
+            {{- end }}
             # Slack env vars removed — now handled by slack-bridge container (bd-8x8fy).
           resources:
             {{- toYaml .Values.agents.resources | nindent 12 }}
