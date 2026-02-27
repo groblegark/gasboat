@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
+
+	"gasboat/controller/internal/beadsapi"
 
 	"github.com/slack-go/slack"
 )
@@ -326,6 +330,10 @@ func (b *Bot) handleResolveSubmission(ctx context.Context, callback slack.Intera
 	// Directly update the Slack message to show resolved state.
 	b.updateMessageResolved(ctx, beadID, chosen, rationale, channelID, messageTS)
 
+	// Nudge the requesting agent so it wakes up immediately instead of waiting
+	// for the next gb yield poll cycle.
+	b.nudgeDecisionRequestingAgent(ctx, beadID)
+
 	b.logger.Info("decision resolved via modal",
 		"bead", beadID, "chosen", chosen, "user", user)
 }
@@ -376,8 +384,54 @@ func (b *Bot) handleOtherSubmission(ctx context.Context, callback slack.Interact
 	// Directly update the Slack message to show resolved state.
 	b.updateMessageResolved(ctx, beadID, response, rationale, channelID, messageTS)
 
+	// Nudge the requesting agent so it wakes up immediately instead of waiting
+	// for the next gb yield poll cycle.
+	b.nudgeDecisionRequestingAgent(ctx, beadID)
+
 	b.logger.Info("decision resolved via custom response",
 		"bead", beadID, "response", response, "user", user)
+}
+
+// nudgeDecisionRequestingAgent looks up the requesting agent from the decision
+// bead's requesting_agent_bead_id field and sends a coop nudge to wake it up.
+// This ensures the agent responds to a decision resolution immediately rather
+// than waiting for the next gb yield poll cycle (up to 2 seconds).
+// Errors are logged and silently ignored — the agent will still detect the
+// resolution via polling.
+func (b *Bot) nudgeDecisionRequestingAgent(ctx context.Context, decisionBeadID string) {
+	dec, err := b.daemon.GetBead(ctx, decisionBeadID)
+	if err != nil {
+		b.logger.Debug("nudge: could not fetch decision bead", "bead", decisionBeadID, "error", err)
+		return
+	}
+
+	agentBeadID := dec.Fields["requesting_agent_bead_id"]
+	if agentBeadID == "" {
+		return
+	}
+
+	agentBead, err := b.daemon.GetBead(ctx, agentBeadID)
+	if err != nil {
+		b.logger.Debug("nudge: could not fetch agent bead", "agent_bead", agentBeadID, "error", err)
+		return
+	}
+
+	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
+	if coopURL == "" {
+		b.logger.Debug("nudge: agent bead has no coop_url", "agent_bead", agentBeadID)
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	message := "Decision resolved: " + decisionBeadID
+	if err := nudgeCoop(ctx, client, coopURL, message); err != nil {
+		b.logger.Warn("nudge: failed to nudge agent for decision response",
+			"agent_bead", agentBeadID, "coop_url", coopURL, "error", err)
+		return
+	}
+
+	b.logger.Info("nudged agent for decision response",
+		"agent_bead", agentBeadID, "decision", decisionBeadID)
 }
 
 // markDecisionSuperseded replaces the predecessor decision message with a
