@@ -6,10 +6,11 @@
 #   push-*  tasks     -> crane-append layers to ubuntu:24.04, push to GHCR
 #
 # Images produced:
-#   push-controller    -> ghcr.io/groblegark/gasboat/controller
-#   push-agent         -> ghcr.io/groblegark/gasboat/agent
-#   push-slack-bridge  -> ghcr.io/groblegark/gasboat/slack-bridge
-#   push-jira-bridge   -> ghcr.io/groblegark/gasboat/jira-bridge
+#   push-controller     -> ghcr.io/groblegark/gasboat/controller
+#   push-agent          -> ghcr.io/groblegark/gasboat/agent
+#   push-slack-bridge   -> ghcr.io/groblegark/gasboat/slack-bridge
+#   push-jira-bridge    -> ghcr.io/groblegark/gasboat/jira-bridge
+#   push-advice-viewer  -> ghcr.io/groblegark/gasboat/advice-viewer
 #
 # For manual push of a single image:
 #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-agent
@@ -38,7 +39,7 @@ on:
         coop-version: latest
         kd-version: latest
       status-checks:
-        - tasks: [build-controller, build-gb, build-slack-bridge, build-jira-bridge, download-coop, download-kd]
+        - tasks: [build-controller, build-gb, build-slack-bridge, build-jira-bridge, build-advice-viewer, download-coop, download-kd]
           name: Docker
   dispatch:
     - key: gasboat-agent-rebuild
@@ -162,6 +163,28 @@ tasks:
       artifacts:
         - key: slack-bridge-binary
           path: slack-bridge
+
+  # ── Build advice-viewer binary → artifact ──────────────────────────
+  - key: build-advice-viewer
+    use: go-deps
+    run: |
+      cd controller
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+      CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags="-s -w -X main.version=${REF_NAME} -X main.commit=${COMMIT_SHA}" \
+        -o ../advice-viewer ./cmd/advice-viewer/
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+    filter:
+      - controller/**/*.go
+      - controller/go.mod
+      - controller/go.sum
+    outputs:
+      artifacts:
+        - key: advice-viewer-binary
+          path: advice-viewer
 
   # ── Build jira-bridge binary → artifact ────────────────────────────
   - key: build-jira-bridge
@@ -328,6 +351,37 @@ tasks:
       REPO="ghcr.io/groblegark/gasboat/jira-bridge"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /jira-bridge --user nobody -t "${REPO}:${TAG}"
+      crane tag "${REPO}:${TAG}" latest
+      echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Push advice-viewer (minimal static binary) ──────────────────────
+  - key: push-advice-viewer
+    use: [build-advice-viewer]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      TAG="${REF_NAME#refs/tags/}"
+      TAG="${TAG#refs/heads/}"
+
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      mkdir -p /tmp/layer/etc/ssl/certs
+      cp ${{ tasks.build-advice-viewer.artifacts.advice-viewer-binary }} /tmp/layer/advice-viewer
+      chmod 755 /tmp/layer/advice-viewer
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      REPO="ghcr.io/groblegark/gasboat/advice-viewer"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane mutate "${REPO}:${TAG}" --entrypoint /advice-viewer --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
       echo "Pushed ${REPO}:${TAG} and ${REPO}:latest"
     env:
