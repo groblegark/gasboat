@@ -12,6 +12,14 @@ import (
 	"gasboat/controller/internal/beadsapi"
 )
 
+// writeJSON encodes v as JSON to w, failing the test on error.
+func writeJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Errorf("writeJSON: %v", err)
+	}
+}
+
 // mockDaemon creates a test HTTP server that returns canned bead responses.
 func mockDaemon(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -20,7 +28,7 @@ func mockDaemon(t *testing.T) *httptest.Server {
 
 		switch {
 		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/beads/test-advice-1"):
-			json.NewEncoder(w).Encode(map[string]any{
+			writeJSON(t, w, map[string]any{
 				"id":          "test-advice-1",
 				"title":       "Test Advice",
 				"type":        "advice",
@@ -33,7 +41,7 @@ func mockDaemon(t *testing.T) *httptest.Server {
 			q := r.URL.Query()
 			beadType := q.Get("type")
 			if beadType == "advice" {
-				json.NewEncoder(w).Encode(map[string]any{
+				writeJSON(t, w, map[string]any{
 					"beads": []map[string]any{
 						{
 							"id":          "test-advice-1",
@@ -57,7 +65,7 @@ func mockDaemon(t *testing.T) *httptest.Server {
 					"total": 2,
 				})
 			} else if beadType == "agent" {
-				json.NewEncoder(w).Encode(map[string]any{
+				writeJSON(t, w, map[string]any{
 					"beads": []map[string]any{
 						{
 							"id":     "agent-1",
@@ -77,10 +85,10 @@ func mockDaemon(t *testing.T) *httptest.Server {
 					"total": 1,
 				})
 			} else {
-				json.NewEncoder(w).Encode(map[string]any{"beads": []any{}, "total": 0})
+				writeJSON(t, w, map[string]any{"beads": []any{}, "total": 0})
 			}
 		case r.Method == "POST" && r.URL.Path == "/v1/beads":
-			json.NewEncoder(w).Encode(map[string]string{"id": "new-bead-id"})
+			writeJSON(t, w, map[string]string{"id": "new-bead-id"})
 		case r.Method == "PATCH":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/labels"):
@@ -88,7 +96,7 @@ func mockDaemon(t *testing.T) *httptest.Server {
 		case r.Method == "DELETE" && strings.Contains(r.URL.Path, "/labels/"):
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			json.NewEncoder(w).Encode(map[string]any{"beads": []any{}, "total": 0})
+			writeJSON(t, w, map[string]any{"beads": []any{}, "total": 0})
 		}
 	}))
 }
