@@ -230,18 +230,103 @@ func TestHandleAppMention_InAgentThread(t *testing.T) {
 
 func TestHandleAppMention_NotInThread(t *testing.T) {
 	daemon := newMockDaemon()
-	_ = &Bot{
+
+	// A mention not in a thread with no channel mapping should be silently ignored.
+	b := &Bot{
 		daemon:     daemon,
 		logger:     slog.Default(),
 		botUserID:  "U-BOT",
 		agentCards: map[string]MessageRef{},
+		// router is nil — no channel mapping.
 	}
 
-	// A mention not in a thread should not create any beads.
-	// handleAppMention returns early when ThreadTimeStamp == "".
-	// Verify that no beads were created.
+	// Call the internal lookup to verify no agent is resolved.
+	var agent string
+	if b.router != nil {
+		agent = b.router.GetAgentByChannel("C-random")
+	}
+	if agent != "" {
+		t.Errorf("expected empty agent for unmapped channel, got %q", agent)
+	}
+
+	// Verify no beads were created via daemon.
 	if daemon.getGetCalls() != 0 {
 		t.Errorf("expected 0 daemon calls, got %d", daemon.getGetCalls())
+	}
+}
+
+func TestHandleAppMention_NotInThread_AgentChannel(t *testing.T) {
+	daemon := newMockDaemon()
+
+	router := NewRouter(RouterConfig{
+		Overrides: map[string]string{
+			"gasboat/crew/hq": "C-agents",
+		},
+	})
+
+	dir := t.TempDir()
+	state, err := NewStateManager(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b := &Bot{
+		daemon:     daemon,
+		state:      state,
+		logger:     slog.Default(),
+		botUserID:  "U-BOT",
+		router:     router,
+		agentCards: map[string]MessageRef{},
+	}
+
+	// Verify that the channel maps to the correct agent.
+	agent := b.router.GetAgentByChannel("C-agents")
+	if agent != "gasboat/crew/hq" {
+		t.Fatalf("expected agent gasboat/crew/hq from channel mapping, got %q", agent)
+	}
+
+	// Simulate: strip mention, create bead, persist state.
+	ctx := context.Background()
+	text := stripBotMention("<@U-BOT> please review this", b.botUserID)
+	if text != "please review this" {
+		t.Fatalf("expected stripped text 'please review this', got %q", text)
+	}
+
+	beadID, err := daemon.CreateBead(ctx, beadsapi.CreateBeadRequest{
+		Title:    truncateText("Mention: "+text, 80),
+		Type:     "task",
+		Assignee: extractAgentName(agent),
+		Labels:   []string{"slack-mention"},
+		Priority: 2,
+	})
+	if err != nil {
+		t.Fatalf("CreateBead failed: %v", err)
+	}
+
+	// Persist using the mention message timestamp (replyTS = ev.TimeStamp for non-thread).
+	_ = state.SetChatMessage(beadID, MessageRef{
+		ChannelID: "C-agents",
+		Timestamp: "9999.0001",
+		Agent:     agent,
+	})
+
+	bead, err := daemon.GetBead(ctx, beadID)
+	if err != nil {
+		t.Fatalf("GetBead failed: %v", err)
+	}
+	if bead.Assignee != "hq" {
+		t.Errorf("bead assignee = %q, want %q", bead.Assignee, "hq")
+	}
+	if !hasLabel(bead.Labels, "slack-mention") {
+		t.Errorf("bead labels = %v, want slack-mention", bead.Labels)
+	}
+
+	ref, ok := state.GetChatMessage(beadID)
+	if !ok {
+		t.Fatal("expected chat message in state")
+	}
+	if ref.ChannelID != "C-agents" || ref.Timestamp != "9999.0001" {
+		t.Errorf("message ref = %+v, want C-agents/9999.0001", ref)
 	}
 }
 

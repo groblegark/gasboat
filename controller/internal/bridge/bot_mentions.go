@@ -13,28 +13,40 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
-// handleAppMention processes @mention events in agent threads.
-// When a user mentions the bot in an agent's thread, this creates a tracking
-// bead and nudges the agent with the message.
+// handleAppMention processes @mention events.
+// When a user mentions the bot in an agent's thread or in an agent-specific
+// channel, this creates a tracking bead and nudges the agent with the message.
 func (b *Bot) handleAppMention(ctx context.Context, ev *slackevents.AppMentionEvent) {
 	// Ignore bot-triggered mentions.
 	if ev.BotID != "" {
 		return
 	}
 
-	// Only handle mentions in threads.
-	if ev.ThreadTimeStamp == "" {
-		b.logger.Debug("app_mention ignored: not in a thread",
-			"channel", ev.Channel, "user", ev.User)
-		return
-	}
+	var agent string
+	replyTS := ev.ThreadTimeStamp // timestamp to thread the confirmation reply under
 
-	// Reverse-lookup which agent owns this thread.
-	agent := b.getAgentByThread(ev.Channel, ev.ThreadTimeStamp)
-	if agent == "" {
-		b.logger.Debug("app_mention ignored: not an agent thread",
-			"channel", ev.Channel, "thread_ts", ev.ThreadTimeStamp)
-		return
+	if ev.ThreadTimeStamp == "" {
+		// Not in a thread — check if this channel is mapped to an agent via the router.
+		// This handles "@gasboat <message>" in a dedicated agent channel.
+		if b.router != nil {
+			agent = b.router.GetAgentByChannel(ev.Channel)
+		}
+		if agent == "" {
+			b.logger.Debug("app_mention ignored: not in a thread and no channel mapping",
+				"channel", ev.Channel, "user", ev.User)
+			return
+		}
+		// Use the mention's own timestamp as the reply anchor so the response
+		// threads back to this message.
+		replyTS = ev.TimeStamp
+	} else {
+		// In a thread — reverse-lookup which agent owns this thread.
+		agent = b.getAgentByThread(ev.Channel, ev.ThreadTimeStamp)
+		if agent == "" {
+			b.logger.Debug("app_mention ignored: not an agent thread",
+				"channel", ev.Channel, "thread_ts", ev.ThreadTimeStamp)
+			return
+		}
 	}
 
 	// Strip the bot mention from the message text.
@@ -57,7 +69,7 @@ func (b *Bot) handleAppMention(ctx context.Context, ev *slackevents.AppMentionEv
 
 	// Build bead title and description with slack metadata tag.
 	title := truncateText(fmt.Sprintf("Mention: %s", text), 80)
-	slackTag := fmt.Sprintf("[slack:%s:%s]", ev.Channel, ev.ThreadTimeStamp)
+	slackTag := fmt.Sprintf("[slack:%s:%s]", ev.Channel, replyTS)
 	description := fmt.Sprintf("Mention from %s in Slack:\n\n%s\n\n---\n%s", username, text, slackTag)
 
 	// Create tracking bead assigned to the agent.
@@ -82,7 +94,7 @@ func (b *Bot) handleAppMention(ctx context.Context, ev *slackevents.AppMentionEv
 	if b.state != nil {
 		_ = b.state.SetChatMessage(beadID, MessageRef{
 			ChannelID: ev.Channel,
-			Timestamp: ev.ThreadTimeStamp,
+			Timestamp: replyTS,
 			Agent:     agent,
 		})
 	}
@@ -90,12 +102,12 @@ func (b *Bot) handleAppMention(ctx context.Context, ev *slackevents.AppMentionEv
 	// Nudge the agent.
 	b.nudgeAgentForMention(ctx, agent, text, beadID)
 
-	// Post confirmation in thread.
+	// Post confirmation threaded under the original message.
 	_, _, _ = b.api.PostMessage(ev.Channel,
 		slack.MsgOptionText(
 			fmt.Sprintf(":mega: Forwarded to *%s* (tracking: `%s`)", extractAgentName(agent), beadID),
 			false),
-		slack.MsgOptionTS(ev.ThreadTimeStamp),
+		slack.MsgOptionTS(replyTS),
 	)
 }
 

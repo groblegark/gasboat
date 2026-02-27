@@ -21,6 +21,10 @@ type AgentNotifier interface {
 	// NotifyAgentState is called whenever an agent bead's agent_state changes.
 	// Implementations should update any live status display (e.g. agent card).
 	NotifyAgentState(ctx context.Context, bead BeadEvent)
+	// NotifyAgentTaskUpdate is called when a non-agent bead assigned to an agent
+	// changes to in_progress (i.e., the agent claimed a task). Implementations
+	// should refresh the agent's live status display to show the new task.
+	NotifyAgentTaskUpdate(ctx context.Context, agentName string)
 }
 
 // AgentsConfig holds configuration for the Agents watcher.
@@ -105,7 +109,13 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 	if bead == nil {
 		return
 	}
+
 	if bead.Type != "agent" {
+		// For task beads claimed by an agent, refresh the agent's card so it
+		// reflects the newly claimed task without waiting for a pod phase change.
+		if bead.Status == "in_progress" && bead.Assignee != "" && a.notifier != nil {
+			a.notifier.NotifyAgentTaskUpdate(ctx, bead.Assignee)
+		}
 		return
 	}
 

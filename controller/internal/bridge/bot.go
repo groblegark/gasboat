@@ -544,6 +544,13 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 // It records the new state and refreshes the agent card in Slack.
 func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	agent := bead.Assignee
+	// Mirror the identity reconstruction from NotifyAgentSpawn: updated events may
+	// also lack Assignee when the bead was created without one.
+	if agent == "" {
+		if p, r, n := bead.Fields["project"], bead.Fields["role"], bead.Fields["agent"]; p != "" && r != "" && n != "" {
+			agent = p + "/" + r + "/" + n
+		}
+	}
 	if agent == "" {
 		return
 	}
@@ -557,6 +564,31 @@ func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	b.updateAgentCard(ctx, agent)
+}
+
+// NotifyAgentTaskUpdate is called when a task bead assigned to an agent changes
+// to in_progress (i.e., the agent claimed it). It refreshes any matching agent
+// cards so the claimed task title appears without waiting for a pod phase change.
+func (b *Bot) NotifyAgentTaskUpdate(_ context.Context, agentName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Collect card identities matching agentName exactly or by short name.
+	// This handles the case where the task assignee is the short name (e.g. "matt-1")
+	// but the card was registered under the full path ("gasboat/crew/matt-1").
+	b.mu.Lock()
+	short := extractAgentName(agentName)
+	var candidates []string
+	for agent := range b.agentCards {
+		if agent == agentName || extractAgentName(agent) == short {
+			candidates = append(candidates, agent)
+		}
+	}
+	b.mu.Unlock()
+
+	for _, agent := range candidates {
+		b.updateAgentCard(ctx, agent)
+	}
 }
 
 // updateAgentCard updates the agent status card with the current pending count, state, and task.

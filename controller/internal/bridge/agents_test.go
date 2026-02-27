@@ -7,12 +7,13 @@ import (
 	"testing"
 )
 
-// mockAgentNotifier records calls to NotifyAgentCrash, NotifyAgentSpawn, and NotifyAgentState.
+// mockAgentNotifier records calls to NotifyAgentCrash, NotifyAgentSpawn, NotifyAgentState, and NotifyAgentTaskUpdate.
 type mockAgentNotifier struct {
 	mu           sync.Mutex
 	crashes      []BeadEvent
 	spawns       []BeadEvent
 	stateChanges []BeadEvent
+	taskUpdates  []string
 }
 
 func (m *mockAgentNotifier) NotifyAgentCrash(_ context.Context, bead BeadEvent) error {
@@ -34,6 +35,12 @@ func (m *mockAgentNotifier) NotifyAgentState(_ context.Context, bead BeadEvent) 
 	m.stateChanges = append(m.stateChanges, bead)
 }
 
+func (m *mockAgentNotifier) NotifyAgentTaskUpdate(_ context.Context, agentName string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.taskUpdates = append(m.taskUpdates, agentName)
+}
+
 func (m *mockAgentNotifier) getCrashes() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -50,6 +57,12 @@ func (m *mockAgentNotifier) getStateChanges() []BeadEvent {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]BeadEvent{}, m.stateChanges...)
+}
+
+func (m *mockAgentNotifier) getTaskUpdates() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string{}, m.taskUpdates...)
 }
 
 func TestAgents_HandleClosed_CrashNotification(t *testing.T) {
@@ -284,6 +297,63 @@ func TestAgents_HandleClosed_NoState(t *testing.T) {
 	}
 	if changes[0].Fields["agent_state"] != "done" {
 		t.Errorf("expected agent_state defaulted to done, got %q", changes[0].Fields["agent_state"])
+	}
+}
+
+// TestAgents_HandleUpdated_TaskClaim verifies that a non-agent bead becoming
+// in_progress triggers NotifyAgentTaskUpdate for the assignee.
+func TestAgents_HandleUpdated_TaskClaim(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Task bead claimed by an agent should trigger NotifyAgentTaskUpdate.
+	claimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-1",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: "matt-1",
+	})
+	a.handleUpdated(context.Background(), claimedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 task update notification, got %d", len(updates))
+	}
+	if updates[0] != "matt-1" {
+		t.Errorf("expected agentName=matt-1, got %s", updates[0])
+	}
+
+	// No state change or crash notifications should have fired.
+	if len(notif.getCrashes()) != 0 {
+		t.Error("task claim should not trigger crash notification")
+	}
+	if len(notif.getStateChanges()) != 0 {
+		t.Error("task claim should not trigger state change notification")
+	}
+}
+
+// TestAgents_HandleUpdated_TaskNoAssignee verifies that a non-agent bead update
+// without an assignee does not trigger NotifyAgentTaskUpdate.
+func TestAgents_HandleUpdated_TaskNoAssignee(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	unassigned := marshalSSEBeadPayload(BeadEvent{
+		ID:     "task-2",
+		Type:   "task",
+		Status: "in_progress",
+		// No assignee.
+	})
+	a.handleUpdated(context.Background(), unassigned)
+
+	if len(notif.getTaskUpdates()) != 0 {
+		t.Error("task with no assignee should not trigger task update notification")
 	}
 }
 
