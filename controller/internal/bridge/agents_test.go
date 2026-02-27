@@ -357,6 +357,88 @@ func TestAgents_HandleUpdated_TaskNoAssignee(t *testing.T) {
 	}
 }
 
+// TestAgents_HandleClosed_TaskBead verifies that closing a task bead assigned to
+// an agent triggers NotifyAgentTaskUpdate so the card clears the completed task.
+func TestAgents_HandleClosed_TaskBead(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Task bead closed by its agent assignee should trigger a card refresh.
+	closedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-10",
+		Type:     "task",
+		Status:   "closed",
+		Assignee: "matt-1",
+	})
+	a.handleClosed(context.Background(), closedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 task update notification on close, got %d", len(updates))
+	}
+	if updates[0] != "matt-1" {
+		t.Errorf("expected agentName=matt-1, got %s", updates[0])
+	}
+	// No crash or state change notifications should have fired.
+	if len(notif.getCrashes()) != 0 {
+		t.Error("task close should not trigger crash notification")
+	}
+	if len(notif.getStateChanges()) != 0 {
+		t.Error("task close should not trigger state change notification")
+	}
+}
+
+// TestAgents_HandleClosed_TaskBeadNoAssignee verifies that closing an unassigned
+// task bead does not trigger NotifyAgentTaskUpdate.
+func TestAgents_HandleClosed_TaskBeadNoAssignee(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	closedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:     "task-11",
+		Type:   "task",
+		Status: "closed",
+		// No Assignee.
+	})
+	a.handleClosed(context.Background(), closedTask)
+
+	if len(notif.getTaskUpdates()) != 0 {
+		t.Error("unassigned task close should not trigger task update notification")
+	}
+}
+
+// TestAgents_HandleUpdated_TaskClose verifies that a task bead updated with
+// status=closed triggers NotifyAgentTaskUpdate (defensive coverage).
+func TestAgents_HandleUpdated_TaskClose(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	closedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-12",
+		Type:     "bug",
+		Status:   "closed",
+		Assignee: "builder-1",
+	})
+	a.handleUpdated(context.Background(), closedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 task update notification for closed status, got %d", len(updates))
+	}
+	if updates[0] != "builder-1" {
+		t.Errorf("expected agentName=builder-1, got %s", updates[0])
+	}
+}
+
 // TestAgents_HandleUpdated_StateChange verifies that non-crash state changes
 // (e.g. spawning→working) trigger NotifyAgentState, not NotifyAgentCrash.
 func TestAgents_HandleUpdated_StateChange(t *testing.T) {

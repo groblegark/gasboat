@@ -84,6 +84,10 @@ func (a *Agents) handleClosed(ctx context.Context, data []byte) {
 		return
 	}
 	if bead.Type != "agent" {
+		// For task beads, refresh the agent's card so the completed task is cleared.
+		if bead.Assignee != "" && a.notifier != nil {
+			a.notifier.NotifyAgentTaskUpdate(ctx, bead.Assignee)
+		}
 		return
 	}
 
@@ -113,7 +117,9 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 	if bead.Type != "agent" {
 		// For task beads claimed by an agent, refresh the agent's card so it
 		// reflects the newly claimed task without waiting for a pod phase change.
-		if bead.Status == "in_progress" && bead.Assignee != "" && a.notifier != nil {
+		// Also refresh on close in case kbeads emits an update before the closed event.
+		if bead.Assignee != "" && a.notifier != nil &&
+			(bead.Status == "in_progress" || bead.Status == "closed") {
 			a.notifier.NotifyAgentTaskUpdate(ctx, bead.Assignee)
 		}
 		return
