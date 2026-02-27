@@ -73,6 +73,16 @@ spec:
         - name: agents
           image: "{{ .Values.agents.image.repository }}:{{ .Values.agents.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.agents.image.pullPolicy }}
+          ports:
+            - name: health
+              containerPort: 8091
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 30
           env:
             - name: NAMESPACE
               value: {{ .Release.Namespace }}

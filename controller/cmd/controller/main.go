@@ -10,8 +10,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,6 +34,11 @@ import (
 	"gasboat/controller/internal/reconciler"
 	"gasboat/controller/internal/statusreporter"
 	"gasboat/controller/internal/subscriber"
+)
+
+var (
+	version = "dev"
+	commit  = "unknown"
 )
 
 func main() {
@@ -81,6 +89,37 @@ func main() {
 	// Slack notifications, decision watcher, and mail watcher are now handled
 	// by the standalone slack-bridge binary (cmd/slack-bridge). The controller
 	// only handles K8s pod lifecycle operations. See bd-8x8fy.
+
+	// Start lightweight health/version HTTP server.
+	healthAddr := os.Getenv("HEALTH_LISTEN_ADDR")
+	if healthAddr == "" {
+		healthAddr = ":8091"
+	}
+	healthMux := http.NewServeMux()
+	healthMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"status":"ok","version":"%s"}`, version)
+	})
+	healthMux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"version":    version,
+			"commit":     commit,
+			"agentImage": cfg.CoopImage,
+			"namespace":  cfg.Namespace,
+		})
+	})
+	healthSrv := &http.Server{
+		Addr:              healthAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		logger.Info("starting health/version server", "addr", healthAddr)
+		if err := healthSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("health server failed", "error", err)
+		}
+	}()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()

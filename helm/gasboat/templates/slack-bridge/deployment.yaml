@@ -115,6 +115,26 @@ spec:
             - name: SLACK_DASHBOARD_INTERVAL
               value: {{ .Values.slackBridge.dashboard.interval | quote }}
             {{- end }}
+            # GitHub /unreleased command
+            {{- if .Values.slackBridge.github.token }}
+            - name: GITHUB_TOKEN
+              value: {{ .Values.slackBridge.github.token | quote }}
+            {{- else if .Values.slackBridge.github.secretName }}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.slackBridge.github.secretName }}
+                  key: {{ .Values.slackBridge.github.secretKey | default "token" }}
+                  optional: true
+            {{- end }}
+            {{- if .Values.slackBridge.github.repos }}
+            - name: UNRELEASED_REPOS
+              value: {{ .Values.slackBridge.github.repos | quote }}
+            {{- end }}
+            {{- if .Values.agents.enabled }}
+            - name: CONTROLLER_URL
+              value: "http://{{ include "gasboat.agents.fullname" . }}:8091"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

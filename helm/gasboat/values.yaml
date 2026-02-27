@@ -485,6 +485,16 @@ slackBridge:
     # Decision threading mode: "flat" (default) or "agent" (thread under per-agent cards)
     threadingMode: ""
 
+  # GitHub integration for /unreleased command
+  github:
+    # GitHub API token (optional, for higher rate limits)
+    token: ""
+    # K8s secret name containing the token (key specified by secretKey)
+    secretName: ""
+    secretKey: "token"
+    # Comma-separated repos to check (default: groblegark/gasboat,groblegark/kbeads,groblegark/coop)
+    repos: ""
+
   # Live agent activity dashboard — pinned Slack message updated periodically.
   dashboard:
     enabled: true
@@ -509,6 +519,55 @@ slackBridge:
     enabled: false
     size: 100Mi
     storageClass: ""
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Advice Viewer — web UI for viewing and managing advice beads
+# Provides per-agent advice views, advice CRUD, and generation dispatch.
+# =============================================================================
+adviceViewer:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/gasboat/advice-viewer
+    tag: ""
+    pullPolicy: Always
+
+  # Log level: debug, info, warn, error
+  logLevel: ""
+
+  # Basic auth credentials (from K8s secret with keys: username, password)
+  # When empty, auth is disabled (dev mode).
+  auth:
+    secretName: ""
+
+  # Comma-separated CIDR ranges for IP whitelisting (e.g. "10.0.0.0/8,192.168.1.0/24")
+  # When empty, all IPs allowed (dev mode).
+  allowedCIDRs: ""
+
+  service:
+    type: ClusterIP
+    port: 8091
+
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
   # Pod scheduling
   nodeSelector: {}

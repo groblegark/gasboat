@@ -49,6 +49,12 @@ type Bot struct {
 	// Threading mode: "" / "flat" = flat messages, "agent" = threaded under agent cards.
 	threadingMode string
 
+	// GitHub client for /unreleased command.
+	github        *GitHubClient
+	repos         []RepoRef
+	version       string
+	controllerURL string
+
 	// In-memory decision tracking (augments StateManager).
 	mu           sync.Mutex
 	messages     map[string]MessageRef // bead ID → Slack message ref (hot cache)
@@ -69,6 +75,12 @@ type BotConfig struct {
 	Router         *Router // optional channel router; nil = all to Channel
 	Logger         *slog.Logger
 	Debug          bool
+
+	// GitHub /unreleased command support.
+	GitHubToken   string
+	Repos         []RepoRef
+	Version       string
+	ControllerURL string
 }
 
 // NewBot creates a new Socket Mode bot.
@@ -82,6 +94,11 @@ func NewBot(cfg BotConfig) *Bot {
 		api,
 		socketmode.OptionDebug(cfg.Debug),
 	)
+
+	var gh *GitHubClient
+	if cfg.GitHubToken != "" || len(cfg.Repos) > 0 {
+		gh = NewGitHubClient(cfg.GitHubToken, cfg.Logger)
+	}
 
 	b := &Bot{
 		api:           api,
@@ -97,6 +114,10 @@ func NewBot(cfg BotConfig) *Bot {
 		agentPending:  make(map[string]int),
 		agentState:    make(map[string]string),
 		agentSeen:     make(map[string]time.Time),
+		github:        gh,
+		repos:         cfg.Repos,
+		version:       cfg.Version,
+		controllerURL: cfg.ControllerURL,
 	}
 
 	// Hydrate hot caches from persisted state.

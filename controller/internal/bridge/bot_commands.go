@@ -19,6 +19,8 @@ func (b *Bot) handleSlashCommand(ctx context.Context, cmd slack.SlashCommand) {
 		b.handleSpawnCommand(ctx, cmd)
 	case "/kill":
 		b.handleKillCommand(ctx, cmd)
+	case "/unreleased":
+		b.handleUnreleasedCommand(ctx, cmd)
 	default:
 		b.logger.Debug("unhandled slash command", "command", cmd.Command)
 	}

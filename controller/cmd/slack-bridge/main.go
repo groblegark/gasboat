@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"strings"
+
 	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/bridge"
 )
@@ -97,6 +99,10 @@ func main() {
 			State:         state,
 			Logger:        logger,
 			Debug:         cfg.debug,
+			GitHubToken:   cfg.githubToken,
+			Repos:         cfg.repos,
+			Version:       version,
+			ControllerURL: cfg.controllerURL,
 		})
 		notifier = bot
 		logger.Info("Slack Socket Mode bot enabled", "channel", cfg.slackChannel)
@@ -280,6 +286,11 @@ type config struct {
 	dashboardEnabled  bool
 	dashboardChannel  string
 	dashboardInterval time.Duration
+
+	// GitHub /unreleased
+	githubToken   string
+	repos         []bridge.RepoRef
+	controllerURL string
 }
 
 func parseConfig() *config {
@@ -302,6 +313,8 @@ func parseConfig() *config {
 		threadingMode = "agent"
 	}
 
+	repos := parseRepoList(envOrDefault("UNRELEASED_REPOS", "groblegark/gasboat,groblegark/kbeads,groblegark/coop"))
+
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
 		slackBotToken:      os.Getenv("SLACK_BOT_TOKEN"),
@@ -318,7 +331,28 @@ func parseConfig() *config {
 		dashboardEnabled:  dashEnabled,
 		dashboardChannel:  dashChannel,
 		dashboardInterval: dashInterval,
+
+		githubToken:   os.Getenv("GITHUB_TOKEN"),
+		repos:         repos,
+		controllerURL: os.Getenv("CONTROLLER_URL"),
 	}
+}
+
+// parseRepoList parses a comma-separated list of "owner/repo" strings.
+func parseRepoList(s string) []bridge.RepoRef {
+	var repos []bridge.RepoRef
+	for _, entry := range strings.Split(s, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		parts := strings.SplitN(entry, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		repos = append(repos, bridge.RepoRef{Owner: parts[0], Repo: parts[1]})
+	}
+	return repos
 }
 
 func envOrDefault(key, fallback string) string {

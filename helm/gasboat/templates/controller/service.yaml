@@ -1,0 +1,18 @@
+{{- if .Values.agents.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gasboat.agents.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.agents.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8091
+      targetPort: health
+      protocol: TCP
+      name: health
+  selector:
+    {{- include "gasboat.agents.selectorLabels" . | nindent 4 }}
+{{- end }}
