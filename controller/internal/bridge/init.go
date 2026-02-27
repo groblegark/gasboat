@@ -89,6 +89,12 @@ func configs() map[string]any {
 				// Per-agent overrides (optional).
 				{Name: "image", Type: "string"},
 				{Name: "mock_scenario", Type: "string"},
+				// Agent stop/gate control written by gb stop and gb yield.
+				{Name: "stop_requested", Type: "string"},
+				{Name: "gate_satisfied_by", Type: "string"},
+				// Advice subscription overrides.
+				{Name: "advice_subscriptions", Type: "string[]"},
+				{Name: "advice_subscriptions_exclude", Type: "string[]"},
 			},
 		},
 		"type:mail": TypeConfig{
