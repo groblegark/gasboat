@@ -226,8 +226,11 @@ func (s *SSEStream) dispatch(ctx context.Context, id, topic, data string) {
 		return
 	}
 
-	// Deduplicate: extract bead ID from payload and check.
-	if s.dedup != nil {
+	// Deduplicate created/closed events by bead ID. Updated events are
+	// exempt — the same bead can be updated many times with different state
+	// (e.g., agent_state transitions from spawning→working→done) and each
+	// change must be processed.
+	if s.dedup != nil && topic != "beads.bead.updated" {
 		bead := ParseBeadEvent([]byte(data))
 		if bead != nil {
 			key := topic + ":" + bead.ID
