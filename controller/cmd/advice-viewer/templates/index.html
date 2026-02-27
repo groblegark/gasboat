@@ -20,7 +20,7 @@
       <td>{{.Project}}</td>
       <td>{{.Role}}</td>
       <td>{{.AgentState}}</td>
-      <td><a href="/agent?id={{.Project}}/{{.Role}}/{{.AgentName}}" class="btn btn-secondary">View Advice</a></td>
+      <td><a href="{{$.BasePath}}/agent?id={{.Project}}/{{.Role}}/{{.AgentName}}" class="btn btn-secondary">View Advice</a></td>
     </tr>
     {{end}}
   </tbody>

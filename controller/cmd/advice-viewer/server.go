@@ -15,13 +15,14 @@ import (
 
 // Server handles HTTP requests for the advice viewer.
 type Server struct {
-	daemon *beadsapi.Client
-	logger *slog.Logger
-	pages  map[string]*template.Template
+	daemon   *beadsapi.Client
+	logger   *slog.Logger
+	pages    map[string]*template.Template
+	basePath string // external URL prefix (e.g. "/advice"), empty for root
 }
 
 // NewServer creates an advice viewer server.
-func NewServer(daemon *beadsapi.Client, logger *slog.Logger) *Server {
+func NewServer(daemon *beadsapi.Client, logger *slog.Logger, basePath string) *Server {
 	funcMap := template.FuncMap{
 		"join": strings.Join,
 	}
@@ -38,9 +39,10 @@ func NewServer(daemon *beadsapi.Client, logger *slog.Logger) *Server {
 		)
 	}
 	return &Server{
-		daemon: daemon,
-		logger: logger,
-		pages:  pages,
+		daemon:   daemon,
+		logger:   logger,
+		pages:    pages,
+		basePath: basePath,
 	}
 }
 
@@ -65,8 +67,14 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	// Inject BasePath into all template data.
+	m, _ := data.(map[string]any)
+	if m == nil {
+		m = make(map[string]any)
+	}
+	m["BasePath"] = s.basePath
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "layout", m); err != nil {
 		s.logger.Error("template render error", "template", name, "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
@@ -244,7 +252,7 @@ func (s *Server) handleAdviceUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/advice/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, s.basePath+"/advice/"+id, http.StatusSeeOther)
 }
 
 // handleAdviceNew shows the create form.
@@ -321,7 +329,7 @@ func (s *Server) handleAdviceCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/advice/"+id, http.StatusSeeOther)
+	http.Redirect(w, r, s.basePath+"/advice/"+id, http.StatusSeeOther)
 }
 
 // handleGenerateForm shows the generation dispatch form.

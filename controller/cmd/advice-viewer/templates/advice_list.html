@@ -2,7 +2,7 @@
 {{define "title"}}All Advice - Advice Viewer{{end}}
 {{define "content"}}
 <h1>All Advice</h1>
-<div style="margin-bottom:1rem;"><a href="/advice/new" class="btn btn-primary">New Advice</a></div>
+<div style="margin-bottom:1rem;"><a href="{{.BasePath}}/advice/new" class="btn btn-primary">New Advice</a></div>
 {{if .Advice}}
 <table>
   <thead>
@@ -16,8 +16,8 @@
   <tbody>
     {{range .Advice}}
     <tr>
-      <td><a href="/advice/{{.ID}}">{{.ID}}</a></td>
-      <td><a href="/advice/{{.ID}}">{{.Title}}</a></td>
+      <td><a href="{{$.BasePath}}/advice/{{.ID}}">{{.ID}}</a></td>
+      <td><a href="{{$.BasePath}}/advice/{{.ID}}">{{.Title}}</a></td>
       <td>
         <div class="label-list">
           {{range .Labels}}<span class="label-tag">{{.}}</span>{{end}}

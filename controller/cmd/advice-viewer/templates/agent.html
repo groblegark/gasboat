@@ -22,7 +22,7 @@
 </h2>
 {{range .Items}}
 <div class="card">
-  <strong><a href="/advice/{{.Bead.ID}}">{{.Bead.Title}}</a></strong>
+  <strong><a href="{{$.BasePath}}/advice/{{.Bead.ID}}">{{.Bead.Title}}</a></strong>
   {{if and .Bead.Description (ne .Bead.Description .Bead.Title)}}
   <pre>{{.Bead.Description}}</pre>
   {{end}}
@@ -30,7 +30,7 @@
     {{range .Bead.Labels}}<span class="label-tag">{{.}}</span>{{end}}
   </div>
   <div class="actions">
-    <a href="/advice/{{.Bead.ID}}/edit" class="btn btn-secondary">Edit</a>
+    <a href="{{$.BasePath}}/advice/{{.Bead.ID}}/edit" class="btn btn-secondary">Edit</a>
   </div>
 </div>
 {{end}}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,7 +39,7 @@ func main() {
 	}
 	defer daemon.Close()
 
-	srv := NewServer(daemon, logger)
+	srv := NewServer(daemon, logger, cfg.basePath)
 
 	mux := http.NewServeMux()
 
@@ -96,9 +97,11 @@ type config struct {
 	authUsername  string
 	authPassword  string
 	allowedCIDRs  string
+	basePath      string
 }
 
 func parseConfig() *config {
+	bp := strings.TrimRight(os.Getenv("BASE_PATH"), "/")
 	return &config{
 		beadsHTTPAddr: envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
 		listenAddr:    envOrDefault("LISTEN_ADDR", ":8091"),
@@ -106,6 +109,7 @@ func parseConfig() *config {
 		authUsername:  os.Getenv("AUTH_USERNAME"),
 		authPassword:  os.Getenv("AUTH_PASSWORD"),
 		allowedCIDRs:  os.Getenv("ALLOWED_CIDRS"),
+		basePath:      bp,
 	}
 }
 

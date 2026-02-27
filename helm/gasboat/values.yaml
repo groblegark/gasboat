@@ -556,10 +556,17 @@ adviceViewer:
   ingress:
     enabled: false
     host: ""
+    # Path prefix for the advice viewer (e.g. "/advice"). Traefik strips
+    # the prefix before forwarding; BASE_PATH env var is set so templates
+    # generate correct links.
+    pathPrefix: ""
     ipWhitelist:
       enabled: false
       sourceRange: []
       depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""
 
   resources:
     requests:

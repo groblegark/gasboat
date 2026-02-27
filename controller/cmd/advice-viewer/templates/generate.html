@@ -7,7 +7,7 @@
 <div class="success">{{.Success}}</div>
 {{end}}
 <div class="card">
-  <form method="POST" action="/generate">
+  <form method="POST" action="{{.BasePath}}/generate">
     <div class="form-group">
       <label for="topic">Topic / Instructions</label>
       <textarea id="topic" name="topic" required placeholder="Describe the advice topic and any research instructions..."></textarea>

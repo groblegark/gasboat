@@ -27,7 +27,7 @@ func TestE2E_AdviceViewer(t *testing.T) {
 	defer daemon.Close()
 
 	logger := slog.Default()
-	srv := NewServer(daemon, logger)
+	srv := NewServer(daemon, logger, "")
 	mux := http.NewServeMux()
 	srv.RegisterRoutes(mux)
 

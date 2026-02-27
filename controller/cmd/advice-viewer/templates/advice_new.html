@@ -3,7 +3,7 @@
 {{define "content"}}
 <h1>New Advice</h1>
 <div class="card">
-  <form method="POST" action="/advice/new">
+  <form method="POST" action="{{.BasePath}}/advice/new">
     <div class="form-group">
       <label for="title">Title</label>
       <input type="text" id="title" name="title" required>
@@ -40,7 +40,7 @@
       <input type="text" id="hook_trigger" name="hook_trigger" placeholder="e.g. before_commit, on_start">
     </div>
     <button type="submit" class="btn btn-primary">Create</button>
-    <a href="/advice" class="btn btn-secondary">Cancel</a>
+    <a href="{{.BasePath}}/advice" class="btn btn-secondary">Cancel</a>
   </form>
 </div>
 {{end}}

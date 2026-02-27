@@ -113,7 +113,7 @@ func testServer(t *testing.T) (*Server, *httptest.Server) {
 		mock.Close()
 	})
 	logger := slog.Default()
-	srv := NewServer(daemon, logger)
+	srv := NewServer(daemon, logger, "")
 	return srv, mock
 }
 

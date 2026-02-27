@@ -56,6 +56,10 @@ spec:
             - name: ALLOWED_CIDRS
               value: {{ .Values.adviceViewer.allowedCIDRs | quote }}
             {{- end }}
+            {{- if .Values.adviceViewer.ingress.pathPrefix }}
+            - name: BASE_PATH
+              value: {{ .Values.adviceViewer.ingress.pathPrefix | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

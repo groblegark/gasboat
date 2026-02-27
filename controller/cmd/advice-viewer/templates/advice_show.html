@@ -25,8 +25,8 @@
   <p class="meta" style="margin-top:0.5rem;">Created by: {{.Bead.CreatedBy}}</p>
   {{end}}
   <div class="actions">
-    <a href="/advice/{{.Bead.ID}}/edit" class="btn btn-primary">Edit</a>
-    <a href="/advice" class="btn btn-secondary">Back to List</a>
+    <a href="{{.BasePath}}/advice/{{.Bead.ID}}/edit" class="btn btn-primary">Edit</a>
+    <a href="{{.BasePath}}/advice" class="btn btn-secondary">Back to List</a>
   </div>
 </div>
 {{end}}
