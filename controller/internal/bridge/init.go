@@ -89,6 +89,10 @@ func configs() map[string]any {
 				// Per-agent overrides (optional).
 				{Name: "image", Type: "string"},
 				{Name: "mock_scenario", Type: "string"},
+				// Stop gate tracking fields written by gb yield / gb gate mark.
+				{Name: "gate_satisfied_by", Type: "enum", Values: []string{"yield", "operator"}},
+				// Polite despawn flag written by gb stop.
+				{Name: "stop_requested", Type: "boolean"},
 			},
 		},
 		"type:mail": TypeConfig{
