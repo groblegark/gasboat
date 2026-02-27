@@ -498,11 +498,10 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 // It records the initial spawning state and posts the agent card immediately.
 func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 	agent := bead.Assignee
-	// The created event often lacks Assignee — reconstruct from fields
-	// so the card identity matches subsequent update events.
+	// The created event often lacks Assignee — reconstruct from fields.
 	if agent == "" {
-		if p, r, n := bead.Fields["project"], bead.Fields["role"], bead.Fields["agent"]; p != "" && r != "" && n != "" {
-			agent = p + "/" + r + "/" + n
+		if n := bead.Fields["agent"]; n != "" {
+			agent = n
 		}
 	}
 	if agent == "" {
@@ -511,6 +510,9 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 	if agent == "" {
 		return
 	}
+	// Canonicalize to short name so all map keys are consistent across
+	// events that may use full paths vs short names.
+	agent = extractAgentName(agent)
 
 	b.mu.Lock()
 	b.agentState[agent] = "spawning"
@@ -549,13 +551,14 @@ func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	// Mirror the identity reconstruction from NotifyAgentSpawn: updated events may
 	// also lack Assignee when the bead was created without one.
 	if agent == "" {
-		if p, r, n := bead.Fields["project"], bead.Fields["role"], bead.Fields["agent"]; p != "" && r != "" && n != "" {
-			agent = p + "/" + r + "/" + n
+		if n := bead.Fields["agent"]; n != "" {
+			agent = n
 		}
 	}
 	if agent == "" {
 		return
 	}
+	agent = extractAgentName(agent)
 	state := bead.Fields["agent_state"]
 	b.mu.Lock()
 	b.agentState[agent] = state
@@ -775,17 +778,27 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 		return
 	}
 
-	// Decrement agent pending count and update card, but keep the message
-	// ref so that PostReport can still thread under the resolved decision.
+	// Decrement agent pending count and update card. Clear the Agent field
+	// on the cached ref to prevent double-decrement when the SSE close event
+	// triggers UpdateDecision after the modal submit already resolved it.
+	// The ref stays in hot cache (with Agent="") so PostReport can still
+	// thread under the resolved decision message.
 	b.mu.Lock()
 	ref, hadRef := b.messages[beadID]
-	if hadRef && b.agentThreadingEnabled() && ref.Agent != "" {
-		if b.agentPending[ref.Agent] > 0 {
-			b.agentPending[ref.Agent]--
-		}
-	}
 	agent := ref.Agent
+	if hadRef && b.agentThreadingEnabled() && agent != "" {
+		if b.agentPending[agent] > 0 {
+			b.agentPending[agent]--
+		}
+		ref.Agent = ""
+		b.messages[beadID] = ref
+	}
 	b.mu.Unlock()
+
+	// Remove from persisted state so pending count doesn't re-inflate on restart.
+	if b.state != nil {
+		_ = b.state.RemoveDecisionMessage(beadID)
+	}
 
 	if hadRef && b.agentThreadingEnabled() && agent != "" {
 		b.updateAgentCard(ctx, agent)

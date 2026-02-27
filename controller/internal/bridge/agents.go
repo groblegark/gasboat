@@ -96,10 +96,14 @@ func (a *Agents) handleClosed(ctx context.Context, data []byte) {
 	podPhase := bead.Fields["pod_phase"]
 	if agentState == "failed" || podPhase == "failed" {
 		a.notifyCrash(ctx, *bead)
-		return
+		// Ensure agent_state is set so the card update below shows "failed".
+		if agentState == "" {
+			bead.Fields["agent_state"] = "failed"
+			agentState = "failed"
+		}
 	}
 
-	// Normal completion — update the card so it shows "done" with the Clear button.
+	// Update the card so it shows current state (done/failed) with the Clear button.
 	if a.notifier != nil {
 		if agentState == "" {
 			bead.Fields["agent_state"] = "done"
@@ -131,10 +135,14 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 	// Notify crash on agent_state=failed or pod_phase=failed.
 	if agentState == "failed" || podPhase == "failed" {
 		a.notifyCrash(ctx, *bead)
-		return
+		// Ensure agent_state is set so the card update below shows "failed".
+		if agentState == "" {
+			bead.Fields["agent_state"] = "failed"
+			agentState = "failed"
+		}
 	}
 
-	// For any other state change, notify so the agent card can be refreshed.
+	// For any state change, notify so the agent card can be refreshed.
 	if agentState != "" && a.notifier != nil {
 		a.notifier.NotifyAgentState(ctx, *bead)
 	}
