@@ -14,6 +14,292 @@ import (
 	"github.com/slack-go/slack"
 )
 
+// agentThreadingEnabled returns true if agent card threading is active.
+func (b *Bot) agentThreadingEnabled() bool {
+	return b.threadingMode == "agent"
+}
+
+// agentTaskTitle fetches the title of the task currently claimed by agent.
+// Returns "" if none is found or on error. Tries both the full identity
+// and the short name to handle assignee format mismatches.
+func (b *Bot) agentTaskTitle(ctx context.Context, agent string) string {
+	bead, err := b.daemon.ListAssignedTask(ctx, agent)
+	if err == nil && bead != nil {
+		return bead.Title
+	}
+	// Retry with short name if agent is a full path (project/role/name).
+	if short := extractAgentName(agent); short != agent {
+		bead, err = b.daemon.ListAssignedTask(ctx, short)
+		if err == nil && bead != nil {
+			return bead.Title
+		}
+	}
+	return ""
+}
+
+// ensureAgentCard posts or retrieves the agent status card for threading.
+// Returns the card's message timestamp for use as threadTS.
+func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (string, error) {
+	b.mu.Lock()
+	if ref, ok := b.agentCards[agent]; ok && ref.ChannelID == channelID {
+		b.mu.Unlock()
+		return ref.Timestamp, nil
+	}
+	b.mu.Unlock()
+
+	// Post a new status card.
+	b.mu.Lock()
+	pending := b.agentPending[agent]
+	state := b.agentState[agent]
+	seen := b.agentSeen[agent]
+	b.mu.Unlock()
+
+	taskTitle := b.agentTaskTitle(ctx, agent)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
+	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return "", fmt.Errorf("post agent card: %w", err)
+	}
+
+	ref := MessageRef{ChannelID: cardChannel, Timestamp: ts, Agent: agent}
+
+	b.mu.Lock()
+	b.agentCards[agent] = ref
+	b.mu.Unlock()
+
+	if b.state != nil {
+		_ = b.state.SetAgentCard(agent, ref)
+	}
+
+	b.logger.Info("posted agent status card", "agent", agent, "channel", cardChannel, "ts", ts)
+	return ts, nil
+}
+
+// NotifyAgentSpawn is called when an agent bead is first created.
+// It records the initial spawning state and posts the agent card immediately.
+func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
+	agent := bead.Assignee
+	// The created event often lacks Assignee — reconstruct from fields.
+	if agent == "" {
+		if n := bead.Fields["agent"]; n != "" {
+			agent = n
+		}
+	}
+	if agent == "" {
+		agent = bead.Title
+	}
+	if agent == "" {
+		return
+	}
+	// Canonicalize to short name so all map keys are consistent across
+	// events that may use full paths vs short names.
+	agent = extractAgentName(agent)
+
+	b.mu.Lock()
+	b.agentState[agent] = "spawning"
+	b.agentSeen[agent] = time.Now()
+	b.mu.Unlock()
+
+	channel := b.resolveChannel(agent)
+
+	if b.agentThreadingEnabled() {
+		if _, err := b.ensureAgentCard(ctx, agent, channel); err != nil {
+			b.logger.Error("failed to post agent spawn card",
+				"agent", agent, "error", err)
+		}
+	} else {
+		name := extractAgentName(agent)
+		_, _, err := b.api.PostMessageContext(ctx, channel,
+			slack.MsgOptionText(fmt.Sprintf("Agent spawned: %s", name), false),
+			slack.MsgOptionBlocks(
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn",
+						fmt.Sprintf(":rocket: *Agent spawned: %s*", name), false, false),
+					nil, nil),
+			),
+		)
+		if err != nil {
+			b.logger.Error("failed to post agent spawn message",
+				"agent", agent, "error", err)
+		}
+	}
+}
+
+// NotifyAgentState is called when an agent bead's agent_state changes.
+// It records the new state and refreshes the agent card in Slack.
+func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
+	agent := bead.Assignee
+	// Mirror the identity reconstruction from NotifyAgentSpawn: updated events may
+	// also lack Assignee when the bead was created without one.
+	if agent == "" {
+		if n := bead.Fields["agent"]; n != "" {
+			agent = n
+		}
+	}
+	if agent == "" {
+		return
+	}
+	agent = extractAgentName(agent)
+	state := bead.Fields["agent_state"]
+	b.mu.Lock()
+	b.agentState[agent] = state
+	b.agentSeen[agent] = time.Now()
+	b.mu.Unlock()
+
+	// Refresh the card if one exists for this agent.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b.updateAgentCard(ctx, agent)
+}
+
+// NotifyAgentTaskUpdate is called when a task bead assigned to an agent changes
+// to in_progress (i.e., the agent claimed it). It refreshes any matching agent
+// cards so the claimed task title appears without waiting for a pod phase change.
+func (b *Bot) NotifyAgentTaskUpdate(_ context.Context, agentName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Collect card identities matching agentName exactly or by short name.
+	// This handles the case where the task assignee is the short name (e.g. "matt-1")
+	// but the card was registered under the full path ("gasboat/crew/matt-1").
+	b.mu.Lock()
+	short := extractAgentName(agentName)
+	var candidates []string
+	for agent := range b.agentCards {
+		if agent == agentName || extractAgentName(agent) == short {
+			candidates = append(candidates, agent)
+		}
+	}
+	b.mu.Unlock()
+
+	for _, agent := range candidates {
+		b.updateAgentCard(ctx, agent)
+	}
+}
+
+// updateAgentCard updates the agent status card with the current pending count, state, and task.
+func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
+	b.mu.Lock()
+	ref, ok := b.agentCards[agent]
+	pending := b.agentPending[agent]
+	state := b.agentState[agent]
+	seen := b.agentSeen[agent]
+	b.mu.Unlock()
+
+	if !ok {
+		// No card under this identity — create one if threading is enabled.
+		// This handles identity drift (e.g., spawn used short name, updates use
+		// full assignee path) by posting a card under the canonical identity.
+		if b.agentThreadingEnabled() {
+			channel := b.resolveChannel(agent)
+			if _, err := b.ensureAgentCard(ctx, agent, channel); err != nil {
+				b.logger.Error("failed to create agent card on state update",
+					"agent", agent, "error", err)
+			}
+		}
+		return
+	}
+
+	taskTitle := b.agentTaskTitle(ctx, agent)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
+	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		b.logger.Error("failed to update agent card", "agent", agent, "error", err)
+	}
+}
+
+// buildAgentCardBlocks constructs Block Kit blocks for an agent status card.
+// agentState is the agent's current lifecycle state (spawning, working, etc.).
+// taskTitle is the title of the bead the agent currently has in_progress ("" if idle).
+// seen is the last time activity was recorded for this agent (zero = unknown).
+func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time) []slack.Block {
+	name := extractAgentName(agent)
+	project := extractAgentProject(agent)
+
+	var indicator, status string
+	switch {
+	case pendingCount > 0:
+		indicator = ":large_blue_circle:"
+		status = fmt.Sprintf("%d pending", pendingCount)
+	case agentState == "working":
+		indicator = ":large_green_circle:"
+		status = "working"
+	case agentState == "spawning":
+		indicator = ":hourglass_flowing_sand:"
+		status = "starting"
+	case agentState == "done":
+		indicator = ":white_check_mark:"
+		status = "done"
+	case agentState == "failed":
+		indicator = ":x:"
+		status = "failed"
+	default:
+		indicator = ":white_circle:"
+		status = "idle"
+	}
+
+	headerText := fmt.Sprintf("%s *%s*", indicator, name)
+	if project != "" {
+		headerText += fmt.Sprintf(" \u00b7 _%s_", project)
+	}
+	headerText += fmt.Sprintf(" \u00b7 %s", status)
+
+	contextText := fmt.Sprintf("`%s` \u00b7 Decisions thread below", agent)
+	if !seen.IsZero() {
+		contextText += fmt.Sprintf(" \u00b7 _%s_", formatAge(seen))
+	}
+	if taskTitle != "" {
+		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 80))
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", contextText, false, false)),
+	}
+
+	// Show a Clear button for terminated agents so humans can dismiss them from Slack.
+	if agentState == "done" || agentState == "failed" {
+		clearBtn := slack.NewButtonBlockElement(
+			"clear_agent",
+			agent,
+			slack.NewTextBlockObject("plain_text", "Clear", false, false),
+		)
+		blocks = append(blocks, slack.NewActionBlock("", clearBtn))
+	}
+
+	return blocks
+}
+
+// extractAgentProject returns the first segment (project) of an agent identity.
+// "gasboat/crew/test-bot" → "gasboat", "test-bot" → ""
+func extractAgentProject(identity string) string {
+	if i := strings.Index(identity, "/"); i >= 0 {
+		return identity[:i]
+	}
+	return ""
+}
+
+// resolveChannel returns the target Slack channel for an agent.
+// Uses the router if configured, otherwise falls back to the default channel.
+func (b *Bot) resolveChannel(agent string) string {
+	if b.router != nil && agent != "" {
+		result := b.router.Resolve(agent)
+		if result.ChannelID != "" {
+			return result.ChannelID
+		}
+	}
+	return b.channel
+}
+
 // killAgent closes an agent bead and removes its Slack card.
 // It is called by both the /kill slash command and the Clear button handler.
 // If force is false, it attempts a graceful shutdown via coop before closing
