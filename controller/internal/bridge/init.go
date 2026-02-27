@@ -89,6 +89,9 @@ func configs() map[string]any {
 				// Per-agent overrides (optional).
 				{Name: "image", Type: "string"},
 				{Name: "mock_scenario", Type: "string"},
+				// Session-control flags written by gb stop / gb yield / gb gate mark.
+				{Name: "stop_requested", Type: "boolean"},
+				{Name: "gate_satisfied_by", Type: "enum", Values: []string{"yield", "operator"}},
 			},
 		},
 		"type:mail": TypeConfig{
