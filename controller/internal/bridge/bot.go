@@ -146,7 +146,9 @@ func (b *Bot) Run(ctx context.Context) error {
 
 	go b.handleEvents(ctx)
 
-	return b.socket.RunContext(ctx)
+	err = b.socket.RunContext(ctx)
+	b.connected.Store(false)
+	return err
 }
 
 // handleEvents processes Socket Mode events.

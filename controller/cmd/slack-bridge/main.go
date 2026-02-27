@@ -129,11 +129,24 @@ func main() {
 		}
 	}()
 
-	// Start Socket Mode bot if configured.
+	// Start Socket Mode bot if configured (auto-reconnect with backoff).
 	if bot != nil {
 		go func() {
-			if err := bot.Run(ctx); err != nil && ctx.Err() == nil {
-				logger.Error("Socket Mode bot stopped", "error", err)
+			backoff := time.Second
+			const maxBackoff = 30 * time.Second
+			for {
+				if err := bot.Run(ctx); err != nil && ctx.Err() == nil {
+					logger.Error("Socket Mode bot stopped, reconnecting", "error", err, "backoff", backoff)
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				backoff = min(backoff*2, maxBackoff)
 			}
 		}()
 	}
