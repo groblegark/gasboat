@@ -112,6 +112,13 @@ agents:
   # Injected as CLAUDE_CODE_OAUTH_TOKEN env var. Coop auto-writes .credentials.json
   # when this is set — preferred over the static credentials secret mount.
   claudeOAuthTokenSecret: ""
+  claudeOAuthTokenExternalSecret:
+    enabled: false
+    secretStoreName: "secretstore"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "15m"
+    remoteRef: ""
+    tokenProperty: "token"
 
   # K8s secret with Anthropic API key (key: "key").
   # Injected as ANTHROPIC_API_KEY env var. Fallback when OAuth is unavailable.
