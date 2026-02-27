@@ -86,6 +86,10 @@ func configs() map[string]any {
 				{Name: "pod_ready", Type: "boolean"},
 				{Name: "coop_url", Type: "string"},
 				{Name: "coop_token", Type: "string"},
+				// Session gate state written by gb yield / gb gate mark.
+				{Name: "gate_satisfied_by", Type: "enum", Values: []string{"yield", "operator"}},
+				// Stop request set by gb stop.
+				{Name: "stop_requested", Type: "boolean"},
 				// Per-agent overrides (optional).
 				{Name: "image", Type: "string"},
 				{Name: "mock_scenario", Type: "string"},
