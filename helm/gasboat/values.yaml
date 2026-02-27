@@ -81,6 +81,14 @@ agents:
     name: ""        # defaults to "<release>-agent"
     annotations: {}
 
+  # Optional cluster-admin ServiceAccount for agent pods that need full cluster access.
+  # Creates a separate SA + ClusterRoleBinding to the built-in cluster-admin ClusterRole.
+  # Assign to specific projects via the project bead's service_account field.
+  clusterAdmin:
+    enabled: false
+    name: ""          # defaults to "<release>-agent-cluster-admin"
+    annotations: {}
+
   # Default StorageClass for agent workspace PVCs (e.g., "gp2").
   # If empty, uses cluster default. Project beads can override per-project.
   agentStorageClass: ""

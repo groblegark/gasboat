@@ -136,12 +136,13 @@ func (c *Client) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 
 // ProjectInfo represents a registered project from daemon project beads.
 type ProjectInfo struct {
-	Name          string // Project name (from bead title)
-	Prefix        string // Beads prefix (e.g., "kd", "bot")
-	GitURL        string // Repository URL
-	DefaultBranch string // Default branch (e.g., "main")
-	Image         string // Per-project agent image override
-	StorageClass  string // Per-project PVC storage class override
+	Name           string // Project name (from bead title)
+	Prefix         string // Beads prefix (e.g., "kd", "bot")
+	GitURL         string // Repository URL
+	DefaultBranch  string // Default branch (e.g., "main")
+	Image          string // Per-project agent image override
+	StorageClass   string // Per-project PVC storage class override
+	ServiceAccount string // Per-project K8s ServiceAccount override
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
@@ -159,12 +160,13 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 		name := strings.TrimPrefix(b.Title, "Project: ")
 		fields := b.fieldsMap()
 		info := ProjectInfo{
-			Name:          name,
-			Prefix:        fields["prefix"],
-			GitURL:        fields["git_url"],
-			DefaultBranch: fields["default_branch"],
-			Image:         fields["image"],
-			StorageClass:  fields["storage_class"],
+			Name:           name,
+			Prefix:         fields["prefix"],
+			GitURL:         fields["git_url"],
+			DefaultBranch:  fields["default_branch"],
+			Image:          fields["image"],
+			StorageClass:   fields["storage_class"],
+			ServiceAccount: fields["service_account"],
 		}
 		if name != "" {
 			rigs[name] = info

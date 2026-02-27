@@ -98,6 +98,14 @@ Defaults to "<release>-agent" when agents.agentServiceAccount.create is true.
 {{- end }}
 
 {{/*
+Agent Pod cluster-admin service account name — elevated SA for projects that need
+full cluster access. Defaults to "<release>-agent-cluster-admin".
+*/}}
+{{- define "gasboat.coop.clusterAdminServiceAccountName" -}}
+{{- default (printf "%s-agent-cluster-admin" (include "gasboat.fullname" .)) .Values.agents.clusterAdmin.name }}
+{{- end }}
+
+{{/*
 Agent Pod labels
 */}}
 {{- define "gasboat.coop.labels" -}}

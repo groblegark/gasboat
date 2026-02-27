@@ -152,8 +152,9 @@ type ProjectCacheEntry struct {
 	DefaultBranch string // e.g., "main"
 
 	// Per-project pod customization (from project bead labels).
-	Image        string // Override agent image for this project
-	StorageClass string // Override PVC storage class
+	Image          string // Override agent image for this project
+	StorageClass   string // Override PVC storage class
+	ServiceAccount string // Override K8s ServiceAccount for this project's agents
 }
 
 // Parse reads configuration from environment variables.

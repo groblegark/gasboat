@@ -1,0 +1,28 @@
+{{- if and .Values.agents.enabled .Values.agents.clusterAdmin.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gasboat.coop.clusterAdminServiceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.coop.labels" . | nindent 4 }}
+  {{- with .Values.agents.clusterAdmin.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "gasboat.coop.clusterAdminServiceAccountName" . }}
+  labels:
+    {{- include "gasboat.coop.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gasboat.coop.clusterAdminServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

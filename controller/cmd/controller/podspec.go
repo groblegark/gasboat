@@ -124,6 +124,9 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	if entry.StorageClass != "" && spec.WorkspaceStorage != nil {
 		spec.WorkspaceStorage.StorageClassName = entry.StorageClass
 	}
+	if entry.ServiceAccount != "" {
+		spec.ServiceAccountName = entry.ServiceAccount
+	}
 }
 
 // applyCommonConfig wires controller-level config into an AgentPodSpec.
