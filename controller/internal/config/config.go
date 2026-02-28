@@ -180,6 +180,7 @@ type ProjectCacheEntry struct {
 	Image          string // Override agent image for this project
 	StorageClass   string // Override PVC storage class
 	ServiceAccount string // Override K8s ServiceAccount for this project's agents
+	RTKEnabled     bool   // Enable RTK token optimization for this project's agents
 
 	// Per-project secret overrides (merged with globals at pod creation).
 	Secrets []beadsapi.SecretEntry

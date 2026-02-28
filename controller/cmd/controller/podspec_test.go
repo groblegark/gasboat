@@ -6,6 +6,7 @@ import (
 	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
+	"gasboat/controller/internal/subscriber"
 )
 
 func TestOverrideOrAppendSecretEnv_OverridesExisting(t *testing.T) {
@@ -279,6 +280,84 @@ func TestApplyCommonConfig_RejectsSecretWithWrongPrefix(t *testing.T) {
 	}
 	if envNames["BAD_SECRET"] {
 		t.Error("expected BAD_SECRET to be skipped (wrong prefix)")
+	}
+}
+
+func TestApplyProjectDefaults_RTKEnabled(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {
+				RTKEnabled: true,
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "myproject",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Env["RTK_ENABLED"] != "true" {
+		t.Errorf("expected RTK_ENABLED=true, got %q", spec.Env["RTK_ENABLED"])
+	}
+}
+
+func TestApplyProjectDefaults_RTKDisabledByDefault(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "myproject",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if _, ok := spec.Env["RTK_ENABLED"]; ok {
+		t.Error("expected RTK_ENABLED to not be set when project has RTK disabled")
+	}
+}
+
+func TestBuildAgentPodSpec_RTKAgentOverrideDisable(t *testing.T) {
+	cfg := &config.Config{
+		Namespace: "test",
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {
+				RTKEnabled: true,
+			},
+		},
+	}
+	event := subscriber.Event{
+		Project:   "myproject",
+		Role:      "crew",
+		AgentName: "agent1",
+		Metadata:  map[string]string{"rtk_enabled": "false"},
+	}
+	spec := buildAgentPodSpec(cfg, event)
+
+	if _, ok := spec.Env["RTK_ENABLED"]; ok {
+		t.Error("expected RTK_ENABLED to be removed by agent-level override")
+	}
+}
+
+func TestBuildAgentPodSpec_RTKAgentOverrideEnable(t *testing.T) {
+	cfg := &config.Config{
+		Namespace: "test",
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {},
+		},
+	}
+	event := subscriber.Event{
+		Project:   "myproject",
+		Role:      "crew",
+		AgentName: "agent1",
+		Metadata:  map[string]string{"rtk_enabled": "true"},
+	}
+	spec := buildAgentPodSpec(cfg, event)
+
+	if spec.Env["RTK_ENABLED"] != "true" {
+		t.Errorf("expected RTK_ENABLED=true from agent override, got %q", spec.Env["RTK_ENABLED"])
 	}
 }
 

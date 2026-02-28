@@ -54,6 +54,13 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 	// Apply project-level overrides from project bead metadata.
 	applyProjectDefaults(cfg, &spec)
 
+	// Agent-level RTK override.
+	if metadata["rtk_enabled"] == "false" {
+		delete(spec.Env, "RTK_ENABLED")
+	} else if metadata["rtk_enabled"] == "true" {
+		spec.Env["RTK_ENABLED"] = "true"
+	}
+
 	applyCommonConfig(cfg, &spec)
 
 	// Mock mode: override BOAT_COMMAND to run claudeless with a scenario file.
@@ -99,6 +106,14 @@ func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.Ag
 		spec.ConfigMapName = cm
 	}
 
+	// Agent-level RTK override: force-disable RTK for this agent even if the
+	// project has it enabled. Set rtk_enabled=false on the agent bead to opt out.
+	if event.Metadata["rtk_enabled"] == "false" {
+		delete(spec.Env, "RTK_ENABLED")
+	} else if event.Metadata["rtk_enabled"] == "true" {
+		spec.Env["RTK_ENABLED"] = "true"
+	}
+
 	// Mock mode: override BOAT_COMMAND to run claudeless with a scenario file.
 	if scenario := event.Metadata["mock_scenario"]; scenario != "" {
 		spec.Env["BOAT_COMMAND"] = fmt.Sprintf("claudeless --scenario /scenarios/%s.toml --dangerously-skip-permissions", scenario)
@@ -125,6 +140,9 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	}
 	if entry.ServiceAccount != "" {
 		spec.ServiceAccountName = entry.ServiceAccount
+	}
+	if entry.RTKEnabled {
+		spec.Env["RTK_ENABLED"] = "true"
 	}
 }
 

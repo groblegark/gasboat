@@ -159,6 +159,7 @@ type ProjectInfo struct {
 	Image          string // Per-project agent image override
 	StorageClass   string // Per-project PVC storage class override
 	ServiceAccount string // Per-project K8s ServiceAccount override
+	RTKEnabled     bool   // Enable RTK token optimization for this project
 	Secrets        []SecretEntry // Per-project secret overrides
 	Repos          []RepoEntry   // Multi-repo definitions
 }
@@ -185,6 +186,7 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			Image:          fields["image"],
 			StorageClass:   fields["storage_class"],
 			ServiceAccount: fields["service_account"],
+			RTKEnabled:     fields["rtk_enabled"] == "true",
 		}
 		// Parse per-project secrets from JSON field.
 		if raw := fields["secrets"]; raw != "" {
