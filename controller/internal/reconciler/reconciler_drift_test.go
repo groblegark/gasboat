@@ -269,7 +269,7 @@ func TestReconcile_PodListError_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestReconcile_PodCreateError_ReturnsError(t *testing.T) {
+func TestReconcile_PodCreateError_ContinuesGracefully(t *testing.T) {
 	lister := &mockLister{
 		beads: []beadsapi.AgentBead{
 			{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "alpha"},
@@ -282,8 +282,8 @@ func TestReconcile_PodCreateError_ReturnsError(t *testing.T) {
 
 	r := New(lister, mgr, testConfig("ns"), testLogger(), simpleSpecBuilder("img:v1"))
 	err := r.Reconcile(context.Background())
-	if err == nil {
-		t.Fatal("expected error when pod creation fails")
+	if err != nil {
+		t.Fatalf("expected graceful continue on pod create error, got: %v", err)
 	}
 }
 
