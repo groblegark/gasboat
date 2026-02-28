@@ -267,8 +267,8 @@ if [ "${MOCK_MODE}" = "1" ]; then
     echo '{}' > "${CLAUDE_DIR}/settings.json"
 else
 
-# Start with base settings JSON (permissions + LSP plugins).
-SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}'
+# Start with base settings JSON (permissions + LSP plugins + thinking enabled).
+SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]},"alwaysThinkingEnabled":true}'
 
 # Enable LSP plugins (gopls + rust-analyzer are always present in the agent image).
 PLUGINS_JSON=""
