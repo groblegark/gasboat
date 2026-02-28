@@ -408,6 +408,11 @@ func refreshProjectCache(ctx context.Context, logger *slog.Logger, daemon *beads
 			Image:          info.Image,
 			StorageClass:   info.StorageClass,
 			ServiceAccount: info.ServiceAccount,
+			CPURequest:     info.CPURequest,
+			CPULimit:       info.CPULimit,
+			MemoryRequest:  info.MemoryRequest,
+			MemoryLimit:    info.MemoryLimit,
+			EnvOverrides:   info.EnvOverrides,
 			Secrets:        info.Secrets,
 			Repos:          info.Repos,
 		}

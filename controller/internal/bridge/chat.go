@@ -187,27 +187,15 @@ func hasLabel(labels []string, target string) bool {
 	return false
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge.
+// nudgeAgent delivers a chat nudge to the assigned agent with retry.
 func (c *Chat) nudgeAgent(ctx context.Context, bead BeadEvent) {
 	agentName := bead.Assignee
 	if agentName == "" {
 		return
 	}
 
-	agentBead, err := c.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		c.logger.Debug("could not find agent bead for chat nudge",
-			"agent", agentName, "bead", bead.ID)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		return
-	}
-
 	message := fmt.Sprintf("Chat task completed: %s", bead.Title)
-	if err := nudgeCoop(ctx, c.httpClient, coopURL, message); err != nil {
+	if err := NudgeAgent(ctx, c.daemon, c.httpClient, c.logger, agentName, message); err != nil {
 		c.logger.Error("failed to nudge agent for chat",
 			"agent", agentName, "error", err)
 	}

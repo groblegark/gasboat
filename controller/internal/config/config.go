@@ -162,6 +162,15 @@ type ProjectCacheEntry struct {
 	StorageClass   string // Override PVC storage class
 	ServiceAccount string // Override K8s ServiceAccount for this project's agents
 
+	// Per-project resource overrides (Kubernetes quantity strings, e.g. "500m", "2Gi").
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// Per-project environment variable overrides (merged into pod env).
+	EnvOverrides map[string]string
+
 	// Per-project secret overrides (merged with globals at pod creation).
 	Secrets []beadsapi.SecretEntry
 	// Multi-repo definitions (primary + reference repos).
