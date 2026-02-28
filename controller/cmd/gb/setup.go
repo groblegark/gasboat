@@ -121,7 +121,9 @@ func rtkEnabled() bool {
 	return v == "true" || v == "1"
 }
 
-// appendRTKHooks adds the RTK PreToolUse hook to settings when RTK is enabled.
+// appendRTKHooks adds RTK hooks to settings when RTK is enabled:
+// - PreToolUse:Bash — rewrites commands through rtk
+// - Stop — reports token savings before the stop-gate
 func appendRTKHooks(settings map[string]any) {
 	if !rtkEnabled() {
 		return
@@ -133,7 +135,8 @@ func appendRTKHooks(settings map[string]any) {
 		settings["hooks"] = hooks
 	}
 
-	rtkHook := map[string]any{
+	// PreToolUse: rewrite Bash commands through RTK.
+	rtkRewriteHook := map[string]any{
 		"matcher": "Bash",
 		"hooks": []any{
 			map[string]any{
@@ -142,13 +145,22 @@ func appendRTKHooks(settings map[string]any) {
 			},
 		},
 	}
-
 	preToolUse, ok := hooks["PreToolUse"].([]any)
 	if !ok {
 		preToolUse = []any{}
 	}
-	hooks["PreToolUse"] = append(preToolUse, rtkHook)
-	fmt.Fprintf(os.Stderr, "[setup] RTK PreToolUse hook enabled\n")
+	hooks["PreToolUse"] = append(preToolUse, rtkRewriteHook)
+
+	// Stop: report token savings (runs before stop-gate).
+	// Prepend so it runs before stop-gate which may block with exit code 2.
+	rtkReportHook := hookEntry("/hooks/rtk-report.sh 2>/dev/null || true")
+	stopHooks, ok := hooks["Stop"].([]any)
+	if !ok {
+		stopHooks = []any{}
+	}
+	hooks["Stop"] = append([]any{rtkReportHook}, stopHooks...)
+
+	fmt.Fprintf(os.Stderr, "[setup] RTK hooks enabled (PreToolUse + Stop report)\n")
 }
 
 func runSetupClaudeDefaults(workspace string) error {
