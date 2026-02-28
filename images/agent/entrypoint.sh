@@ -451,12 +451,13 @@ auto_bypass_startup() {
         if [ "${agent_state}" = "starting" ]; then
             screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
 
-            # Handle "Resume Session" picker — press Escape to start fresh.
+            # Handle "Resume Session" picker — press Enter to resume the most recent session.
+            # Previously pressed Escape which caused a new .jsonl to accumulate on the PVC.
             if echo "${screen}" | grep -q "Resume Session"; then
-                echo "[entrypoint] Detected resume session picker, pressing Escape to start fresh"
+                echo "[entrypoint] Detected resume session picker, selecting resume"
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
-                    -d '{"keys":["Escape"]}' 2>&1 || true
+                    -d '{"keys":["Return"]}' 2>&1 || true
                 sleep 3
                 continue
             fi
