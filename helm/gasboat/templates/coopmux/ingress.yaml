@@ -96,7 +96,7 @@ metadata:
     {{- include "gasboat.coopmux.labels" . | nindent 4 }}
 spec:
   basicAuth:
-    secret: {{ .Values.coopmux.ingress.basicAuth.secret }}
+    secret: {{ include "gasboat.basicAuth.secret" (dict "local" .Values.coopmux.ingress.basicAuth.secret "global" .Values.global.basicAuth.secret) }}
 {{- end }}
 {{- if .Values.coopmux.ingress.rateLimit.enabled }}
 ---

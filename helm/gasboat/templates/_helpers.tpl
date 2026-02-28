@@ -193,6 +193,18 @@ Accepts a dict with "fullname" and "Values" keys plus an "includeBasicAuth" bool
 {{- end }}
 {{- end }}
 
+{{/*
+Resolve basic auth secret — returns per-service override if set, otherwise global.
+Usage: include "gasboat.basicAuth.secret" (dict "local" .Values.coopmux.ingress.basicAuth.secret "global" .Values.global.basicAuth.secret)
+*/}}
+{{- define "gasboat.basicAuth.secret" -}}
+{{- if .local -}}
+{{- .local -}}
+{{- else -}}
+{{- .global -}}
+{{- end -}}
+{{- end }}
+
 {{/* ===== PostgreSQL component helpers ===== */}}
 
 {{/*
