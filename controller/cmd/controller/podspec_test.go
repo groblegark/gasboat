@@ -71,7 +71,7 @@ func TestApplyCommonConfig_PerProjectSecretOverride(t *testing.T) {
 		ProjectCache: map[string]config.ProjectCacheEntry{
 			"myproject": {
 				Secrets: []beadsapi.SecretEntry{
-					{Env: "GITHUB_TOKEN", Secret: "project-gh-token", Key: "my-token"},
+					{Env: "GITHUB_TOKEN", Secret: "myproject-gh-token", Key: "my-token"},
 				},
 			},
 		},
@@ -87,8 +87,8 @@ func TestApplyCommonConfig_PerProjectSecretOverride(t *testing.T) {
 	for _, se := range spec.SecretEnv {
 		if se.EnvName == "GITHUB_TOKEN" {
 			found = true
-			if se.SecretName != "project-gh-token" {
-				t.Errorf("expected SecretName project-gh-token, got %s", se.SecretName)
+			if se.SecretName != "myproject-gh-token" {
+				t.Errorf("expected SecretName myproject-gh-token, got %s", se.SecretName)
 			}
 			if se.SecretKey != "my-token" {
 				t.Errorf("expected SecretKey my-token, got %s", se.SecretKey)
@@ -106,7 +106,7 @@ func TestApplyCommonConfig_PerProjectSecretAdditive(t *testing.T) {
 		ProjectCache: map[string]config.ProjectCacheEntry{
 			"myproject": {
 				Secrets: []beadsapi.SecretEntry{
-					{Env: "JIRA_API_TOKEN", Secret: "proj-jira", Key: "api-token"},
+					{Env: "JIRA_API_TOKEN", Secret: "myproject-jira", Key: "api-token"},
 				},
 			},
 		},
@@ -136,7 +136,7 @@ func TestApplyCommonConfig_GitCredentialOverride(t *testing.T) {
 		ProjectCache: map[string]config.ProjectCacheEntry{
 			"myproject": {
 				Secrets: []beadsapi.SecretEntry{
-					{Env: "GIT_TOKEN", Secret: "project-git-creds", Key: "token"},
+					{Env: "GIT_TOKEN", Secret: "myproject-git-creds", Key: "token"},
 				},
 			},
 		},
@@ -147,8 +147,8 @@ func TestApplyCommonConfig_GitCredentialOverride(t *testing.T) {
 	}
 	applyCommonConfig(cfg, spec)
 
-	if spec.GitCredentialsSecret != "project-git-creds" {
-		t.Errorf("expected GitCredentialsSecret project-git-creds, got %s", spec.GitCredentialsSecret)
+	if spec.GitCredentialsSecret != "myproject-git-creds" {
+		t.Errorf("expected GitCredentialsSecret myproject-git-creds, got %s", spec.GitCredentialsSecret)
 	}
 }
 
@@ -242,6 +242,43 @@ func TestApplyCommonConfig_LegacySingleRepo(t *testing.T) {
 	}
 	if len(spec.ReferenceRepos) != 0 {
 		t.Errorf("expected no reference repos, got %d", len(spec.ReferenceRepos))
+	}
+}
+
+func TestApplyCommonConfig_RejectsSecretWithWrongPrefix(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {
+				Secrets: []beadsapi.SecretEntry{
+					// Valid: starts with "myproject-"
+					{Env: "VALID_TOKEN", Secret: "myproject-creds", Key: "token"},
+					// Invalid: starts with "pihealth-" instead of "myproject-"
+					{Env: "INVALID_TOKEN", Secret: "pihealth-jira", Key: "api-token"},
+					// Invalid: no prefix at all
+					{Env: "BAD_SECRET", Secret: "shared-secret", Key: "key"},
+				},
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "myproject",
+		Env:     map[string]string{},
+	}
+	applyCommonConfig(cfg, spec)
+
+	// Only the valid secret should be present.
+	envNames := map[string]bool{}
+	for _, se := range spec.SecretEnv {
+		envNames[se.EnvName] = true
+	}
+	if !envNames["VALID_TOKEN"] {
+		t.Error("expected VALID_TOKEN to be present (valid prefix)")
+	}
+	if envNames["INVALID_TOKEN"] {
+		t.Error("expected INVALID_TOKEN to be skipped (wrong prefix)")
+	}
+	if envNames["BAD_SECRET"] {
+		t.Error("expected BAD_SECRET to be skipped (wrong prefix)")
 	}
 }
 

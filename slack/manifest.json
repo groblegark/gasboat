@@ -35,13 +35,19 @@
       {
         "command": "/spawn",
         "description": "Spawn a new agent",
-        "usage_hint": "<agent> [project]",
+        "usage_hint": "<agent> [project] [task] [--role <role>]",
         "should_escape": false
       },
       {
         "command": "/kill",
         "description": "Terminate a running agent",
-        "usage_hint": "<agent>",
+        "usage_hint": "<agent> [--force]",
+        "should_escape": false
+      },
+      {
+        "command": "/unreleased",
+        "description": "Show unreleased changes across tracked repos",
+        "usage_hint": "",
         "should_escape": false
       }
     ]

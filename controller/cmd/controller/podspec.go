@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"gasboat/controller/internal/config"
@@ -322,8 +323,14 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 
 	// Per-project secret overrides: merge project secrets on top of globals.
 	// Matching env names replace the global entry; new env names are additive.
+	// Secrets must be named "{project}-*" to prevent cross-project access.
 	if entry, ok := cfg.ProjectCache[spec.Project]; ok {
 		for _, ps := range entry.Secrets {
+			if !strings.HasPrefix(ps.Secret, spec.Project+"-") {
+				slog.Warn("skipping secret with invalid prefix",
+					"secret", ps.Secret, "project", spec.Project)
+				continue
+			}
 			src := podmanager.SecretEnvSource{
 				EnvName: ps.Env, SecretName: ps.Secret, SecretKey: ps.Key,
 			}

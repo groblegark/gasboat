@@ -179,6 +179,20 @@ spec:
             - name: BEADS_E2E_HTTP_ADDR
               value: {{ .Values.agents.beadsE2EHTTPAddr }}
             {{- end }}
+            {{- if .Values.agents.externalSecretStore }}
+            {{- if .Values.agents.externalSecretStore.name }}
+            - name: EXTERNAL_SECRET_STORE_NAME
+              value: {{ .Values.agents.externalSecretStore.name }}
+            {{- end }}
+            {{- if .Values.agents.externalSecretStore.kind }}
+            - name: EXTERNAL_SECRET_STORE_KIND
+              value: {{ .Values.agents.externalSecretStore.kind }}
+            {{- end }}
+            {{- if .Values.agents.externalSecretStore.refreshInterval }}
+            - name: EXTERNAL_SECRET_REFRESH_INTERVAL
+              value: {{ .Values.agents.externalSecretStore.refreshInterval | quote }}
+            {{- end }}
+            {{- end }}
             # Slack env vars removed — now handled by slack-bridge container (bd-8x8fy).
           resources:
             {{- toYaml .Values.agents.resources | nindent 12 }}

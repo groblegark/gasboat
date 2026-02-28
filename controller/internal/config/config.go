@@ -144,6 +144,20 @@ type Config struct {
 	// Slack notifications are now handled by the standalone slack-bridge
 	// binary (cmd/slack-bridge). Slack config fields removed — see bd-8x8fy.
 
+	// --- ExternalSecret Reconciliation ---
+
+	// ExternalSecretStoreName is the SecretStore name for auto-reconciled ExternalSecrets
+	// (env: EXTERNAL_SECRET_STORE_NAME). Default: "secretstore".
+	ExternalSecretStoreName string
+
+	// ExternalSecretStoreKind is the SecretStore kind for auto-reconciled ExternalSecrets
+	// (env: EXTERNAL_SECRET_STORE_KIND). Default: "ClusterSecretStore".
+	ExternalSecretStoreKind string
+
+	// ExternalSecretRefreshInterval is the refresh interval for auto-reconciled ExternalSecrets
+	// (env: EXTERNAL_SECRET_REFRESH_INTERVAL). Default: "15m".
+	ExternalSecretRefreshInterval string
+
 	// --- Controller ---
 
 	// LogLevel controls log verbosity: debug, info, warn, error (env: LOG_LEVEL).
@@ -218,6 +232,11 @@ func Parse() *Config {
 		LeaderElectionIdentity: envOr("POD_NAME", hostname()),
 
 		// Slack config removed — handled by standalone slack-bridge (bd-8x8fy).
+
+		// ExternalSecret Reconciliation
+		ExternalSecretStoreName:       envOr("EXTERNAL_SECRET_STORE_NAME", "secretstore"),
+		ExternalSecretStoreKind:       envOr("EXTERNAL_SECRET_STORE_KIND", "ClusterSecretStore"),
+		ExternalSecretRefreshInterval: envOr("EXTERNAL_SECRET_REFRESH_INTERVAL", "15m"),
 
 		// Controller
 		LogLevel: envOr("LOG_LEVEL", "info"),

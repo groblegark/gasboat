@@ -27,11 +27,14 @@ import (
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
+	"k8s.io/client-go/dynamic"
+
 	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/bridge"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/reconciler"
+	"gasboat/controller/internal/secretreconciler"
 	"gasboat/controller/internal/statusreporter"
 	"gasboat/controller/internal/subscriber"
 )
@@ -54,6 +57,25 @@ func main() {
 		logger.Error("failed to create K8s client", "error", err)
 		os.Exit(1)
 	}
+
+	// Build dynamic client for ExternalSecret reconciliation.
+	k8sCfg, err := buildK8sConfig(cfg.KubeConfig)
+	if err != nil {
+		logger.Error("failed to build K8s config for dynamic client", "error", err)
+		os.Exit(1)
+	}
+	dynClient, err := dynamic.NewForConfig(k8sCfg)
+	if err != nil {
+		logger.Error("failed to create dynamic K8s client", "error", err)
+		os.Exit(1)
+	}
+	secretRec := secretreconciler.New(
+		dynClient, cfg.Namespace,
+		cfg.ExternalSecretStoreName,
+		cfg.ExternalSecretStoreKind,
+		cfg.ExternalSecretRefreshInterval,
+		logger,
+	)
 
 	watcher := subscriber.NewSSEWatcher(subscriber.SSEConfig{
 		BeadsHTTPAddr: cfg.BeadsHTTPAddr,
@@ -125,7 +147,7 @@ func main() {
 	defer cancel()
 
 	runFn := func(ctx context.Context) {
-		if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon); err != nil {
+		if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon, secretRec); err != nil {
 			logger.Error("controller stopped", "error", err)
 			os.Exit(1)
 		}
@@ -186,7 +208,7 @@ func runLeaderElection(ctx context.Context, logger *slog.Logger, cfg *config.Con
 
 // run is the main controller loop. It reads beads events and dispatches
 // pod operations. Separated from main() for testability.
-func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client) error {
+func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, secretRec *secretreconciler.Reconciler) error {
 	// Run reconciler once at startup to catch beads created during downtime.
 	if rec != nil {
 		logger.Info("running startup reconciliation")
@@ -223,7 +245,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 			logger.Info("seeded image digest tracker", "image", cfg.CoopImage, "digest", truncForLog(digest))
 		}()
 	}
-	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval)
+	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval, secretRec)
 
 	logger.Info("controller ready, waiting for beads events",
 		"sync_interval", syncInterval)
@@ -249,7 +271,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 }
 
 // runPeriodicSync runs SyncAll, project cache refresh, and reconciliation at a regular interval.
-func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, cfg *config.Config, interval time.Duration) {
+func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, cfg *config.Config, interval time.Duration, secretRec *secretreconciler.Reconciler) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -266,6 +288,12 @@ func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusrepo
 			}
 			// Refresh project cache from daemon.
 			refreshProjectCache(ctx, logger, daemon, cfg)
+			// Reconcile ExternalSecrets from project bead secrets.
+			if secretRec != nil {
+				if err := secretRec.Reconcile(ctx, cfg.ProjectCache); err != nil {
+					logger.Warn("ExternalSecret reconciliation failed", "error", err)
+				}
+			}
 			// Periodically check the OCI registry for image digest updates.
 			digestCheckCounter++
 			if rec != nil && digestCheckCounter >= digestCheckInterval {
@@ -377,19 +405,18 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 	}
 }
 
-func buildK8sClient(kubeconfig string) (kubernetes.Interface, error) {
-	var cfg *rest.Config
-	var err error
-
+func buildK8sConfig(kubeconfig string) (*rest.Config, error) {
 	if kubeconfig != "" {
-		cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		cfg, err = rest.InClusterConfig()
+		return clientcmd.BuildConfigFromFlags("", kubeconfig)
 	}
+	return rest.InClusterConfig()
+}
+
+func buildK8sClient(kubeconfig string) (kubernetes.Interface, error) {
+	cfg, err := buildK8sConfig(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("building k8s config: %w", err)
 	}
-
 	return kubernetes.NewForConfig(cfg)
 }
 
