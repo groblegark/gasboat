@@ -696,6 +696,10 @@ monitor_agent_exit() {
                 -d '{"keys":["Return"]}' 2>/dev/null || true
             last_msg=$(echo "${state}" | jq -r '.last_message // empty' 2>/dev/null)
             echo "[entrypoint] Rate limit info: ${last_msg}"
+            # Report rate_limited status to the agent bead.
+            if [ -n "${KD_AGENT_ID:-}" ] && command -v kd &>/dev/null; then
+                kd update "${KD_AGENT_ID}" -f agent_state=rate_limited 2>/dev/null || true
+            fi
             # Write sentinel so the restart loop knows to sleep until reset.
             echo "${last_msg}" > /tmp/rate_limit_reset
             sleep 2

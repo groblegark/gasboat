@@ -177,6 +177,14 @@ func monitorAgentExit(ctx context.Context, coopPort int) {
 			postKeys(client, base, "Return")
 			lastMsg, _ := state["last_message"].(string)
 			fmt.Printf("[gb agent start] rate limit info: %s\n", lastMsg)
+			// Report rate_limited status to the agent bead.
+			if agentBeadID := envOr("KD_AGENT_ID", os.Getenv("BOAT_AGENT_BEAD_ID")); agentBeadID != "" && daemon != nil {
+				updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := daemon.UpdateAgentState(updateCtx, agentBeadID, "rate_limited"); err != nil {
+					fmt.Printf("[gb agent start] warning: update agent_state: %v\n", err)
+				}
+				cancel()
+			}
 			// Write sentinel so the restart loop knows to sleep until reset.
 			_ = os.WriteFile("/tmp/rate_limit_reset", []byte(lastMsg), 0644)
 			time.Sleep(2 * time.Second)
