@@ -38,7 +38,7 @@ var readyCmd = &cobra.Command{
 			return fmt.Errorf("listing ready beads: %w", err)
 		}
 
-		beads := filterOutNoiseTypes(result.Beads)
+		beads := filterToIssueKind(result.Beads)
 		if jsonOutput {
 			printJSON(beads)
 		} else if len(beads) == 0 {

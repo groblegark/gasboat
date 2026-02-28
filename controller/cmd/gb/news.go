@@ -78,8 +78,8 @@ func runNews(cmd *cobra.Command, args []string) error {
 		ipBeads = filterOutAssignee(ipBeads, actor)
 		closedBeads = filterOutAssignee(closedBeads, actor)
 	}
-	ipBeads = filterOutNoiseTypes(ipBeads)
-	closedBeads = filterOutNoiseTypes(closedBeads)
+	ipBeads = filterToIssueKind(ipBeads)
+	closedBeads = filterToIssueKind(closedBeads)
 
 	if len(ipBeads) == 0 && len(closedBeads) == 0 {
 		fmt.Fprintf(os.Stdout, "\nNo recent activity (last %s)\n\n", windowStr)
@@ -153,16 +153,12 @@ func filterRecentlyClosed(beads []*beadsapi.BeadDetail, window time.Duration) []
 	return filtered
 }
 
-var noiseTypes = map[string]bool{
-	"decision": true, "gate": true, "config": true, "advice": true,
-	"message": true, "formula": true, "molecule": true, "runbook": true,
-	"artifact": true, "mention": true, "mail": true,
-}
-
-func filterOutNoiseTypes(beads []*beadsapi.BeadDetail) []*beadsapi.BeadDetail {
+// filterToIssueKind returns only issue-kind beads, filtering out
+// infrastructure (data, config) beads that are noise in agent views.
+func filterToIssueKind(beads []*beadsapi.BeadDetail) []*beadsapi.BeadDetail {
 	var filtered []*beadsapi.BeadDetail
 	for _, b := range beads {
-		if noiseTypes[b.Type] {
+		if b.Kind != "issue" {
 			continue
 		}
 		filtered = append(filtered, b)
