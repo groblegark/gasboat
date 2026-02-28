@@ -3,9 +3,7 @@ package bridge
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
 
 	"gasboat/controller/internal/beadsapi"
 
@@ -141,29 +139,18 @@ func stripBotMention(text, botUserID string) string {
 	return strings.TrimSpace(text)
 }
 
-// nudgeAgentForMention looks up the agent's coop_url and sends a nudge with the mention text.
+// nudgeAgentForMention sends a nudge to the agent with the mention text.
 func (b *Bot) nudgeAgentForMention(ctx context.Context, agent, text, beadID string) {
+	if b.nudger == nil {
+		return
+	}
+
 	agentName := extractAgentName(agent)
 
-	agentBead, err := b.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		b.logger.Debug("could not find agent bead for mention nudge",
-			"agent", agentName, "bead", beadID)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		b.logger.Debug("agent bead has no coop_url for mention nudge",
-			"agent", agentName, "bead", beadID)
-		return
-	}
-
 	message := fmt.Sprintf("Slack mention (bead %s): %s", beadID, text)
-	client := &http.Client{Timeout: 10 * time.Second}
-	if err := nudgeCoop(ctx, client, coopURL, message); err != nil {
+	if err := b.nudger.NudgeAgent(ctx, agentName, message); err != nil {
 		b.logger.Error("failed to nudge agent for mention",
-			"agent", agentName, "coop_url", coopURL, "error", err)
+			"agent", agentName, "bead", beadID, "error", err)
 		return
 	}
 

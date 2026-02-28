@@ -57,6 +57,12 @@ func main() {
 		logger.Warn("failed to ensure beads configs (non-fatal)", "error", err)
 	}
 
+	// Shared nudger for all watchers that need to nudge agents via coop.
+	nudger := bridge.NewNudger(bridge.NudgerConfig{
+		Daemon: daemon,
+		Logger: logger,
+	})
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -97,6 +103,7 @@ func main() {
 			ThreadingMode: cfg.threadingMode,
 			Daemon:        daemon,
 			State:         state,
+			Nudger:        nudger,
 			Logger:        logger,
 			Debug:         cfg.debug,
 			GitHubToken:   cfg.githubToken,
@@ -174,6 +181,7 @@ func main() {
 		Daemon:   daemon,
 		Notifier: notifier,
 		Logger:   logger,
+		Nudger:   nudger,
 	})
 	decisions.RegisterHandlers(sseStream)
 
@@ -181,6 +189,7 @@ func main() {
 	mail := bridge.NewMail(bridge.MailConfig{
 		Daemon: daemon,
 		Logger: logger,
+		Nudger: nudger,
 	})
 	mail.RegisterHandlers(sseStream)
 
@@ -213,6 +222,7 @@ func main() {
 			Bot:    bot,
 			State:  state,
 			Logger: logger,
+			Nudger: nudger,
 		})
 		chat.RegisterHandlers(sseStream)
 	}
@@ -237,6 +247,7 @@ func main() {
 	claimed := bridge.NewClaimed(bridge.ClaimedConfig{
 		Daemon: daemon,
 		Logger: logger,
+		Nudger: nudger,
 	})
 	claimed.RegisterHandlers(sseStream)
 

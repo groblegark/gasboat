@@ -74,11 +74,16 @@ func TestClaimed_HandleUpdated_ClaimedTask_Nudges(t *testing.T) {
 		Notes: "coop_url: " + coopServer.URL,
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	c := &Claimed{
-		daemon:     daemon,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		nudged:     make(map[string]time.Time),
+		daemon: daemon,
+		logger: slog.Default(),
+		nudger: nudger,
+		nudged: make(map[string]time.Time),
 	}
 
 	data := marshalSSEBeadPayload(BeadEvent{
@@ -125,11 +130,16 @@ func TestClaimed_HandleUpdated_RateLimit_SecondNudgeSuppressed(t *testing.T) {
 		Notes: "coop_url: " + coopServer.URL,
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	c := &Claimed{
-		daemon:     daemon,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		nudged:     make(map[string]time.Time),
+		daemon: daemon,
+		logger: slog.Default(),
+		nudger: nudger,
+		nudged: make(map[string]time.Time),
 	}
 
 	data := marshalSSEBeadPayload(BeadEvent{
@@ -178,11 +188,16 @@ func TestClaimed_HandleUpdated_DifferentBeads_BothNudge(t *testing.T) {
 		Notes: "coop_url: " + coopServer.URL,
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	c := &Claimed{
-		daemon:     daemon,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-		nudged:     make(map[string]time.Time),
+		daemon: daemon,
+		logger: slog.Default(),
+		nudger: nudger,
+		nudged: make(map[string]time.Time),
 	}
 
 	// Two different beads — each should get its own nudge.

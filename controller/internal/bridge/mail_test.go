@@ -50,10 +50,15 @@ func TestMail_HandleCreated_InterruptLabel_Nudges(t *testing.T) {
 		Notes: "coop_url: " + coopServer.URL,
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	m := &Mail{
-		daemon:     daemon,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		daemon: daemon,
+		logger: slog.Default(),
+		nudger: nudger,
 	}
 
 	event := marshalSSEBeadPayload(BeadEvent{
@@ -102,10 +107,15 @@ func TestMail_HandleCreated_HighPriority_Nudges(t *testing.T) {
 		Notes: "coop_url: " + coopServer.URL,
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	m := &Mail{
-		daemon:     daemon,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		daemon: daemon,
+		logger: slog.Default(),
+		nudger: nudger,
 	}
 
 	// Priority 1 (high) should nudge even without interrupt label.

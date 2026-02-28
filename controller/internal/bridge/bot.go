@@ -37,6 +37,7 @@ type Bot struct {
 	state  *StateManager
 	daemon BeadClient
 	router *Router
+	nudger *Nudger
 	logger *slog.Logger
 
 	channel   string // default channel ID
@@ -73,6 +74,7 @@ type BotConfig struct {
 	Daemon         BeadClient
 	State          *StateManager
 	Router         *Router // optional channel router; nil = all to Channel
+	Nudger         *Nudger
 	Logger         *slog.Logger
 	Debug          bool
 
@@ -106,6 +108,7 @@ func NewBot(cfg BotConfig) *Bot {
 		state:         cfg.State,
 		daemon:        cfg.Daemon,
 		router:        cfg.Router,
+		nudger:        cfg.Nudger,
 		logger:        cfg.Logger,
 		channel:       cfg.Channel,
 		threadingMode: cfg.ThreadingMode,

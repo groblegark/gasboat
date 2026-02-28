@@ -9,32 +9,29 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
-	"time"
-
-	"gasboat/controller/internal/beadsapi"
 )
 
 // MailConfig holds configuration for the Mail watcher.
 type MailConfig struct {
 	Daemon BeadClient
 	Logger *slog.Logger
+	Nudger *Nudger
 }
 
 // Mail watches the kbeads SSE event stream for mail bead lifecycle events.
 type Mail struct {
-	daemon     BeadClient
-	logger     *slog.Logger
-	httpClient *http.Client // reused for nudge requests
+	daemon BeadClient
+	logger *slog.Logger
+	nudger *Nudger
 }
 
 // NewMail creates a new mail lifecycle watcher.
 func NewMail(cfg MailConfig) *Mail {
 	return &Mail{
-		daemon:     cfg.Daemon,
-		logger:     cfg.Logger,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		daemon: cfg.Daemon,
+		logger: cfg.Logger,
+		nudger: cfg.Nudger,
 	}
 }
 
@@ -83,25 +80,15 @@ func (m *Mail) shouldNudge(bead BeadEvent) bool {
 	return bead.Priority <= 1
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge.
+// nudgeAgent sends a nudge to the assigned agent about urgent mail.
 func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
+	if m.nudger == nil {
+		return
+	}
+
 	agentName := bead.Assignee
 	if agentName == "" {
 		m.logger.Warn("mail bead has no assignee, cannot nudge", "id", bead.ID)
-		return
-	}
-
-	agentBead, err := m.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		m.logger.Error("failed to get agent bead for mail nudge",
-			"agent", agentName, "mail", bead.ID, "error", err)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		m.logger.Warn("agent bead has no coop_url, cannot nudge",
-			"agent", agentName, "mail", bead.ID)
 		return
 	}
 
@@ -116,9 +103,9 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 
 	message := fmt.Sprintf("New mail from %s: %s — run 'kd show %s' to read", sender, bead.Title, bead.ID)
 
-	if err := nudgeCoop(ctx, m.httpClient, coopURL, message); err != nil {
+	if err := m.nudger.NudgeAgent(ctx, agentName, message); err != nil {
 		m.logger.Error("failed to nudge agent for mail",
-			"agent", agentName, "coop_url", coopURL, "error", err)
+			"agent", agentName, "mail", bead.ID, "error", err)
 		return
 	}
 

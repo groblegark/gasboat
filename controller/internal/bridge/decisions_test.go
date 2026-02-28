@@ -84,12 +84,17 @@ func TestDecisions_HandleClosed_NudgesCoop(t *testing.T) {
 	}
 	notif := &mockNotifier{}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	d := &Decisions{
-		daemon:     daemon,
-		notifier:   notif,
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		escalated:  make(map[string]time.Time),
+		daemon:    daemon,
+		notifier:  notif,
+		logger:    slog.Default(),
+		nudger:    nudger,
+		escalated: make(map[string]time.Time),
 	}
 
 	closedEvent := marshalSSEBeadPayload(BeadEvent{
@@ -160,12 +165,17 @@ func TestDecisions_HandleClosed_RationaleFromFetch(t *testing.T) {
 		},
 	}
 
+	nudger := NewNudger(NudgerConfig{
+		Daemon: daemon,
+		Logger: slog.Default(),
+	})
+
 	d := &Decisions{
-		daemon:     daemon,
-		notifier:   &mockNotifier{},
-		logger:     slog.Default(),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		escalated:  make(map[string]time.Time),
+		daemon:    daemon,
+		notifier:  &mockNotifier{},
+		logger:    slog.Default(),
+		nudger:    nudger,
+		escalated: make(map[string]time.Time),
 	}
 
 	// SSE event carries neither chosen nor rationale — both must come from the fetch.

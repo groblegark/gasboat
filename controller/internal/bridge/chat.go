@@ -10,9 +10,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
-	"time"
 
 	"gasboat/controller/internal/beadsapi"
 
@@ -25,25 +23,26 @@ type ChatConfig struct {
 	Bot    *Bot
 	State  *StateManager
 	Logger *slog.Logger
+	Nudger *Nudger
 }
 
 // Chat watches for closed chat beads and relays responses to Slack threads.
 type Chat struct {
-	daemon     BeadClient
-	bot        *Bot
-	state      *StateManager
-	logger     *slog.Logger
-	httpClient *http.Client
+	daemon BeadClient
+	bot    *Bot
+	state  *StateManager
+	logger *slog.Logger
+	nudger *Nudger
 }
 
 // NewChat creates a new chat forwarding watcher.
 func NewChat(cfg ChatConfig) *Chat {
 	return &Chat{
-		daemon:     cfg.Daemon,
-		bot:        cfg.Bot,
-		state:      cfg.State,
-		logger:     cfg.Logger,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		daemon: cfg.Daemon,
+		bot:    cfg.Bot,
+		state:  cfg.State,
+		logger: cfg.Logger,
+		nudger: cfg.Nudger,
 	}
 }
 
@@ -187,27 +186,19 @@ func hasLabel(labels []string, target string) bool {
 	return false
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge.
+// nudgeAgent sends a nudge to the assigned agent about a completed chat task.
 func (c *Chat) nudgeAgent(ctx context.Context, bead BeadEvent) {
+	if c.nudger == nil {
+		return
+	}
+
 	agentName := bead.Assignee
 	if agentName == "" {
 		return
 	}
 
-	agentBead, err := c.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		c.logger.Debug("could not find agent bead for chat nudge",
-			"agent", agentName, "bead", bead.ID)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		return
-	}
-
 	message := fmt.Sprintf("Chat task completed: %s", bead.Title)
-	if err := nudgeCoop(ctx, c.httpClient, coopURL, message); err != nil {
+	if err := c.nudger.NudgeAgent(ctx, agentName, message); err != nil {
 		c.logger.Error("failed to nudge agent for chat",
 			"agent", agentName, "error", err)
 	}

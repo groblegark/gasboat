@@ -8,12 +8,9 @@
 package bridge
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
@@ -65,10 +62,10 @@ const escalationTTL = 1 * time.Hour
 
 // Decisions watches the kbeads SSE event stream for decision bead lifecycle events.
 type Decisions struct {
-	daemon     BeadClient
-	notifier   Notifier // nil = no notifications
-	logger     *slog.Logger
-	httpClient *http.Client // reused for nudge requests
+	daemon   BeadClient
+	notifier Notifier // nil = no notifications
+	logger   *slog.Logger
+	nudger   *Nudger
 
 	escalatedMu sync.Mutex
 	escalated   map[string]time.Time // bead ID → notification time (dedup with TTL)
@@ -79,16 +76,17 @@ type DecisionsConfig struct {
 	Daemon   BeadClient
 	Notifier Notifier
 	Logger   *slog.Logger
+	Nudger   *Nudger
 }
 
 // NewDecisions creates a new decision lifecycle watcher.
 func NewDecisions(cfg DecisionsConfig) *Decisions {
 	return &Decisions{
-		daemon:     cfg.Daemon,
-		notifier:   cfg.Notifier,
-		logger:     cfg.Logger,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		escalated:  make(map[string]time.Time),
+		daemon:    cfg.Daemon,
+		notifier:  cfg.Notifier,
+		logger:    cfg.Logger,
+		nudger:    cfg.Nudger,
+		escalated: make(map[string]time.Time),
 	}
 }
 
@@ -248,27 +246,16 @@ func (d *Decisions) cleanupEscalatedLocked() {
 // Both are set to the creating agent by `gb decision create`; using CreatedBy
 // as a fallback handles edge cases where Assignee was cleared.
 func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
+	if d.nudger == nil {
+		return
+	}
+
 	agentName := bead.Assignee
 	if agentName == "" {
 		agentName = bead.CreatedBy
 	}
 	if agentName == "" {
 		d.logger.Warn("decision bead has no assignee or created_by, cannot nudge", "id", bead.ID)
-		return
-	}
-
-	// Look up the agent bead to get the coop_url.
-	agentBead, err := d.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		d.logger.Error("failed to get agent bead for nudge",
-			"agent", agentName, "decision", bead.ID, "error", err)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		d.logger.Warn("agent bead has no coop_url, cannot nudge",
-			"agent", agentName, "decision", bead.ID)
 		return
 	}
 
@@ -284,56 +271,14 @@ func (d *Decisions) nudgeAgent(ctx context.Context, bead BeadEvent) {
 		message += fmt.Sprintf(" — Artifact required (%s). Use `gb decision report %s` to submit.", ra, bead.ID)
 	}
 
-	if err := nudgeCoop(ctx, d.httpClient, coopURL, message); err != nil {
+	if err := d.nudger.NudgeAgent(ctx, agentName, message); err != nil {
 		d.logger.Error("failed to nudge agent",
-			"agent", agentName, "coop_url", coopURL, "error", err)
+			"agent", agentName, "decision", bead.ID, "error", err)
 		return
 	}
 
 	d.logger.Info("nudged agent after decision resolved",
 		"agent", agentName, "decision", bead.ID, "chosen", chosen)
-}
-
-// nudgeCoopResult holds the parsed coop nudge response body.
-type nudgeCoopResult struct {
-	Delivered bool   `json:"delivered"`
-	Reason    string `json:"reason"`
-}
-
-// nudgeCoop POSTs a nudge message to a coop agent endpoint.
-// Returns an error if the HTTP request fails or the nudge was not delivered.
-// Coop can return {"delivered":false,"reason":"..."} with status 200 when the
-// agent is busy — this is treated as a delivery failure so callers can log it.
-func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string) error {
-	body, err := json.Marshal(map[string]string{"message": message})
-	if err != nil {
-		return fmt.Errorf("marshal nudge body: %w", err)
-	}
-
-	url := coopURL + "/api/v1/agent/nudge"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("create nudge request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("nudge request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("nudge returned status %d", resp.StatusCode)
-	}
-
-	// Check whether coop confirmed delivery. A 200 with {"delivered":false}
-	// means the agent was busy and the nudge was silently discarded.
-	var result nudgeCoopResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && !result.Delivered {
-		return fmt.Errorf("nudge not delivered: %s", result.Reason)
-	}
-	return nil
 }
 
 // handleReportClosed is called when a report bead is closed. It posts the

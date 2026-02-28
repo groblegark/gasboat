@@ -13,11 +13,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
-
-	"gasboat/controller/internal/beadsapi"
 )
 
 // claimedNudgeTTL is the minimum interval between nudges for the same bead.
@@ -37,14 +34,15 @@ var skipClaimedTypes = map[string]bool{
 type ClaimedConfig struct {
 	Daemon BeadClient
 	Logger *slog.Logger
+	Nudger *Nudger
 }
 
 // Claimed watches the kbeads SSE event stream for bead update events and
 // nudges the claiming agent when a bead they own is updated.
 type Claimed struct {
-	daemon     BeadClient
-	logger     *slog.Logger
-	httpClient *http.Client
+	daemon BeadClient
+	logger *slog.Logger
+	nudger *Nudger
 
 	nudgedMu sync.Mutex
 	nudged   map[string]time.Time // bead ID → last nudge time
@@ -53,10 +51,10 @@ type Claimed struct {
 // NewClaimed creates a new claimed bead update watcher.
 func NewClaimed(cfg ClaimedConfig) *Claimed {
 	return &Claimed{
-		daemon:     cfg.Daemon,
-		logger:     cfg.Logger,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		nudged:     make(map[string]time.Time),
+		daemon: cfg.Daemon,
+		logger: cfg.Logger,
+		nudger: cfg.Nudger,
+		nudged: make(map[string]time.Time),
 	}
 }
 
@@ -123,31 +121,26 @@ func (c *Claimed) shouldNudge(beadID string) bool {
 	return true
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge.
+// nudgeAgent sends a nudge to the assigned agent about a claimed bead update.
 func (c *Claimed) nudgeAgent(ctx context.Context, bead BeadEvent) {
-	agentBead, err := c.daemon.FindAgentBead(ctx, bead.Assignee)
-	if err != nil {
-		c.logger.Error("failed to get agent bead for claimed-update nudge",
-			"agent", bead.Assignee, "bead", bead.ID, "error", err)
+	if c.nudger == nil {
 		return
 	}
 
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		c.logger.Warn("agent bead has no coop_url, cannot nudge",
-			"agent", bead.Assignee, "bead", bead.ID)
+	agentName := bead.Assignee
+	if agentName == "" {
 		return
 	}
 
 	message := fmt.Sprintf("Your claimed bead %s %q was updated — run 'kd show %s' to review",
 		bead.ID, bead.Title, bead.ID)
 
-	if err := nudgeCoop(ctx, c.httpClient, coopURL, message); err != nil {
+	if err := c.nudger.NudgeAgent(ctx, agentName, message); err != nil {
 		c.logger.Error("failed to nudge agent for claimed bead update",
-			"agent", bead.Assignee, "coop_url", coopURL, "error", err)
+			"agent", agentName, "bead", bead.ID, "error", err)
 		return
 	}
 
 	c.logger.Info("nudged agent for claimed bead update",
-		"agent", bead.Assignee, "bead", bead.ID)
+		"agent", agentName, "bead", bead.ID)
 }
