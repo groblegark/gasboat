@@ -444,13 +444,30 @@ auto_bypass_startup() {
                 sleep 3
                 continue
             fi
+        fi
 
-            # Handle "Detected a custom API key" prompt.
+        # Handle "Detected a custom API key" prompt — can appear as state
+        # "starting" or "prompt" (type=permission, subtype=trust).
+        if [ "${agent_state}" = "starting" ] || [ "${prompt_type}" = "permission" ]; then
+            screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
             if echo "${screen}" | grep -q "Detected a custom API key"; then
                 echo "[entrypoint] Detected API key prompt, selecting 'Yes' to use it"
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
                     -d '{"keys":["Up","Return"]}' 2>&1 || true
+                sleep 3
+                continue
+            fi
+        fi
+
+        # Handle "trust this folder" permission prompt (Yes, I trust / No, exit).
+        if [ "${prompt_type}" = "permission" ] && [ "${subtype}" = "trust" ]; then
+            screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
+            if echo "${screen}" | grep -q "trust this folder"; then
+                echo "[entrypoint] Auto-accepting trust folder prompt"
+                curl -sf -X POST http://localhost:8080/api/v1/agent/respond \
+                    -H 'Content-Type: application/json' \
+                    -d '{"option":0}' 2>&1 || true
                 sleep 3
                 continue
             fi
