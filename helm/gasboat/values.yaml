@@ -161,6 +161,19 @@ agents:
     remoteRef: ""              # e.g. "gasboat/gitlab-token"
     tokenProperty: "token"    # JSON key inside the AWS secret
 
+  # K8s secret with JIRA credentials for agent pods (investigation workflow)
+  # Secret must contain keys: email, api-token
+  jiraCredentials:
+    secret: ""           # K8s secret name (created manually or by externalSecret below)
+    externalSecret:      # Creates the K8s secret from a secret store
+      enabled: false
+      secretStoreName: "secretstore"
+      secretStoreKind: ClusterSecretStore
+      refreshInterval: "15m"
+      remoteRef: ""
+      emailProperty: "email"
+      apiTokenProperty: "api-token"
+
   # K8s secret with RWX access token for RWX API calls in agent pods (dispatches, triggers)
   rwxAccessTokenSecret: ""
   rwxAccessTokenExternalSecret:

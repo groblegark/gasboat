@@ -409,6 +409,11 @@ COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 5
 # for E2E testing without consuming API credits). Defaults to real Claude Code.
 AGENT_CMD="${BOAT_COMMAND:-claude --dangerously-skip-permissions}"
 
+# Append --model if CLAUDE_MODEL is set and BOAT_COMMAND was not overridden.
+if [ -n "${CLAUDE_MODEL:-}" ] && [ -z "${BOAT_COMMAND:-}" ]; then
+    AGENT_CMD="${AGENT_CMD} --model ${CLAUDE_MODEL}"
+fi
+
 # Coop log level (overridable via pod env).
 export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 
