@@ -1,0 +1,71 @@
+{{- if .Values.beads3d.enabled }}
+{{- $daemonURL := include "gasboat.beads3d.daemonURL" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gasboat.beads3d.fullname" . }}-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.beads3d.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Static assets with cache headers
+        location /assets/ {
+            expires 7d;
+            add_header Cache-Control "public, immutable";
+        }
+
+        # SPA fallback
+        location / {
+            try_files $uri $uri/ /index.html;
+            expires 1h;
+        }
+
+        # Reverse-proxy API (strips /api prefix)
+        location /api/ {
+            proxy_pass {{ $daemonURL }}/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 30s;
+        }
+
+        # SSE events stream (kbeads REST mode)
+        location /api/v1/events/stream {
+            proxy_pass {{ $daemonURL }}/v1/events/stream;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+        }
+
+        # SSE events stream (bd-daemon RPC mode)
+        location /api/events {
+            proxy_pass {{ $daemonURL }}/events;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+        }
+
+        # SSE bus events stream (NATS event bus)
+        location /api/bus/ {
+            proxy_pass {{ $daemonURL }}/bus/;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+        }
+    }
+{{- end }}
