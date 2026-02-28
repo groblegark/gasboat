@@ -115,8 +115,45 @@ func defaultHookSettings() map[string]any {
 	}
 }
 
+// rtkEnabled returns true if RTK token optimization is enabled via environment.
+func rtkEnabled() bool {
+	v := os.Getenv("RTK_ENABLED")
+	return v == "true" || v == "1"
+}
+
+// appendRTKHooks adds the RTK PreToolUse hook to settings when RTK is enabled.
+func appendRTKHooks(settings map[string]any) {
+	if !rtkEnabled() {
+		return
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		hooks = make(map[string]any)
+		settings["hooks"] = hooks
+	}
+
+	rtkHook := map[string]any{
+		"matcher": "Bash",
+		"hooks": []any{
+			map[string]any{
+				"type":    "command",
+				"command": "/hooks/rtk-rewrite.sh",
+			},
+		},
+	}
+
+	preToolUse, ok := hooks["PreToolUse"].([]any)
+	if !ok {
+		preToolUse = []any{}
+	}
+	hooks["PreToolUse"] = append(preToolUse, rtkHook)
+	fmt.Fprintf(os.Stderr, "[setup] RTK PreToolUse hook enabled\n")
+}
+
 func runSetupClaudeDefaults(workspace string) error {
 	settings := defaultHookSettings()
+	appendRTKHooks(settings)
 
 	outDir := filepath.Join(workspace, ".claude")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -304,6 +341,7 @@ func runSetupClaude(ctx context.Context, workspace, role string) error {
 	}
 
 	merged := mergeHookLayers(layers)
+	appendRTKHooks(merged)
 
 	outDir := filepath.Join(workspace, ".claude")
 	if err := os.MkdirAll(outDir, 0755); err != nil {

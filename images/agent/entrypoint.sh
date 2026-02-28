@@ -319,6 +319,16 @@ if [ "${MATERIALIZED}" = "0" ]; then
         echo "[entrypoint] WARNING: gb setup --defaults failed, no hooks installed"
 fi
 
+# ── RTK context file ─────────────────────────────────────────────────────
+# When RTK is enabled, install the RTK.md context file so Claude knows
+# commands are being proxied through RTK.
+if [ "${RTK_ENABLED:-}" = "true" ] || [ "${RTK_ENABLED:-}" = "1" ]; then
+    if [ -f /hooks/RTK.md ]; then
+        cp /hooks/RTK.md "${CLAUDE_DIR}/RTK.md"
+        echo "[entrypoint] RTK enabled — installed RTK.md context file"
+    fi
+fi
+
 # Write CLAUDE.md with role context if not already present.
 if [ ! -f "${WORKSPACE}/CLAUDE.md" ]; then
     cat > "${WORKSPACE}/CLAUDE.md" <<CLAUDEMD
