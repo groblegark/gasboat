@@ -8,6 +8,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+// shellQuote wraps s in single quotes, escaping any embedded single quotes.
+// This prevents shell injection when interpolating values into shell scripts.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // buildInitCloneContainer creates an init container that clones the project's repo
 // into the workspace from GitURL, plus any reference repos.
 // Returns nil if no clone source is configured.
@@ -24,9 +30,16 @@ func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Containe
 	script := "set -e\napk add --no-cache git\n"
 
 	// Clone primary repo if configured.
+	// All user-controlled values are shell-quoted to prevent injection.
 	if spec.GitURL != "" {
-		script += fmt.Sprintf(`git config --global --add safe.directory '%s/%s/work'
-WORK_DIR="%s/%s/work"
+		qProject := shellQuote(spec.Project)
+		qBranch := shellQuote(branch)
+		qGitURL := shellQuote(spec.GitURL)
+		qAgent := shellQuote(spec.AgentName)
+		qAgentEmail := shellQuote(spec.AgentName + "@gasboat")
+
+		script += fmt.Sprintf(`git config --global --add safe.directory %s/%s/work
+WORK_DIR=%s/%s/work
 if [ -d "$WORK_DIR/.git" ]; then
   echo "Repo already cloned, fetching updates..."
   cd "$WORK_DIR"
@@ -34,42 +47,44 @@ if [ -d "$WORK_DIR/.git" ]; then
   git checkout %s
   git pull --ff-only || true
 else
-  echo "Cloning from %s..."
+  echo "Cloning..."
   mkdir -p "$(dirname "$WORK_DIR")"
   git clone -b %s %s "$WORK_DIR"
   cd "$WORK_DIR"
 fi
-`, MountWorkspace, spec.Project, MountWorkspace, spec.Project, branch, spec.GitURL, branch, spec.GitURL)
+`, MountWorkspace, qProject, MountWorkspace, qProject, qBranch, qBranch, qGitURL)
 
 		// Configure git identity from agent env vars.
-		script += fmt.Sprintf(`git config user.name "%s"
-git config user.email "%s@gasboat"
-`, spec.AgentName, spec.AgentName)
+		script += fmt.Sprintf("git config user.name %s\ngit config user.email %s\n", qAgent, qAgentEmail)
 	}
 
 	// Clone reference repos.
+	// All user-controlled values are shell-quoted to prevent injection.
 	for _, ref := range spec.ReferenceRepos {
 		refBranch := ref.Branch
 		if refBranch == "" {
 			refBranch = "main"
 		}
-		dir := fmt.Sprintf("%s/%s/repos/%s", MountWorkspace, spec.Project, ref.Name)
+		qRefDir := shellQuote(fmt.Sprintf("%s/%s/repos/%s", MountWorkspace, spec.Project, ref.Name))
+		qRefBranch := shellQuote(refBranch)
+		qRefName := shellQuote(ref.Name)
+		qRefURL := shellQuote(ref.URL)
 		script += fmt.Sprintf(`
-REFDIR="%s"
+REFDIR=%s
 if [ -d "$REFDIR/.git" ]; then
-  echo "Reference repo %s already present, updating..."
+  echo "Reference repo" %s "already present, updating..."
   cd "$REFDIR" && git fetch --all --prune && git checkout %s && git pull --ff-only || true
 else
-  echo "Cloning reference repo %s..."
+  echo "Cloning reference repo" %s "..."
   mkdir -p "$(dirname "$REFDIR")"
   git clone --depth 1 -b %s %s "$REFDIR"
 fi
-`, dir, ref.Name, refBranch, ref.Name, refBranch, ref.URL)
+`, qRefDir, qRefName, qRefBranch, qRefName, qRefBranch, qRefURL)
 	}
 
 	// Run init container as root so apk can install git, then chown
 	// the workspace to the agent UID/GID so the main container can write.
-	script += fmt.Sprintf("chown -R %d:%d \"%s/%s\"\n", AgentUID, AgentGID, MountWorkspace, spec.Project)
+	script += fmt.Sprintf("chown -R %d:%d %s\n", AgentUID, AgentGID, shellQuote(fmt.Sprintf("%s/%s", MountWorkspace, spec.Project)))
 
 	// Insert git credential helper setup after apk installs git.
 	// Must come after "apk add" so git binary is available for git config.
