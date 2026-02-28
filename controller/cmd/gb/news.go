@@ -30,7 +30,7 @@ func init() {
 	newsCmd.Flags().Bool("all", false, "include your own activity")
 	newsCmd.Flags().String("window", "2h", "lookback window for recently closed")
 	newsCmd.Flags().IntP("limit", "n", 50, "maximum beads per section")
-	newsCmd.Flags().String("project", os.Getenv("BOAT_PROJECT"), "filter by project label (default: $BOAT_PROJECT)")
+	newsCmd.Flags().String("project", defaultGBProject(), "filter by project label (default: $KD_PROJECT or $BOAT_PROJECT)")
 	newsCmd.Flags().Bool("all-projects", false, "show activity from all projects (disables project filter)")
 }
 
