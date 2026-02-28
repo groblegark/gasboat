@@ -42,10 +42,8 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 		Image:     image,
 		Namespace: cfg.Namespace,
 		Env: map[string]string{
-			"BEADS_GRPC_ADDR":         cfg.BeadsGRPCAddr,
-			"BEADS_HTTP_ADDR":         cfg.BeadsHTTPAddr,
-			"BEADS_AUTO_START_DAEMON": "false",
-			"BEADS_DOLT_SERVER_MODE":  "1",
+			"BEADS_GRPC_ADDR": cfg.BeadsGRPCAddr,
+			"BEADS_HTTP_ADDR": cfg.BeadsHTTPAddr,
 		},
 	}
 
