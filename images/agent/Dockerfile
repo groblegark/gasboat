@@ -233,6 +233,12 @@ RUN case "${TARGETARCH}" in arm64) HL_ARCH=arm64 ;; *) HL_ARCH=x86_64 ;; esac &&
       -o /usr/local/bin/hadolint && \
     chmod +x /usr/local/bin/hadolint
 
+# ── RTK (token optimization proxy) ──────────────────────────────
+ARG RTK_VERSION=0.22.2
+RUN case "${TARGETARCH}" in arm64) RTK_TRIPLE=aarch64-unknown-linux-gnu ;; *) RTK_TRIPLE=x86_64-unknown-linux-gnu ;; esac && \
+    curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/rtk-${RTK_TRIPLE}.tar.gz" \
+      | tar -xz -C /usr/local/bin rtk
+
 # ── Playwright + Chromium (headless browser automation) ──────────
 ARG PLAYWRIGHT_VERSION=1.50.1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
