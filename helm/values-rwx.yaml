@@ -20,6 +20,7 @@ postgres:
   enabled: true
   persistence:
     size: 2Gi
+    storageClass: gp2
 
 # =============================================================================
 # NATS (in-chart, required by agents)
@@ -28,6 +29,7 @@ nats:
   enabled: true
   persistence:
     size: 1Gi
+    storageClass: gp2
 
 # =============================================================================
 # Agent Controller + RBAC
