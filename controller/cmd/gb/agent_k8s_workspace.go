@@ -37,11 +37,13 @@ func setupWorkspace(cfg k8sConfig) error {
 	// 3. Git credentials.
 	gitUser := os.Getenv("GIT_USERNAME")
 	gitToken := os.Getenv("GIT_TOKEN")
-	if gitUser != "" && gitToken != "" {
-		if err := writeGitCredentials(gitUser, gitToken); err != nil {
+	gitlabToken := os.Getenv("GITLAB_TOKEN")
+	if gitUser != "" && gitToken != "" || gitlabToken != "" {
+		if err := writeGitCredentials(gitUser, gitToken, gitlabToken); err != nil {
 			fmt.Printf("[gb agent start] warning: git credentials: %v\n", err)
 		} else {
-			fmt.Printf("[gb agent start] git credentials configured for %s@github.com\n", gitUser)
+			fmt.Printf("[gb agent start] git credentials configured (github: %v, gitlab: %v)\n",
+				gitUser != "", gitlabToken != "")
 		}
 	}
 
@@ -258,11 +260,19 @@ func resetStaleBranch(workspace string) {
 	fmt.Printf("[gb agent start] workspace now on branch: %s\n", strings.TrimSpace(string(out)))
 }
 
-func writeGitCredentials(user, token string) error {
+func writeGitCredentials(user, token, gitlabToken string) error {
 	home := homeDir()
 	credFile := filepath.Join(home, ".git-credentials")
-	line := fmt.Sprintf("https://%s:%s@github.com\n", user, token)
-	if err := os.WriteFile(credFile, []byte(line), 0o600); err != nil {
+	var lines string
+	if user != "" && token != "" {
+		lines += fmt.Sprintf("https://%s:%s@github.com\n", user, token)
+	}
+	if gitlabToken != "" {
+		lines += fmt.Sprintf("https://oauth2:%s@gitlab.com\n", gitlabToken)
+	} else if user != "" && token != "" {
+		lines += fmt.Sprintf("https://%s:%s@gitlab.com\n", user, token)
+	}
+	if err := os.WriteFile(credFile, []byte(lines), 0o600); err != nil {
 		return err
 	}
 	return exec.Command("git", "config", "--global", "credential.helper",
