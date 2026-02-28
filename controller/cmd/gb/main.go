@@ -40,6 +40,18 @@ func defaultActor() string {
 	return "unknown"
 }
 
+// defaultProject returns the default project from environment variables.
+// Precedence: KD_PROJECT > BOAT_PROJECT > "" (none).
+func defaultProject() string {
+	if p := os.Getenv("KD_PROJECT"); p != "" {
+		return p
+	}
+	if p := os.Getenv("BOAT_PROJECT"); p != "" {
+		return p
+	}
+	return ""
+}
+
 func defaultHTTPURL() string {
 	if s := os.Getenv("BEADS_HTTP_URL"); s != "" {
 		return s
