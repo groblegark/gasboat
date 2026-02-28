@@ -542,7 +542,8 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	}
 }
 
-// Ensure Bot implements Notifier, AgentNotifier, and JackNotifier.
+// Ensure Bot implements Notifier, AgentNotifier, JackNotifier, and BeadActivityNotifier.
 var _ Notifier = (*Bot)(nil)
 var _ AgentNotifier = (*Bot)(nil)
 var _ JackNotifier = (*Bot)(nil)
+var _ BeadActivityNotifier = (*Bot)(nil)

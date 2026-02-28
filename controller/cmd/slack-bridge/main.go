@@ -240,6 +240,18 @@ func main() {
 	})
 	claimed.RegisterHandlers(sseStream)
 
+	// Register bead activity watcher — posts notifications in agent threads when
+	// agents create, claim, or close beads.
+	var beadActivityNotifier bridge.BeadActivityNotifier
+	if bot != nil {
+		beadActivityNotifier = bot
+	}
+	beadActivity := bridge.NewBeadActivity(bridge.BeadActivityConfig{
+		Notifier: beadActivityNotifier,
+		Logger:   logger,
+	})
+	beadActivity.RegisterHandlers(sseStream)
+
 	// Catch-up: notify pending decisions that may have been missed during downtime.
 	// Run before SSE stream starts to pre-populate dedup map.
 	go dedup.CatchUpDecisions(ctx, daemon, notifier, logger)
