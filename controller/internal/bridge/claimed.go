@@ -21,8 +21,6 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"gasboat/controller/internal/beadsapi"
 )
 
 // claimedNudgeTTL is the minimum interval between nudges for the same bead.
@@ -219,25 +217,14 @@ func (c *Claimed) shouldNudge(beadID string) bool {
 	return true
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge with the given message.
-func (c *Claimed) nudgeAgent(ctx context.Context, bead BeadEvent, message string) {
-	agentBead, err := c.daemon.FindAgentBead(ctx, bead.Assignee)
-	if err != nil {
-		c.logger.Error("failed to get agent bead for claimed nudge",
+// nudgeAgent delivers a claimed-bead-update nudge to the assigned agent with retry.
+func (c *Claimed) nudgeAgent(ctx context.Context, bead BeadEvent) {
+	message := fmt.Sprintf("Your claimed bead %s %q was updated — run 'kd show %s' to review",
+		bead.ID, bead.Title, bead.ID)
+
+	if err := NudgeAgent(ctx, c.daemon, c.httpClient, c.logger, bead.Assignee, message); err != nil {
+		c.logger.Error("failed to nudge agent for claimed bead update",
 			"agent", bead.Assignee, "bead", bead.ID, "error", err)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		c.logger.Warn("agent bead has no coop_url, cannot nudge",
-			"agent", bead.Assignee, "bead", bead.ID)
-		return
-	}
-
-	if err := nudgeCoop(ctx, c.httpClient, coopURL, message); err != nil {
-		c.logger.Error("failed to nudge agent for claimed bead",
-			"agent", bead.Assignee, "coop_url", coopURL, "error", err)
 		return
 	}
 
