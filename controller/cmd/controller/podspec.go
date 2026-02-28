@@ -257,6 +257,12 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		spec.Env["CLAUDE_MODEL"] = cfg.ClaudeModel
 	}
 
+	// E2E beads address: isolated beads instance for e2e tests so spawn
+	// events don't hit the production agents controller.
+	if cfg.BeadsE2EHTTPAddr != "" {
+		spec.Env["BEADS_E2E_HTTP_ADDR"] = cfg.BeadsE2EHTTPAddr
+	}
+
 	// Wire coopmux registration config. The agent runs coop directly (builtin)
 	// so it gets COOP_BROKER_URL/TOKEN as env vars.
 	if cfg.CoopmuxURL != "" {

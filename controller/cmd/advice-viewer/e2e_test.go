@@ -13,11 +13,12 @@ import (
 )
 
 // TestE2E_AdviceViewer runs integration tests against a real beads daemon.
-// Skip when BEADS_HTTP_ADDR is not set.
+// Uses BEADS_E2E_HTTP_ADDR so spawn events hit the isolated gasboat-e2e
+// beads instance, not the production agents controller.
 func TestE2E_AdviceViewer(t *testing.T) {
-	addr := os.Getenv("BEADS_HTTP_ADDR")
+	addr := os.Getenv("BEADS_E2E_HTTP_ADDR")
 	if addr == "" {
-		t.Skip("BEADS_HTTP_ADDR not set, skipping e2e tests")
+		t.Skip("BEADS_E2E_HTTP_ADDR not set, skipping e2e tests")
 	}
 
 	daemon, err := beadsapi.New(beadsapi.Config{HTTPAddr: addr})

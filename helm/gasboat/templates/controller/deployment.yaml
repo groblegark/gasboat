@@ -175,6 +175,10 @@ spec:
             - name: CLAUDE_MODEL
               value: {{ .Values.agents.claudeModel }}
             {{- end }}
+            {{- if .Values.agents.beadsE2EHTTPAddr }}
+            - name: BEADS_E2E_HTTP_ADDR
+              value: {{ .Values.agents.beadsE2EHTTPAddr }}
+            {{- end }}
             # Slack env vars removed — now handled by slack-bridge container (bd-8x8fy).
           resources:
             {{- toYaml .Values.agents.resources | nindent 12 }}

@@ -28,6 +28,11 @@ type Config struct {
 	// BeadsHTTPAddr is the beads daemon HTTP address, host:port (env: BEADS_HTTP_ADDR).
 	BeadsHTTPAddr string
 
+	// BeadsE2EHTTPAddr is the beads daemon HTTP address for the e2e-isolated
+	// namespace (env: BEADS_E2E_HTTP_ADDR). Passed to agent pods so e2e tests
+	// create spawn events in an isolated beads instance.
+	BeadsE2EHTTPAddr string
+
 	// BeadsTokenSecret is the K8s secret containing the daemon auth token (env: BEADS_TOKEN_SECRET).
 	// The controller reads the token value from this secret at startup for its own API calls,
 	// and passes the secret name to agent pods for secretKeyRef injection.
@@ -178,6 +183,7 @@ func Parse() *Config {
 		// Beads Daemon
 		BeadsGRPCAddr:    envOr("BEADS_GRPC_ADDR", "localhost:9090"),
 		BeadsHTTPAddr:    envOr("BEADS_HTTP_ADDR", "localhost:8080"),
+		BeadsE2EHTTPAddr: os.Getenv("BEADS_E2E_HTTP_ADDR"),
 		BeadsTokenSecret: os.Getenv("BEADS_TOKEN_SECRET"),
 
 		// NATS Event Bus (passed to agent pods, not used by the controller itself)

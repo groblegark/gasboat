@@ -103,6 +103,11 @@ agents:
   # If empty, Claude Code uses its built-in default (Sonnet).
   claudeModel: ""
 
+  # Beads HTTP address for the e2e-isolated namespace. When set, agent pods
+  # get BEADS_E2E_HTTP_ADDR so e2e tests create spawn events in an isolated
+  # beads instance instead of the production one.
+  beadsE2EHTTPAddr: ""
+
   # Max agent pods that can exist simultaneously (0 = unlimited)
   coopMaxPods: 0
 
