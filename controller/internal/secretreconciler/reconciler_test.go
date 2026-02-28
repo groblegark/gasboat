@@ -213,6 +213,42 @@ func TestReconcile_GroupsMultipleKeysIntoSingleExternalSecret(t *testing.T) {
 	}
 }
 
+func TestReconcile_DeduplicatesSameKey(t *testing.T) {
+	r, client := newTestReconciler()
+
+	// GITLAB_TOKEN and GLAB_TOKEN both reference the same secret with the same key.
+	projects := map[string]config.ProjectCacheEntry{
+		"myproject": {
+			Secrets: []beadsapi.SecretEntry{
+				{Env: "GITLAB_TOKEN", Secret: "myproject-gitlab-token", Key: "token"},
+				{Env: "GLAB_TOKEN", Secret: "myproject-gitlab-token", Key: "token"},
+			},
+		},
+	}
+
+	err := r.Reconcile(context.Background(), projects)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var creates []k8stesting.CreateAction
+	for _, a := range client.Actions() {
+		if ca, ok := a.(k8stesting.CreateAction); ok {
+			creates = append(creates, ca)
+		}
+	}
+	if len(creates) != 1 {
+		t.Fatalf("expected 1 create action, got %d", len(creates))
+	}
+
+	obj := creates[0].GetObject().(*unstructured.Unstructured)
+	spec := obj.Object["spec"].(map[string]interface{})
+	data := spec["data"].([]interface{})
+	if len(data) != 1 {
+		t.Errorf("expected 1 data entry (deduped), got %d", len(data))
+	}
+}
+
 func TestReconcile_MultipleProjects(t *testing.T) {
 	r, client := newTestReconciler()
 

@@ -127,10 +127,22 @@ func (r *Reconciler) buildSecretGroups(projects map[string]config.ProjectCacheEn
 				}
 				groupMap[s.Secret] = g
 			}
-			g.keys = append(g.keys, keyMapping{
-				secretKey: s.Key,
-				property:  s.Key,
-			})
+			// Deduplicate keys — multiple env vars may reference the same
+			// K8s Secret key (e.g., GITLAB_TOKEN and GLAB_TOKEN both use
+			// key "token" from the same secret).
+			dup := false
+			for _, k := range g.keys {
+				if k.secretKey == s.Key {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				g.keys = append(g.keys, keyMapping{
+					secretKey: s.Key,
+					property:  s.Key,
+				})
+			}
 		}
 	}
 
