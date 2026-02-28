@@ -239,6 +239,9 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 	case agentState == "failed":
 		indicator = ":x:"
 		status = "failed"
+	case agentState == "rate_limited":
+		indicator = ":warning:"
+		status = "rate limited"
 	default:
 		indicator = ":white_circle:"
 		status = "idle"
