@@ -110,6 +110,15 @@ func init() {
 	rootCmd.AddCommand(workspaceCmd)
 }
 
+// resolveProject returns the effective project name following the precedence:
+// KD_PROJECT > BOAT_PROJECT > "".
+func resolveProject() string {
+	if p := os.Getenv("KD_PROJECT"); p != "" {
+		return p
+	}
+	return os.Getenv("BOAT_PROJECT")
+}
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
