@@ -62,6 +62,8 @@ type MetricsSnapshot struct {
 }
 
 // PhaseToAgentState maps a K8s pod phase to a beads agent_state.
+// In addition to standard K8s phases, it handles the synthetic "Stopped"
+// phase emitted by the controller for AgentStop events.
 func PhaseToAgentState(phase string) string {
 	switch corev1.PodPhase(phase) {
 	case corev1.PodPending:
@@ -73,6 +75,10 @@ func PhaseToAgentState(phase string) string {
 	case corev1.PodFailed:
 		return "failed"
 	default:
+		// Handle synthetic phases from controller events.
+		if phase == "Stopped" {
+			return "done"
+		}
 		return ""
 	}
 }
@@ -240,18 +246,24 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 			Message:   pod.Status.Message,
 		}
 
-		_ = r.ReportPodStatus(ctx, beadID, status)
+		if err := r.ReportPodStatus(ctx, beadID, status); err != nil {
+			r.logger.Warn("SyncAll: failed to report pod status",
+				"bead", beadID, "pod", pod.Name, "error", err)
+		}
 
 		// Write backend metadata for coop-enabled pods so ResolveBackend() works
 		// after controller restarts. Detect coop by checking for port 8080 on any container.
 		// Uses pod IP because individual pods don't have DNS entries (no headless Service).
 		if coopPort := detectCoopPort(&pod); coopPort > 0 && pod.Status.PodIP != "" {
-			_ = r.ReportBackendMetadata(ctx, beadID, BackendMetadata{
+			if err := r.ReportBackendMetadata(ctx, beadID, BackendMetadata{
 				PodName:   pod.Name,
 				Namespace: pod.Namespace,
 				Backend:   "coop",
 				CoopURL:   fmt.Sprintf("http://%s:%d", pod.Status.PodIP, coopPort),
-			})
+			}); err != nil {
+				r.logger.Warn("SyncAll: failed to report backend metadata",
+					"bead", beadID, "pod", pod.Name, "error", err)
+			}
 		}
 	}
 

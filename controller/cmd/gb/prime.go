@@ -439,7 +439,8 @@ func outputAutoAssign(w io.Writer, agentID string) {
 		Status:   &inProgress,
 	})
 	if err != nil {
-		return // fail silently
+		fmt.Fprintf(w, "\nAuto-claim failed for %s: %v\n", task.ID, err)
+		return
 	}
 
 	fmt.Fprintf(w, "\nAuto-assigned bead %s: %s\n", task.ID, task.Title)
