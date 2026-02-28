@@ -410,8 +410,12 @@ COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 5
 AGENT_CMD="${BOAT_COMMAND:-claude --dangerously-skip-permissions}"
 
 # Append --model if CLAUDE_MODEL is set and BOAT_COMMAND was not overridden.
+echo "[entrypoint] DEBUG: CLAUDE_MODEL=[${CLAUDE_MODEL:-}] BOAT_COMMAND=[${BOAT_COMMAND:-}] AGENT_CMD=[${AGENT_CMD}]"
 if [ -n "${CLAUDE_MODEL:-}" ] && [ -z "${BOAT_COMMAND:-}" ]; then
     AGENT_CMD="${AGENT_CMD} --model ${CLAUDE_MODEL}"
+    echo "[entrypoint] DEBUG: appended --model, AGENT_CMD=[${AGENT_CMD}]"
+else
+    echo "[entrypoint] DEBUG: skipped --model (CLAUDE_MODEL empty or BOAT_COMMAND set)"
 fi
 
 # Coop log level (overridable via pod env).
