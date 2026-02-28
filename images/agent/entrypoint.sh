@@ -681,9 +681,17 @@ monitor_agent_exit() {
         sleep 5
         state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || break
         agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
+        error_category=$(echo "${state}" | jq -r '.error_category // empty' 2>/dev/null)
         if [ "${agent_state}" = "exited" ]; then
             echo "[entrypoint] Agent exited, requesting coop shutdown"
             curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+            return 0
+        fi
+        if [ "${agent_state}" = "error" ] && [ "${error_category}" = "rate_limited" ]; then
+            echo "[entrypoint] Agent hit rate limit (error_category=rate_limited), requesting coop shutdown"
+            curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+            # Signal rate-limited exit via marker file so the restart loop can park.
+            touch /tmp/.agent_rate_limited
             return 0
         fi
     done
@@ -837,6 +845,16 @@ while true; do
             deregister_from_mux
             exit 0
         fi
+    fi
+
+    # If the agent exited due to rate limiting, park instead of restarting.
+    if [ -f /tmp/.agent_rate_limited ]; then
+        rm -f /tmp/.agent_rate_limited
+        echo "[entrypoint] Agent was rate-limited — parking pod for 30 minutes before restart"
+        sleep 1800
+        # Reset restart counter since this was a deliberate park, not a crash.
+        restart_count=0
+        continue
     fi
 
     if [ "${elapsed}" -ge "${MIN_RUNTIME_SECS}" ]; then

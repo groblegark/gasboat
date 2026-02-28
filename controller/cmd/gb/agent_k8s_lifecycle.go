@@ -144,7 +144,9 @@ func injectInitialPrompt(ctx context.Context, coopPort int, role string) {
 }
 
 // monitorAgentExit polls the coop API and triggers a graceful coop shutdown
-// when the agent process exits. Runs as a goroutine.
+// when the agent process exits or hits a rate limit. Runs as a goroutine.
+// When a rate limit is detected, it writes a marker file so the restart loop
+// can park instead of immediately restarting.
 func monitorAgentExit(ctx context.Context, coopPort int) {
 	base := fmt.Sprintf("http://localhost:%d/api/v1", coopPort)
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -163,10 +165,20 @@ func monitorAgentExit(ctx context.Context, coopPort int) {
 			return // coop gone
 		}
 		agentState, _ := state["state"].(string)
+		errorCategory, _ := state["error_category"].(string)
+
 		if agentState == "exited" {
 			fmt.Printf("[gb agent start] agent exited, requesting coop shutdown\n")
 			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/shutdown", nil)
 			_, _ = client.Do(req) //nolint:errcheck // best-effort shutdown on exit
+			return
+		}
+		if agentState == "error" && errorCategory == "rate_limited" {
+			fmt.Printf("[gb agent start] agent hit rate limit (error_category=rate_limited), requesting coop shutdown\n")
+			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/shutdown", nil)
+			_, _ = client.Do(req) //nolint:errcheck // best-effort shutdown on rate limit
+			// Write marker file so the restart loop can detect rate-limited exit.
+			_ = os.WriteFile("/tmp/.agent_rate_limited", []byte("rate_limited"), 0644)
 			return
 		}
 	}

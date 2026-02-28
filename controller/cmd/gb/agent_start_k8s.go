@@ -167,6 +167,19 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
+		// If the agent was rate-limited, park instead of restarting.
+		if isRateLimited() {
+			fmt.Printf("[gb agent start] agent was rate-limited — parking for 30 minutes before restart\n")
+			os.Remove("/tmp/.agent_rate_limited")
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(30 * time.Minute):
+			}
+			restarts = 0
+			continue
+		}
+
 		if elapsed >= time.Duration(minRuntimeSecs)*time.Second {
 			restarts = 0
 		}
@@ -179,6 +192,13 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// isRateLimited checks whether the agent exited due to rate limiting by
+// looking for the marker file written by monitorAgentExit.
+func isRateLimited() bool {
+	_, err := os.Stat("/tmp/.agent_rate_limited")
+	return err == nil
 }
 
 // runCoopOnce starts coop for a single session, launches per-session

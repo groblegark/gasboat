@@ -8,6 +8,17 @@
 
 set -uo pipefail
 
+# If the agent is rate-limited, allow the stop unconditionally.
+# This prevents the infinite loop: rate limit -> try to stop -> gate blocks ->
+# try to create decision -> rate limit again.
+_agent_state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null || echo '{}')
+_error_cat=$(echo "$_agent_state" | jq -r '.error_category // empty' 2>/dev/null)
+if [ "${_error_cat}" = "rate_limited" ]; then
+    echo "[stop-gate] Agent is rate-limited, allowing stop without checkpoint" >&2
+    gb gate clear decision 2>/dev/null || true
+    exit 0
+fi
+
 # Read stdin (Claude Code hook JSON) and forward to gb bus emit.
 # stderr flows through so Claude Code sees the block reason.
 _stdin=$(cat)
