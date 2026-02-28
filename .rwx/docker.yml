@@ -20,6 +20,9 @@
 # - Parallel builds with filter caching for dependency stability
 # - Agent image split into 6 parallel cached install tasks + 1 assembly task
 #   Cached by .rwx/agent-versions.lock — change versions there to bust cache
+# - Shared install-crane task eliminates redundant crane downloads (7 → 1)
+# - Parallel tar unpacking in push-agent assembly (~60s savings)
+# - Parallel CLI binary downloads in agent-install-clis (~30s savings)
 
 on:
   github:
@@ -258,26 +261,31 @@ tasks:
 
   # ═══════════════════════════════════════════════════════════════════════
   # Push tasks — crane-append layers to ubuntu:24.04, push to GHCR.
-  # Each push task builds a minimal OCI layer and pushes directly.
+  # Shared crane install avoids redundant downloads across push tasks.
   # ═══════════════════════════════════════════════════════════════════════
+
+  # ── Shared crane install + GHCR login ────────────────────────────────
+  - key: install-crane
+    cache: false
+    run: |
+      set -ex
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Push controller (minimal static binary) ──────────────────────────
   - key: push-controller
-    use: [build-controller]
+    use: [build-controller, install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
       set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
-
-      # Install crane
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-
-      # Login to GHCR
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
       # Build layer: static binary + CA certs
       mkdir -p /tmp/layer/etc/ssl/certs
@@ -299,18 +307,13 @@ tasks:
 
   # ── Push slack-bridge (minimal static binary) ────────────────────────
   - key: push-slack-bridge
-    use: [build-slack-bridge]
+    use: [build-slack-bridge, install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
       set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
-
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
       mkdir -p /tmp/layer/etc/ssl/certs
       cp ${{ tasks.build-slack-bridge.artifacts.slack-bridge-binary }} /tmp/layer/slack-bridge
@@ -330,18 +333,13 @@ tasks:
 
   # ── Push jira-bridge (minimal static binary) ─────────────────────────
   - key: push-jira-bridge
-    use: [build-jira-bridge]
+    use: [build-jira-bridge, install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
       set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
-
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
       mkdir -p /tmp/layer/etc/ssl/certs
       cp ${{ tasks.build-jira-bridge.artifacts.jira-bridge-binary }} /tmp/layer/jira-bridge
@@ -361,18 +359,13 @@ tasks:
 
   # ── Push advice-viewer (minimal static binary) ──────────────────────
   - key: push-advice-viewer
-    use: [build-advice-viewer]
+    use: [build-advice-viewer, install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
       set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
-
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
       mkdir -p /tmp/layer/etc/ssl/certs
       cp ${{ tasks.build-advice-viewer.artifacts.advice-viewer-binary }} /tmp/layer/advice-viewer
@@ -634,7 +627,7 @@ tasks:
         - key: rust-tar
           path: rust-layer.tar
 
-  # ── CLI tools (all small binary downloads) ──────────────────────────
+  # ── CLI tools (parallel binary downloads) ───────────────────────────
   - key: agent-install-clis
     timeout: 10m
     filter:
@@ -644,27 +637,40 @@ tasks:
       OUT=/tmp/cli-layer
       mkdir -p $OUT/usr/local/bin $OUT/opt
 
-      # kubectl
+      # --- Phase 1: Resolve dynamic versions (sequential, ~2s each) ----
       KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
-      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o $OUT/usr/local/bin/kubectl
-      chmod +x $OUT/usr/local/bin/kubectl
-
-      # GitHub CLI
-      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" | jq -r .tag_name | sed "s/^v//")
-      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
-        | tar -xz --strip-components=2 -C $OUT/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
-
-      # GitLab CLI
+      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" | jq -r '.tag_name | ltrimstr("v")')
       GLAB_VERSION=$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases" | jq -r '.[0].tag_name | ltrimstr("v")')
-      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" \
-        | tar -xz --strip-components=1 -C $OUT/usr/local/bin bin/glab
+      YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
 
-      # Docker CLI
-      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" \
-        | tar -xz --strip-components=1 -C $OUT/usr/local/bin docker/docker
+      # --- Phase 2: Download all binaries in parallel ------------------
+      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o $OUT/usr/local/bin/kubectl &
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz &
+      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tar.gz &
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" -o /tmp/docker.tgz &
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip &
+      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" -o $OUT/usr/local/bin/rwx &
+      curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" -o /tmp/claudeless.tar.gz &
+      curl -fsSL "https://releases.hashicorp.com/terraform/1.11.3/terraform_1.11.3_linux_amd64.zip" -o /tmp/terraform.zip &
+      curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.77.11/terragrunt_linux_amd64" -o $OUT/usr/local/bin/terragrunt &
+      curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o $OUT/usr/local/bin/yq &
+      curl -fsSL "https://github.com/stern/stern/releases/download/v1.30.0/stern_1.30.0_linux_amd64.tar.gz" -o /tmp/stern.tar.gz &
+      curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" -o $OUT/usr/local/bin/hadolint &
+      wait
 
-      # AWS CLI
-      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      # --- Phase 3: Extract archives (sequential, fast) ----------------
+      tar -xz --strip-components=2 -C $OUT/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh" < /tmp/gh.tar.gz
+      tar -xz --strip-components=1 -C $OUT/usr/local/bin bin/glab < /tmp/glab.tar.gz
+      tar -xz --strip-components=1 -C $OUT/usr/local/bin docker/docker < /tmp/docker.tgz
+      tar -xz -C $OUT/usr/local/bin claudeless < /tmp/claudeless.tar.gz
+      unzip -q /tmp/terraform.zip -d $OUT/usr/local/bin && rm /tmp/terraform.zip
+      tar -xz -C $OUT/usr/local/bin stern < /tmp/stern.tar.gz
+
+      chmod +x $OUT/usr/local/bin/kubectl $OUT/usr/local/bin/rwx \
+        $OUT/usr/local/bin/claudeless $OUT/usr/local/bin/terragrunt \
+        $OUT/usr/local/bin/yq $OUT/usr/local/bin/hadolint
+
+      # AWS CLI (requires install script)
       unzip -q /tmp/awscli.zip -d /tmp
       /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
       mkdir -p $OUT/opt/aws-cli
@@ -678,15 +684,6 @@ tasks:
       ln -sf /opt/aws-cli/v2/current/bin/aws_completer $OUT/opt/aws-cli/bin/aws_completer
       ln -sf /opt/aws-cli/v2/current/bin/aws $OUT/usr/local/bin/aws
 
-      # RWX CLI
-      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" -o $OUT/usr/local/bin/rwx
-      chmod +x $OUT/usr/local/bin/rwx
-
-      # Claudeless
-      curl -fsSL "https://github.com/alfredjeanlab/claudeless/releases/download/v0.4.0/claudeless-linux-x86_64.tar.gz" \
-        | tar -xz -C $OUT/usr/local/bin claudeless
-      chmod +x $OUT/usr/local/bin/claudeless
-
       # uv
       curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
       mv ~/.local/bin/uv $OUT/usr/local/bin/uv
@@ -697,31 +694,12 @@ tasks:
       ln -sf /usr/local/bun/bin/bun $OUT/usr/local/bin/bun
       ln -sf /usr/local/bun/bin/bunx $OUT/usr/local/bin/bunx
 
-      # Helm + plugins
+      # Helm + plugins (requires installer script)
       curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | sudo bash
       cp /usr/local/bin/helm $OUT/usr/local/bin/helm
       mkdir -p $OUT/usr/local/share
       HELM_DATA_HOME=$OUT/usr/local/share/helm helm plugin install https://github.com/helm-unittest/helm-unittest
       HELM_DATA_HOME=$OUT/usr/local/share/helm helm plugin install https://github.com/chartmuseum/helm-push
-
-      # Terraform + Terragrunt
-      curl -fsSL "https://releases.hashicorp.com/terraform/1.11.3/terraform_1.11.3_linux_amd64.zip" -o /tmp/terraform.zip
-      unzip -q /tmp/terraform.zip -d $OUT/usr/local/bin && rm /tmp/terraform.zip
-      curl -fsSL "https://github.com/gruntwork-io/terragrunt/releases/download/v0.77.11/terragrunt_linux_amd64" -o $OUT/usr/local/bin/terragrunt
-      chmod +x $OUT/usr/local/bin/terragrunt
-
-      # yq
-      YQ_VERSION=$(curl -fsSL "https://api.github.com/repos/mikefarah/yq/releases/latest" | jq -r .tag_name)
-      curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o $OUT/usr/local/bin/yq
-      chmod +x $OUT/usr/local/bin/yq
-
-      # stern
-      curl -fsSL "https://github.com/stern/stern/releases/download/v1.30.0/stern_1.30.0_linux_amd64.tar.gz" \
-        | tar -xz -C $OUT/usr/local/bin stern
-
-      # hadolint
-      curl -fsSL "https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64" -o $OUT/usr/local/bin/hadolint
-      chmod +x $OUT/usr/local/bin/hadolint
 
       tar -cf cli-layer.tar -C $OUT .
     outputs:
@@ -731,7 +709,7 @@ tasks:
 
   # ── Assembly: merge all layers + project binaries → push ────────────
   - key: push-agent
-    use: [code, build-gb, download-coop, download-kd, agent-install-syspackages, agent-install-node, agent-install-go, agent-install-rust, agent-install-clis]
+    use: [code, build-gb, download-coop, download-kd, install-crane, agent-install-syspackages, agent-install-node, agent-install-go, agent-install-rust, agent-install-clis]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     timeout: 10m
@@ -740,22 +718,19 @@ tasks:
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
 
-      # Install crane
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
-
       LAYER=/tmp/layer
       mkdir -p $LAYER
 
-      # Unpack all cached install layers
-      echo "=== Unpacking cached layers ==="
-      sudo tar -xf ${{ tasks.agent-install-syspackages.artifacts.syspackages-tar }} -C $LAYER
-      tar -xf ${{ tasks.agent-install-node.artifacts.node-tar }} -C $LAYER
-      tar -xf ${{ tasks.agent-install-go.artifacts.go-tar }} -C $LAYER
-      tar -xf ${{ tasks.agent-install-rust.artifacts.rust-tar }} -C $LAYER
-      tar -xf ${{ tasks.agent-install-clis.artifacts.clis-tar }} -C $LAYER
+      # Unpack all cached install layers in parallel
+      # Layers write to non-overlapping paths so concurrent extraction is safe.
+      echo "=== Unpacking cached layers (parallel) ==="
+      sudo tar -xf ${{ tasks.agent-install-syspackages.artifacts.syspackages-tar }} -C $LAYER &
+      tar -xf ${{ tasks.agent-install-node.artifacts.node-tar }} -C $LAYER &
+      tar -xf ${{ tasks.agent-install-go.artifacts.go-tar }} -C $LAYER &
+      tar -xf ${{ tasks.agent-install-rust.artifacts.rust-tar }} -C $LAYER &
+      tar -xf ${{ tasks.agent-install-clis.artifacts.clis-tar }} -C $LAYER &
+      wait
+      echo "=== All layers unpacked ==="
 
       # Project binaries (gb, coop, kd)
       echo "=== Adding project binaries ==="
@@ -826,27 +801,22 @@ tasks:
 
   # ── Re-tag coopmux → gasboat calver ───────────────────────────────────
   - key: retag-coopmux
+    use: [install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
       set -ex
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
-
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
       crane cp ghcr.io/groblegark/coop:coopmux ghcr.io/groblegark/coop:${TAG}
       echo "Re-tagged coop:coopmux → coop:${TAG}"
     env:
       REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Re-tag kbeads → gasboat calver ───────────────────────────────────
   - key: retag-kbeads
+    use: [install-crane]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -854,14 +824,7 @@ tasks:
       TAG="${REF_NAME#refs/tags/}"
       TAG="${TAG#refs/heads/}"
 
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar xz -C /tmp crane
-      sudo mv /tmp/crane /usr/local/bin/
-      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
-
       crane cp ghcr.io/groblegark/kbeads:latest ghcr.io/groblegark/kbeads:${TAG}
       echo "Re-tagged kbeads:latest → kbeads:${TAG}"
     env:
       REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
