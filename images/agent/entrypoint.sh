@@ -824,7 +824,15 @@ while true; do
     if [ "${MOCK_MODE}" != "1" ] && [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
         LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
             | sort -rn | head -1 | cut -d' ' -f2-)
-        if [ -n "${LATEST_LOG}" ]; then
+        if [ -n "${LATEST_LOG}" ] && [ -f "${LATEST_LOG}" ]; then
+            # Validate last line is complete JSON. A partial write from an
+            # abrupt kill leaves an incomplete line that breaks --resume.
+            last_line=$(tail -1 "${LATEST_LOG}" 2>/dev/null)
+            if [ -n "${last_line}" ] && ! echo "${last_line}" | jq empty 2>/dev/null; then
+                echo "[entrypoint] Truncating corrupted last line from ${LATEST_LOG}"
+                # Remove the last (incomplete) line, keeping all complete lines.
+                head -n -1 "${LATEST_LOG}" > "${LATEST_LOG}.tmp" && mv "${LATEST_LOG}.tmp" "${LATEST_LOG}"
+            fi
             RESUME_FLAG="--resume ${LATEST_LOG}"
         fi
     elif [ "${STALE_COUNT:-0}" -ge "${MAX_STALE_RETRIES}" ]; then

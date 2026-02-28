@@ -262,7 +262,11 @@ func findResumeSession(claudeStateDir string, sessionResume bool) string {
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].modTime.After(candidates[j].modTime)
 	})
-	return candidates[0].path
+	best := candidates[0].path
+	// Validate the last line is complete JSON. A partial write from an
+	// abrupt kill leaves an incomplete line that breaks --resume.
+	truncateIncompleteLastLine(best)
+	return best
 }
 
 // isStopRequested checks whether the agent bead has stop_requested=true.
@@ -279,6 +283,31 @@ func isStopRequested(ctx context.Context, agentBeadID string) bool {
 		return false // fail-safe: don't stop if we can't check
 	}
 	return bead.Fields["stop_requested"] == "true"
+}
+
+// truncateIncompleteLastLine removes the last line of a .jsonl file if it
+// is not valid JSON. This repairs files left with a partial write after an
+// abrupt kill (SIGKILL).
+func truncateIncompleteLastLine(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	// Find the last newline before EOF.
+	data = bytes.TrimRight(data, "\n")
+	lastNL := bytes.LastIndexByte(data, '\n')
+	if lastNL < 0 {
+		return // single line, nothing to truncate to
+	}
+	lastLine := data[lastNL+1:]
+	if json.Valid(lastLine) {
+		return // last line is valid JSON, no truncation needed
+	}
+	fmt.Printf("[gb agent start] truncating corrupted last line from %s\n", path)
+	// Keep everything up to and including the last newline.
+	if err := os.WriteFile(path, append(data[:lastNL], '\n'), 0644); err != nil {
+		fmt.Printf("[gb agent start] warning: truncate %s: %v\n", path, err)
+	}
 }
 
 // retireStaleSession renames a session log to .jsonl.stale so it won't be

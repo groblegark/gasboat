@@ -169,16 +169,25 @@ func runLocal(ctx context.Context, agentName, agentBeadID, role, dir, agentComma
 	coopProc.Env = env
 	coopProc.Stdout = os.Stderr
 	coopProc.Stderr = os.Stderr
+	// Send SIGTERM on context cancellation instead of the default SIGKILL.
+	coopProc.Cancel = func() error {
+		if coopProc.Process != nil {
+			fmt.Printf("[gb agent start] sending SIGTERM to coop (pid %d)\n", coopProc.Process.Pid)
+			return coopProc.Process.Signal(syscall.SIGTERM)
+		}
+		return nil
+	}
+	coopProc.WaitDelay = 20 * time.Second
 
 	if err := coopProc.Start(); err != nil {
 		return fmt.Errorf("start coop: %w", err)
 	}
 	fmt.Printf("[gb agent start] Coop started (pid %d)\n", coopProc.Process.Pid)
 
-	// Ensure coop is killed if we exit early.
+	// Ensure coop is stopped if we exit early.
 	defer func() {
 		if coopProc.ProcessState == nil {
-			_ = coopProc.Process.Kill()
+			_ = coopProc.Process.Signal(syscall.SIGTERM)
 			_ = coopProc.Wait()
 		}
 	}()
