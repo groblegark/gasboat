@@ -12,8 +12,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"gasboat/controller/internal/beadsapi"
 )
 
 // MailConfig holds configuration for the Mail watcher.
@@ -83,25 +81,11 @@ func (m *Mail) shouldNudge(bead BeadEvent) bool {
 	return bead.Priority <= 1
 }
 
-// nudgeAgent looks up the agent's coop_url and POSTs a nudge.
+// nudgeAgent delivers a mail nudge to the assigned agent with retry.
 func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 	agentName := bead.Assignee
 	if agentName == "" {
 		m.logger.Warn("mail bead has no assignee, cannot nudge", "id", bead.ID)
-		return
-	}
-
-	agentBead, err := m.daemon.FindAgentBead(ctx, agentName)
-	if err != nil {
-		m.logger.Error("failed to get agent bead for mail nudge",
-			"agent", agentName, "mail", bead.ID, "error", err)
-		return
-	}
-
-	coopURL := beadsapi.ParseNotes(agentBead.Notes)["coop_url"]
-	if coopURL == "" {
-		m.logger.Warn("agent bead has no coop_url, cannot nudge",
-			"agent", agentName, "mail", bead.ID)
 		return
 	}
 
@@ -116,9 +100,9 @@ func (m *Mail) nudgeAgent(ctx context.Context, bead BeadEvent) {
 
 	message := fmt.Sprintf("New mail from %s: %s — run 'kd show %s' to read", sender, bead.Title, bead.ID)
 
-	if err := nudgeCoop(ctx, m.httpClient, coopURL, message); err != nil {
+	if err := NudgeAgent(ctx, m.daemon, m.httpClient, m.logger, agentName, message); err != nil {
 		m.logger.Error("failed to nudge agent for mail",
-			"agent", agentName, "coop_url", coopURL, "error", err)
+			"agent", agentName, "mail", bead.ID, "error", err)
 		return
 	}
 
