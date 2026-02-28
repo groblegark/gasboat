@@ -217,15 +217,21 @@ func (s *Server) handleAdviceUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update fields.
-	fields := map[string]string{
-		"hook_command": hookCommand,
-		"hook_trigger": hookTrigger,
+	// Update fields — only send non-empty values; the API rejects empty
+	// hook_trigger (must be one of the allowed trigger names).
+	fields := make(map[string]string)
+	if hookCommand != "" {
+		fields["hook_command"] = hookCommand
 	}
-	if err := s.daemon.UpdateBeadFields(r.Context(), id, fields); err != nil {
-		s.logger.Error("updating advice fields", "id", id, "error", err)
-		http.Error(w, "Failed to update advice fields", http.StatusInternalServerError)
-		return
+	if hookTrigger != "" {
+		fields["hook_trigger"] = hookTrigger
+	}
+	if len(fields) > 0 {
+		if err := s.daemon.UpdateBeadFields(r.Context(), id, fields); err != nil {
+			s.logger.Error("updating advice fields", "id", id, "error", err)
+			http.Error(w, "Failed to update advice fields", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Sync labels: get current labels, compute diff, add/remove.

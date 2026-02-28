@@ -279,6 +279,9 @@ func TestHandleGenerateDispatch(t *testing.T) {
 	if !strings.Contains(body, "Created task") {
 		t.Error("expected success message in response")
 	}
+	if !strings.Contains(body, "agent") {
+		t.Error("expected agent reference in success message")
+	}
 }
 
 func TestHandleGenerateDispatch_MissingTopic(t *testing.T) {
