@@ -686,6 +686,23 @@ monitor_agent_exit() {
             curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
             return 0
         fi
+        # Detect rate-limited state and park the pod.
+        error_cat=$(echo "${state}" | jq -r '.error_category // empty' 2>/dev/null)
+        if [ "${error_cat}" = "rate_limited" ]; then
+            echo "[entrypoint] Agent rate-limited, dismissing prompt"
+            # Send Enter to select "Stop and wait" from /rate-limit-options.
+            curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+                -H 'Content-Type: application/json' \
+                -d '{"keys":["Return"]}' 2>/dev/null || true
+            last_msg=$(echo "${state}" | jq -r '.last_message // empty' 2>/dev/null)
+            echo "[entrypoint] Rate limit info: ${last_msg}"
+            # Write sentinel so the restart loop knows to sleep until reset.
+            echo "${last_msg}" > /tmp/rate_limit_reset
+            sleep 2
+            echo "[entrypoint] Requesting coop shutdown (rate-limited)"
+            curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+            return 0
+        fi
     done
 }
 
@@ -837,6 +854,34 @@ while true; do
             deregister_from_mux
             exit 0
         fi
+    fi
+
+    # If rate-limited, sleep until the reset time before restarting.
+    if [ -f /tmp/rate_limit_reset ]; then
+        rate_msg=$(cat /tmp/rate_limit_reset)
+        rm -f /tmp/rate_limit_reset
+        # Extract reset hour from message (e.g., "resets 9pm (UTC)" -> "9pm").
+        reset_hour=$(echo "${rate_msg}" | grep -oP '\d{1,2}(am|pm)' | head -1)
+        sleep_secs=""
+        if [ -n "${reset_hour}" ]; then
+            target_epoch=$(date -u -d "today ${reset_hour}" +%s 2>/dev/null) || true
+            now_epoch=$(date -u +%s)
+            if [ -n "${target_epoch}" ] && [ "${target_epoch}" -le "${now_epoch}" ]; then
+                target_epoch=$(date -u -d "tomorrow ${reset_hour}" +%s 2>/dev/null) || true
+            fi
+            if [ -n "${target_epoch}" ] && [ "${target_epoch}" -gt "${now_epoch}" ]; then
+                sleep_secs=$((target_epoch - now_epoch + 60))
+            fi
+        fi
+        if [ -n "${sleep_secs}" ]; then
+            echo "[entrypoint] Rate limited — sleeping ${sleep_secs}s until ${reset_hour} UTC"
+        else
+            sleep_secs=1800
+            echo "[entrypoint] Rate limited — sleeping ${sleep_secs}s (could not parse reset time)"
+        fi
+        sleep "${sleep_secs}"
+        restart_count=0
+        continue
     fi
 
     if [ "${elapsed}" -ge "${MIN_RUNTIME_SECS}" ]; then
