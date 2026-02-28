@@ -409,13 +409,9 @@ COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 5
 # for E2E testing without consuming API credits). Defaults to real Claude Code.
 AGENT_CMD="${BOAT_COMMAND:-claude --dangerously-skip-permissions}"
 
-# Append --model if CLAUDE_MODEL is set and BOAT_COMMAND was not overridden.
-echo "[entrypoint] DEBUG: CLAUDE_MODEL=[${CLAUDE_MODEL:-}] BOAT_COMMAND=[${BOAT_COMMAND:-}] AGENT_CMD=[${AGENT_CMD}]"
-if [ -n "${CLAUDE_MODEL:-}" ] && [ -z "${BOAT_COMMAND:-}" ]; then
+# Append --model if CLAUDE_MODEL is set and agent command is real Claude (not claudeless).
+if [ -n "${CLAUDE_MODEL:-}" ] && [ "${MOCK_MODE}" != "1" ]; then
     AGENT_CMD="${AGENT_CMD} --model ${CLAUDE_MODEL}"
-    echo "[entrypoint] DEBUG: appended --model, AGENT_CMD=[${AGENT_CMD}]"
-else
-    echo "[entrypoint] DEBUG: skipped --model (CLAUDE_MODEL empty or BOAT_COMMAND set)"
 fi
 
 # Coop log level (overridable via pod env).
@@ -771,7 +767,6 @@ while true; do
 
     if [ -n "${RESUME_FLAG}" ]; then
         echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT}) with resume"
-        echo "[entrypoint] Full command: ${COOP_CMD} ${RESUME_FLAG} -- ${AGENT_CMD}"
         ${COOP_CMD} ${RESUME_FLAG} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
@@ -786,7 +781,6 @@ while true; do
         fi
     else
         echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT})"
-        echo "[entrypoint] Full command: ${COOP_CMD} -- ${AGENT_CMD}"
         ${COOP_CMD} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
