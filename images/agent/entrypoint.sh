@@ -767,6 +767,7 @@ while true; do
 
     if [ -n "${RESUME_FLAG}" ]; then
         echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT}) with resume"
+        echo "[entrypoint] Full command: ${COOP_CMD} ${RESUME_FLAG} -- ${AGENT_CMD}"
         ${COOP_CMD} ${RESUME_FLAG} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
@@ -781,6 +782,7 @@ while true; do
         fi
     else
         echo "[entrypoint] Starting coop + ${AGENT_CMD%% *} (${ROLE}/${AGENT})"
+        echo "[entrypoint] Full command: ${COOP_CMD} -- ${AGENT_CMD}"
         ${COOP_CMD} -- ${AGENT_CMD} &
         COOP_PID=$!
         (auto_bypass_startup && inject_initial_prompt) &
