@@ -220,6 +220,12 @@ elif [ -f "${CREDS_STAGING}" ]; then
     echo "[entrypoint] Seeded Claude credentials from K8s secret"
 elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
     echo "[entrypoint] CLAUDE_CODE_OAUTH_TOKEN set — coop will auto-write credentials"
+    # Unset API key when OAuth is present to avoid Claude's
+    # "Detected a custom API key" confirmation prompt.
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        echo "[entrypoint] Unsetting ANTHROPIC_API_KEY (OAuth takes precedence)"
+        unset ANTHROPIC_API_KEY
+    fi
 elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     echo "[entrypoint] ANTHROPIC_API_KEY set — using API key mode"
 elif [ -n "${COOP_MUX_URL:-}" ]; then
@@ -448,6 +454,8 @@ auto_bypass_startup() {
 
         # Handle "Detected a custom API key" prompt — can appear as state
         # "starting" or "prompt" (type=permission, subtype=trust).
+        # Normally avoided by unsetting ANTHROPIC_API_KEY when OAuth is
+        # present, but kept as a safety net.
         if [ "${agent_state}" = "starting" ] || [ "${prompt_type}" = "permission" ]; then
             screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
             if echo "${screen}" | grep -q "Detected a custom API key"; then
@@ -458,11 +466,7 @@ auto_bypass_startup() {
                 sleep 3
                 continue
             fi
-        fi
-
-        # Handle "trust this folder" permission prompt (Yes, I trust / No, exit).
-        if [ "${prompt_type}" = "permission" ] && [ "${subtype}" = "trust" ]; then
-            screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
+            # Handle "trust this folder" permission prompt.
             if echo "${screen}" | grep -q "trust this folder"; then
                 echo "[entrypoint] Auto-accepting trust folder prompt"
                 curl -sf -X POST http://localhost:8080/api/v1/agent/respond \

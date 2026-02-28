@@ -24,7 +24,7 @@ FROM ubuntu:24.04 AS base
 ARG DEBIAN_FRONTEND=noninteractive
 ARG NODE_VERSION=24
 ARG COOP_VERSION=2026.224.0
-ARG BEADS_VERSION=2026.58.3
+ARG BEADS_VERSION=2026.58.4
 ARG TARGETARCH
 
 # ── System packages (minimal) ─────────────────────────────────────
