@@ -160,54 +160,42 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	if entry.ServiceAccount != "" {
 		spec.ServiceAccountName = entry.ServiceAccount
 	}
-	if entry.RTKEnabled {
-		spec.Env["RTK_ENABLED"] = "true"
-	}
 
-	// Resource overrides: rebuild ResourceRequirements when any quantity is set.
+	// Apply per-project resource overrides. Individual fields override the
+	// corresponding resource value while preserving other defaults.
 	if entry.CPURequest != "" || entry.CPULimit != "" || entry.MemoryRequest != "" || entry.MemoryLimit != "" {
 		if spec.Resources == nil {
-			spec.Resources = &corev1.ResourceRequirements{}
-		}
-		if spec.Resources.Requests == nil {
-			spec.Resources.Requests = corev1.ResourceList{}
-		}
-		if spec.Resources.Limits == nil {
-			spec.Resources.Limits = corev1.ResourceList{}
-		}
-		if entry.CPURequest != "" {
-			if q, err := resource.ParseQuantity(entry.CPURequest); err == nil {
-				spec.Resources.Requests[corev1.ResourceCPU] = q
+			spec.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{},
+				Limits:   corev1.ResourceList{},
 			}
 		}
-		if entry.CPULimit != "" {
-			if q, err := resource.ParseQuantity(entry.CPULimit); err == nil {
-				spec.Resources.Limits[corev1.ResourceCPU] = q
-			}
-		}
-		if entry.MemoryRequest != "" {
-			if q, err := resource.ParseQuantity(entry.MemoryRequest); err == nil {
-				spec.Resources.Requests[corev1.ResourceMemory] = q
-			}
-		}
-		if entry.MemoryLimit != "" {
-			if q, err := resource.ParseQuantity(entry.MemoryLimit); err == nil {
-				spec.Resources.Limits[corev1.ResourceMemory] = q
-			}
-		}
+		applyResourceOverride(spec.Resources.Requests, corev1.ResourceCPU, entry.CPURequest)
+		applyResourceOverride(spec.Resources.Limits, corev1.ResourceCPU, entry.CPULimit)
+		applyResourceOverride(spec.Resources.Requests, corev1.ResourceMemory, entry.MemoryRequest)
+		applyResourceOverride(spec.Resources.Limits, corev1.ResourceMemory, entry.MemoryLimit)
 	}
 
-	// Env overrides: inject project-level env vars (spec values take precedence).
-	if len(entry.EnvOverrides) > 0 {
+	// Apply per-project env overrides (additive; project values take precedence).
+	for k, v := range entry.EnvOverrides {
 		if spec.Env == nil {
 			spec.Env = make(map[string]string)
 		}
-		for k, v := range entry.EnvOverrides {
-			if _, exists := spec.Env[k]; !exists {
-				spec.Env[k] = v
-			}
-		}
+		spec.Env[k] = v
 	}
+}
+
+// applyResourceOverride sets a resource quantity in a ResourceList if the value
+// is non-empty and parses as a valid Kubernetes quantity.
+func applyResourceOverride(list corev1.ResourceList, name corev1.ResourceName, value string) {
+	if value == "" {
+		return
+	}
+	q, err := resource.ParseQuantity(value)
+	if err != nil {
+		return // silently skip invalid values
+	}
+	list[name] = q
 }
 
 // applyCommonConfig wires controller-level config into an AgentPodSpec.

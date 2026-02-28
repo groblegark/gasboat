@@ -213,6 +213,7 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			CPULimit:       fields["cpu_limit"],
 			MemoryRequest:  fields["memory_request"],
 			MemoryLimit:    fields["memory_limit"],
+
 		}
 		// Parse per-project secrets from JSON field.
 		if raw := fields["secrets"]; raw != "" {

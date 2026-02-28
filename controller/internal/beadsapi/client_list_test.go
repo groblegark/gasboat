@@ -387,6 +387,99 @@ func TestListProjectBeads_EmptySecretsAndRepos(t *testing.T) {
 	}
 }
 
+func TestListProjectBeads_ParsesResourceAndEnvOverrides(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:    "proj-heavy",
+					Title: "heavy",
+					Type:  "project",
+					Fields: json.RawMessage(`{
+						"prefix":"hv",
+						"git_url":"https://github.com/org/heavy",
+						"cpu_request":"4",
+						"cpu_limit":"8",
+						"memory_request":"4Gi",
+						"memory_limit":"16Gi",
+						"env_json":"{\"FEATURE_FLAG\":\"true\",\"API_URL\":\"https://api.example.com\"}"
+					}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p, ok := projects["heavy"]
+	if !ok {
+		t.Fatal("expected project 'heavy' in map")
+	}
+
+	if p.CPURequest != "4" {
+		t.Errorf("expected cpu_request 4, got %s", p.CPURequest)
+	}
+	if p.CPULimit != "8" {
+		t.Errorf("expected cpu_limit 8, got %s", p.CPULimit)
+	}
+	if p.MemoryRequest != "4Gi" {
+		t.Errorf("expected memory_request 4Gi, got %s", p.MemoryRequest)
+	}
+	if p.MemoryLimit != "16Gi" {
+		t.Errorf("expected memory_limit 16Gi, got %s", p.MemoryLimit)
+	}
+
+	if len(p.EnvOverrides) != 2 {
+		t.Fatalf("expected 2 env overrides, got %d", len(p.EnvOverrides))
+	}
+	if p.EnvOverrides["FEATURE_FLAG"] != "true" {
+		t.Errorf("expected FEATURE_FLAG=true, got %s", p.EnvOverrides["FEATURE_FLAG"])
+	}
+	if p.EnvOverrides["API_URL"] != "https://api.example.com" {
+		t.Errorf("expected API_URL, got %s", p.EnvOverrides["API_URL"])
+	}
+}
+
+func TestListProjectBeads_EmptyResourceAndEnvFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := listBeadsResponse{
+			Beads: []beadJSON{
+				{
+					ID:     "proj-minimal",
+					Title:  "minimal",
+					Type:   "project",
+					Fields: json.RawMessage(`{"prefix":"mn","git_url":"https://github.com/org/minimal"}`),
+				},
+			},
+			Total: 1,
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	projects, err := c.ListProjectBeads(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	p := projects["minimal"]
+	if p.CPURequest != "" || p.CPULimit != "" || p.MemoryRequest != "" || p.MemoryLimit != "" {
+		t.Errorf("expected empty resource fields, got cpu_request=%q cpu_limit=%q memory_request=%q memory_limit=%q",
+			p.CPURequest, p.CPULimit, p.MemoryRequest, p.MemoryLimit)
+	}
+	if len(p.EnvOverrides) != 0 {
+		t.Errorf("expected no env overrides, got %d", len(p.EnvOverrides))
+	}
+}
+
 func TestListProjectBeads_SkipsEmptyTitle(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := listBeadsResponse{
