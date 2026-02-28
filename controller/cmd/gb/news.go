@@ -156,6 +156,7 @@ func filterRecentlyClosed(beads []*beadsapi.BeadDetail, window time.Duration) []
 var noiseTypes = map[string]bool{
 	"decision": true, "gate": true, "config": true, "advice": true,
 	"message": true, "formula": true, "molecule": true, "runbook": true,
+	"artifact": true, "mention": true, "mail": true,
 }
 
 func filterOutNoiseTypes(beads []*beadsapi.BeadDetail) []*beadsapi.BeadDetail {

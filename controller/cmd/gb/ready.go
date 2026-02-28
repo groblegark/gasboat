@@ -39,15 +39,16 @@ var readyCmd = &cobra.Command{
 			return fmt.Errorf("listing ready beads: %w", err)
 		}
 
+		beads := filterOutNoiseTypes(result.Beads)
 		if jsonOutput {
-			printJSON(result.Beads)
-		} else if len(result.Beads) == 0 {
+			printJSON(beads)
+		} else if len(beads) == 0 {
 			fmt.Println("No beads ready to work on")
 		} else {
-			for _, b := range result.Beads {
+			for _, b := range beads {
 				fmt.Printf("  %s  %s  %s\n", b.ID, b.Title, b.Assignee)
 			}
-			fmt.Printf("\n%d beads (%d total)\n", len(result.Beads), result.Total)
+			fmt.Printf("\n%d beads (%d total)\n", len(beads), result.Total)
 			fmt.Println("\nRun `kd claim <id>` before starting work on any bead.")
 		}
 		return nil
