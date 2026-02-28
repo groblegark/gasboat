@@ -214,7 +214,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		spec.BeadID = bead.ID
 		r.logger.Info("creating pod", "pod", name)
 		if err := r.pods.CreateAgentPod(ctx, spec); err != nil {
-			return fmt.Errorf("creating pod %s: %w", name, err)
+			// Clear upgrading state so the next sync can retry instead of
+			// blocking all upgrades for this mode until the stale timeout.
+			r.upgradeTracker.ClearUpgrading(name)
+			r.logger.Warn("create after upgrade failed, will retry next sync",
+				"pod", name, "error", err)
+			continue
 		}
 		// Mark the image as deployed so digest drift is cleared.
 		if r.digestTracker != nil && spec.Image != "" {
