@@ -142,9 +142,42 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 		}
 	}
 
+	// Notify rate limit so operators know.
+	if agentState == "rate_limited" {
+		a.notifyRateLimited(ctx, *bead)
+	}
+
 	// For any state change, notify so the agent card can be refreshed.
 	if agentState != "" && a.notifier != nil {
 		a.notifier.NotifyAgentState(ctx, *bead)
+	}
+}
+
+func (a *Agents) notifyRateLimited(ctx context.Context, bead BeadEvent) {
+	// Deduplicate: only notify once per agent bead.
+	key := bead.ID + ":rate_limited"
+	a.mu.Lock()
+	if a.seen[key] {
+		a.mu.Unlock()
+		return
+	}
+	a.seen[key] = true
+	a.mu.Unlock()
+
+	agent := bead.Assignee
+	if agent == "" {
+		if n := bead.Fields["agent"]; n != "" {
+			agent = n
+		}
+	}
+
+	a.logger.Warn("agent rate-limited",
+		"id", bead.ID,
+		"agent", agent,
+		"agent_state", bead.Fields["agent_state"])
+
+	if a.notifier != nil {
+		a.notifier.NotifyAgentState(ctx, bead)
 	}
 }
 
