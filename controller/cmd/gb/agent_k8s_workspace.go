@@ -34,16 +34,16 @@ func setupWorkspace(cfg k8sConfig) error {
 	runGitGlobal("config", "--global", "--add", "safe.directory", "*")
 	fmt.Printf("[gb agent start] git global config set (user: %s)\n", authorName)
 
-	// 3. Git credentials.
+	// 3. Git credentials — derive hosts from BOAT_PROJECTS repo URLs.
 	gitUser := os.Getenv("GIT_USERNAME")
 	gitToken := os.Getenv("GIT_TOKEN")
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
 	if gitUser != "" && gitToken != "" || gitlabToken != "" {
-		if err := writeGitCredentials(gitUser, gitToken, gitlabToken); err != nil {
+		hosts := repoHosts(os.Getenv("BOAT_PROJECTS"))
+		if err := writeGitCredentials(gitUser, gitToken, gitlabToken, hosts); err != nil {
 			fmt.Printf("[gb agent start] warning: git credentials: %v\n", err)
 		} else {
-			fmt.Printf("[gb agent start] git credentials configured (github: %v, gitlab: %v)\n",
-				gitUser != "", gitlabToken != "")
+			fmt.Printf("[gb agent start] git credentials configured for %v\n", hosts)
 		}
 	}
 
@@ -260,17 +260,51 @@ func resetStaleBranch(workspace string) {
 	fmt.Printf("[gb agent start] workspace now on branch: %s\n", strings.TrimSpace(string(out)))
 }
 
-func writeGitCredentials(user, token, gitlabToken string) error {
+// repoHosts extracts unique hostnames from BOAT_PROJECTS.
+// Format: "name=https://host/path:prefix,name2=https://host2/path:prefix"
+func repoHosts(boatProjects string) []string {
+	seen := map[string]bool{}
+	for _, entry := range strings.Split(boatProjects, ",") {
+		entry = strings.TrimSpace(entry)
+		// name=https://host/path:prefix — URL is between '=' and last ':'
+		eqIdx := strings.Index(entry, "=")
+		if eqIdx < 0 {
+			continue
+		}
+		rawURL := entry[eqIdx+1:]
+		// Strip trailing :prefix if present.
+		if lastColon := strings.LastIndex(rawURL, ":"); lastColon > strings.Index(rawURL, "//") {
+			rawURL = rawURL[:lastColon]
+		}
+		// Extract host from URL.
+		if strings.HasPrefix(rawURL, "https://") {
+			host := strings.SplitN(rawURL[len("https://"):], "/", 2)[0]
+			if host != "" {
+				seen[host] = true
+			}
+		}
+	}
+	var hosts []string
+	for h := range seen {
+		hosts = append(hosts, h)
+	}
+	return hosts
+}
+
+func writeGitCredentials(user, token, gitlabToken string, hosts []string) error {
 	home := homeDir()
 	credFile := filepath.Join(home, ".git-credentials")
 	var lines string
-	if user != "" && token != "" {
-		lines += fmt.Sprintf("https://%s:%s@github.com\n", user, token)
+	for _, host := range hosts {
+		// Use GITLAB_TOKEN for gitlab.com, GIT_USERNAME/GIT_TOKEN for everything else.
+		if strings.Contains(host, "gitlab") && gitlabToken != "" {
+			lines += fmt.Sprintf("https://oauth2:%s@%s\n", gitlabToken, host)
+		} else if user != "" && token != "" {
+			lines += fmt.Sprintf("https://%s:%s@%s\n", user, token, host)
+		}
 	}
-	if gitlabToken != "" {
-		lines += fmt.Sprintf("https://oauth2:%s@gitlab.com\n", gitlabToken)
-	} else if user != "" && token != "" {
-		lines += fmt.Sprintf("https://%s:%s@gitlab.com\n", user, token)
+	if lines == "" {
+		return nil
 	}
 	if err := os.WriteFile(credFile, []byte(lines), 0o600); err != nil {
 		return err
