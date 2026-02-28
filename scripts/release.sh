@@ -23,9 +23,10 @@ YEAR=$(date +%Y)
 DOY=$(date +%-j)  # day-of-year without leading zeros
 PREFIX="${YEAR}.${DOY}"
 
-# Find highest build number for today's prefix among existing git tags
-LAST_N=$(git tag -l "${PREFIX}.*" 2>/dev/null \
-  | sed "s/^${PREFIX}\.//" \
+# Find highest build number for today's prefix among existing git tags.
+# Check both bare (2026.58.N) and v-prefixed (v2026.58.N) tags.
+LAST_N=$({ git tag -l "${PREFIX}.*"; git tag -l "v${PREFIX}.*"; } 2>/dev/null \
+  | sed -E "s/^v?${PREFIX}\.//" \
   | sort -n \
   | tail -1)
 
