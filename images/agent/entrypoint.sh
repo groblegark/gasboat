@@ -196,6 +196,7 @@ CLAUDE_DIR="${HOME}/.claude"
 # it's already PVC-backed — skip the symlink dance.
 if mountpoint -q "${CLAUDE_DIR}" 2>/dev/null; then
     echo "[entrypoint] ${CLAUDE_DIR} is a mount point (subPath) — already PVC-backed"
+    CLAUDE_STATE="${CLAUDE_DIR}"
 else
     rm -rf "${CLAUDE_DIR}"
     ln -sfn "${CLAUDE_STATE}" "${CLAUDE_DIR}"
