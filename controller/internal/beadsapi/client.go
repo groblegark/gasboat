@@ -223,23 +223,20 @@ func (c *Client) ListTaskBeads(ctx context.Context) ([]*BeadDetail, error) {
 	return beads, nil
 }
 
-// ListAssignedTask returns the first in-progress non-agent bead claimed by
-// agentName, or nil if none is found. It excludes agent, decision, and project
-// beads so only actionable work (task, bug, feature, etc.) is returned.
+// ListAssignedTask returns the first in-progress issue-kind bead claimed by
+// agentName, or nil if none is found. Uses server-side kind=issue filtering
+// to exclude infrastructure beads (agent, decision, project, etc.).
 func (c *Client) ListAssignedTask(ctx context.Context, agentName string) (*BeadDetail, error) {
 	q := url.Values{}
 	q.Set("status", "in_progress")
 	q.Set("assignee", agentName)
+	q.Set("kind", "issue")
 	var resp listBeadsResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads?"+q.Encode(), nil, &resp); err != nil {
 		return nil, fmt.Errorf("listing assigned beads: %w", err)
 	}
-	for _, b := range resp.Beads {
-		switch b.Type {
-		case "agent", "decision", "project":
-			continue
-		}
-		return b.toDetail(), nil
+	if len(resp.Beads) > 0 {
+		return resp.Beads[0].toDetail(), nil
 	}
 	return nil, nil
 }

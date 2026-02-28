@@ -48,8 +48,8 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 			screen, _ := getScreenText(client, base)
 
 			if strings.Contains(screen, "Resume Session") {
-				fmt.Printf("[gb agent start] detected resume session picker, pressing Escape\n")
-				postKeys(client, base, "Escape")
+				fmt.Printf("[gb agent start] detected resume session picker, selecting resume\n")
+				postKeys(client, base, "Return")
 				time.Sleep(3 * time.Second)
 				continue
 			}
@@ -169,6 +169,30 @@ func monitorAgentExit(ctx context.Context, coopPort int) {
 			_, _ = client.Do(req) //nolint:errcheck // best-effort shutdown on exit
 			return
 		}
+
+		// Detect rate-limited state and park the pod.
+		errorCat, _ := state["error_category"].(string)
+		if errorCat == "rate_limited" {
+			fmt.Printf("[gb agent start] agent rate-limited, dismissing prompt\n")
+			postKeys(client, base, "Return")
+			lastMsg, _ := state["last_message"].(string)
+			fmt.Printf("[gb agent start] rate limit info: %s\n", lastMsg)
+			// Report rate_limited status to the agent bead.
+			if agentBeadID := envOr("KD_AGENT_ID", os.Getenv("BOAT_AGENT_BEAD_ID")); agentBeadID != "" && daemon != nil {
+				updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := daemon.UpdateAgentState(updateCtx, agentBeadID, "rate_limited"); err != nil {
+					fmt.Printf("[gb agent start] warning: update agent_state: %v\n", err)
+				}
+				cancel()
+			}
+			// Write sentinel so the restart loop knows to sleep until reset.
+			_ = os.WriteFile("/tmp/rate_limit_reset", []byte(lastMsg), 0644)
+			time.Sleep(2 * time.Second)
+			fmt.Printf("[gb agent start] requesting coop shutdown (rate-limited)\n")
+			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/shutdown", nil)
+			_, _ = client.Do(req) //nolint:errcheck // best-effort shutdown on rate limit
+			return
+		}
 	}
 }
 
@@ -238,7 +262,11 @@ func findResumeSession(claudeStateDir string, sessionResume bool) string {
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].modTime.After(candidates[j].modTime)
 	})
-	return candidates[0].path
+	best := candidates[0].path
+	// Validate the last line is complete JSON. A partial write from an
+	// abrupt kill leaves an incomplete line that breaks --resume.
+	truncateIncompleteLastLine(best)
+	return best
 }
 
 // isStopRequested checks whether the agent bead has stop_requested=true.
@@ -255,6 +283,31 @@ func isStopRequested(ctx context.Context, agentBeadID string) bool {
 		return false // fail-safe: don't stop if we can't check
 	}
 	return bead.Fields["stop_requested"] == "true"
+}
+
+// truncateIncompleteLastLine removes the last line of a .jsonl file if it
+// is not valid JSON. This repairs files left with a partial write after an
+// abrupt kill (SIGKILL).
+func truncateIncompleteLastLine(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	// Find the last newline before EOF.
+	data = bytes.TrimRight(data, "\n")
+	lastNL := bytes.LastIndexByte(data, '\n')
+	if lastNL < 0 {
+		return // single line, nothing to truncate to
+	}
+	lastLine := data[lastNL+1:]
+	if json.Valid(lastLine) {
+		return // last line is valid JSON, no truncation needed
+	}
+	fmt.Printf("[gb agent start] truncating corrupted last line from %s\n", path)
+	// Keep everything up to and including the last newline.
+	if err := os.WriteFile(path, append(data[:lastNL], '\n'), 0644); err != nil {
+		fmt.Printf("[gb agent start] warning: truncate %s: %v\n", path, err)
+	}
 }
 
 // retireStaleSession renames a session log to .jsonl.stale so it won't be

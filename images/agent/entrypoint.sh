@@ -451,12 +451,13 @@ auto_bypass_startup() {
         if [ "${agent_state}" = "starting" ]; then
             screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
 
-            # Handle "Resume Session" picker — press Escape to start fresh.
+            # Handle "Resume Session" picker — press Enter to resume the most recent session.
+            # Previously pressed Escape which caused a new .jsonl to accumulate on the PVC.
             if echo "${screen}" | grep -q "Resume Session"; then
-                echo "[entrypoint] Detected resume session picker, pressing Escape to start fresh"
+                echo "[entrypoint] Detected resume session picker, selecting resume"
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
-                    -d '{"keys":["Escape"]}' 2>&1 || true
+                    -d '{"keys":["Return"]}' 2>&1 || true
                 sleep 3
                 continue
             fi
@@ -686,6 +687,27 @@ monitor_agent_exit() {
             curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
             return 0
         fi
+        # Detect rate-limited state and park the pod.
+        error_cat=$(echo "${state}" | jq -r '.error_category // empty' 2>/dev/null)
+        if [ "${error_cat}" = "rate_limited" ]; then
+            echo "[entrypoint] Agent rate-limited, dismissing prompt"
+            # Send Enter to select "Stop and wait" from /rate-limit-options.
+            curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+                -H 'Content-Type: application/json' \
+                -d '{"keys":["Return"]}' 2>/dev/null || true
+            last_msg=$(echo "${state}" | jq -r '.last_message // empty' 2>/dev/null)
+            echo "[entrypoint] Rate limit info: ${last_msg}"
+            # Report rate_limited status to the agent bead.
+            if [ -n "${KD_AGENT_ID:-}" ] && command -v kd &>/dev/null; then
+                kd update "${KD_AGENT_ID}" -f agent_state=rate_limited 2>/dev/null || true
+            fi
+            # Write sentinel so the restart loop knows to sleep until reset.
+            echo "${last_msg}" > /tmp/rate_limit_reset
+            sleep 2
+            echo "[entrypoint] Requesting coop shutdown (rate-limited)"
+            curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+            return 0
+        fi
     done
 }
 
@@ -753,8 +775,20 @@ COOP_PID=""
 forward_signal() {
     deregister_from_mux
     if [ -n "${COOP_PID}" ]; then
-        echo "[entrypoint] Forwarding $1 to coop (pid ${COOP_PID})"
-        kill -"$1" "${COOP_PID}" 2>/dev/null || true
+        echo "[entrypoint] Graceful shutdown: interrupting Claude before forwarding $1"
+        # Send Escape to interrupt Claude mid-generation.
+        curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+            -H 'Content-Type: application/json' \
+            -d '{"keys":["Escape"]}' 2>/dev/null || true
+        sleep 2
+        # Request graceful coop shutdown via API.
+        curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+        sleep 3
+        # If coop is still running, send SIGTERM.
+        if kill -0 "${COOP_PID}" 2>/dev/null; then
+            echo "[entrypoint] Forwarding $1 to coop (pid ${COOP_PID})"
+            kill -"$1" "${COOP_PID}" 2>/dev/null || true
+        fi
         wait "${COOP_PID}" 2>/dev/null || true
     fi
     exit 0
@@ -764,7 +798,7 @@ trap 'forward_signal INT' INT
 
 # Start credential refresh in background (survives coop restarts).
 # Skip for mock agent commands — claudeless needs no OAuth credentials.
-if [ -z "${BOAT_COMMAND:-}" ]; then
+if [ "${MOCK_MODE}" != "1" ]; then
     refresh_credentials &
 fi
 
@@ -788,10 +822,18 @@ while true; do
     RESUME_FLAG=""
     MAX_STALE_RETRIES=2
     STALE_COUNT=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null || true) | wc -l | tr -d ' ')
-    if [ -z "${BOAT_COMMAND:-}" ] && [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
+    if [ "${MOCK_MODE}" != "1" ] && [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
         LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
             | sort -rn | head -1 | cut -d' ' -f2-)
-        if [ -n "${LATEST_LOG}" ]; then
+        if [ -n "${LATEST_LOG}" ] && [ -f "${LATEST_LOG}" ]; then
+            # Validate last line is complete JSON. A partial write from an
+            # abrupt kill leaves an incomplete line that breaks --resume.
+            last_line=$(tail -1 "${LATEST_LOG}" 2>/dev/null)
+            if [ -n "${last_line}" ] && ! echo "${last_line}" | jq empty 2>/dev/null; then
+                echo "[entrypoint] Truncating corrupted last line from ${LATEST_LOG}"
+                # Remove the last (incomplete) line, keeping all complete lines.
+                head -n -1 "${LATEST_LOG}" > "${LATEST_LOG}.tmp" && mv "${LATEST_LOG}.tmp" "${LATEST_LOG}"
+            fi
             RESUME_FLAG="--resume ${LATEST_LOG}"
         fi
     elif [ "${STALE_COUNT:-0}" -ge "${MAX_STALE_RETRIES}" ]; then
@@ -837,6 +879,34 @@ while true; do
             deregister_from_mux
             exit 0
         fi
+    fi
+
+    # If rate-limited, sleep until the reset time before restarting.
+    if [ -f /tmp/rate_limit_reset ]; then
+        rate_msg=$(cat /tmp/rate_limit_reset)
+        rm -f /tmp/rate_limit_reset
+        # Extract reset hour from message (e.g., "resets 9pm (UTC)" -> "9pm").
+        reset_hour=$(echo "${rate_msg}" | grep -oP '\d{1,2}(am|pm)' | head -1)
+        sleep_secs=""
+        if [ -n "${reset_hour}" ]; then
+            target_epoch=$(date -u -d "today ${reset_hour}" +%s 2>/dev/null) || true
+            now_epoch=$(date -u +%s)
+            if [ -n "${target_epoch}" ] && [ "${target_epoch}" -le "${now_epoch}" ]; then
+                target_epoch=$(date -u -d "tomorrow ${reset_hour}" +%s 2>/dev/null) || true
+            fi
+            if [ -n "${target_epoch}" ] && [ "${target_epoch}" -gt "${now_epoch}" ]; then
+                sleep_secs=$((target_epoch - now_epoch + 60))
+            fi
+        fi
+        if [ -n "${sleep_secs}" ]; then
+            echo "[entrypoint] Rate limited — sleeping ${sleep_secs}s until ${reset_hour} UTC"
+        else
+            sleep_secs=1800
+            echo "[entrypoint] Rate limited — sleeping ${sleep_secs}s (could not parse reset time)"
+        fi
+        sleep "${sleep_secs}"
+        restart_count=0
+        continue
     fi
 
     if [ "${elapsed}" -ge "${MIN_RUNTIME_SECS}" ]; then

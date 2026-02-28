@@ -55,6 +55,7 @@ func runNews(cmd *cobra.Command, args []string) error {
 
 	ipResult, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
 		Statuses: []string{"in_progress"},
+		Kinds:    []string{"issue"},
 		Labels:   projectLabels,
 		Limit:    limit,
 	})
@@ -64,6 +65,7 @@ func runNews(cmd *cobra.Command, args []string) error {
 
 	closedResult, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
 		Statuses: []string{"closed"},
+		Kinds:    []string{"issue"},
 		Labels:   projectLabels,
 		Sort:     "-updated_at",
 		Limit:    limit,
@@ -78,8 +80,7 @@ func runNews(cmd *cobra.Command, args []string) error {
 		ipBeads = filterOutAssignee(ipBeads, actor)
 		closedBeads = filterOutAssignee(closedBeads, actor)
 	}
-	ipBeads = filterOutNoiseTypes(ipBeads)
-	closedBeads = filterOutNoiseTypes(closedBeads)
+
 
 	if len(ipBeads) == 0 && len(closedBeads) == 0 {
 		fmt.Fprintf(os.Stdout, "\nNo recent activity (last %s)\n\n", windowStr)
@@ -153,19 +154,3 @@ func filterRecentlyClosed(beads []*beadsapi.BeadDetail, window time.Duration) []
 	return filtered
 }
 
-var noiseTypes = map[string]bool{
-	"decision": true, "gate": true, "config": true, "advice": true,
-	"message": true, "formula": true, "molecule": true, "runbook": true,
-	"artifact": true, "mention": true, "mail": true,
-}
-
-func filterOutNoiseTypes(beads []*beadsapi.BeadDetail) []*beadsapi.BeadDetail {
-	var filtered []*beadsapi.BeadDetail
-	for _, b := range beads {
-		if noiseTypes[b.Type] {
-			continue
-		}
-		filtered = append(filtered, b)
-	}
-	return filtered
-}
