@@ -217,6 +217,10 @@ func (m *K8sManager) CreateAgentPod(ctx context.Context, spec AgentPodSpec) erro
 		"pod", pod.Name, "project", spec.Project, "role", spec.Role, "agent", spec.AgentName)
 
 	_, err := m.client.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		m.logger.Info("agent pod already exists", "pod", pod.Name)
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("creating pod %s: %w", pod.Name, err)
 	}
@@ -269,9 +273,15 @@ func (m *K8sManager) ensurePVC(ctx context.Context, spec AgentPodSpec) error {
 }
 
 // DeleteAgentPod deletes a pod by name and namespace.
+// Returns nil if the pod does not exist (idempotent).
 func (m *K8sManager) DeleteAgentPod(ctx context.Context, name, namespace string) error {
 	m.logger.Info("deleting agent pod", "pod", name, "namespace", namespace)
-	return m.client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	err := m.client.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if apierrors.IsNotFound(err) {
+		m.logger.Info("agent pod already deleted", "pod", name)
+		return nil
+	}
+	return err
 }
 
 // ListAgentPods lists pods matching the given labels.
