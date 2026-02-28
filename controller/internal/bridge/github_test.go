@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+// writeJSON encodes v as JSON to w, panicking on error (test-only helper).
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		panic("writeJSON: " + err.Error())
+	}
+}
+
 // newTestGitHubClient creates a GitHubClient pointing at a test server.
 func newTestGitHubClient(baseURL, token string) *GitHubClient {
 	return &GitHubClient{
@@ -25,8 +33,7 @@ func TestGetLatestTag(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]ghTag{{Name: "v1.2.3"}})
+		writeJSON(w, []ghTag{{Name: "v1.2.3"}})
 	}))
 	defer srv.Close()
 
@@ -42,8 +49,7 @@ func TestGetLatestTag(t *testing.T) {
 
 func TestGetLatestTag_NoTags(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]ghTag{})
+		writeJSON(w, []ghTag{})
 	}))
 	defer srv.Close()
 
@@ -60,8 +66,7 @@ func TestCompareTagToHead(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ghCompare{
+		writeJSON(w, ghCompare{
 			AheadBy: 3,
 			Commits: []struct {
 				SHA    string `json:"sha"`
@@ -100,8 +105,7 @@ func TestCompareTagToHead(t *testing.T) {
 
 func TestCompareTagToHead_Identical(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ghCompare{AheadBy: 0})
+		writeJSON(w, ghCompare{AheadBy: 0})
 	}))
 	defer srv.Close()
 
@@ -117,12 +121,11 @@ func TestCompareTagToHead_Identical(t *testing.T) {
 
 func TestGetUnreleased(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/repos/org/repo/tags":
-			json.NewEncoder(w).Encode([]ghTag{{Name: "v2.0.0"}})
+			writeJSON(w, []ghTag{{Name: "v2.0.0"}})
 		case "/repos/org/repo/compare/v2.0.0...main":
-			json.NewEncoder(w).Encode(ghCompare{
+			writeJSON(w, ghCompare{
 				AheadBy: 2,
 				Commits: []struct {
 					SHA    string `json:"sha"`
@@ -179,8 +182,7 @@ func TestAuthHeader(t *testing.T) {
 		var gotAuth string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotAuth = r.Header.Get("Authorization")
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ghTag{{Name: "v1.0.0"}})
+			writeJSON(w, []ghTag{{Name: "v1.0.0"}})
 		}))
 		defer srv.Close()
 
@@ -196,8 +198,7 @@ func TestAuthHeader(t *testing.T) {
 		var gotAuth string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotAuth = r.Header.Get("Authorization")
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ghTag{{Name: "v1.0.0"}})
+			writeJSON(w, []ghTag{{Name: "v1.0.0"}})
 		}))
 		defer srv.Close()
 
