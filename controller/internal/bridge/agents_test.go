@@ -439,6 +439,134 @@ func TestAgents_HandleUpdated_TaskClose(t *testing.T) {
 	}
 }
 
+// TestAgents_HandleUpdated_TaskUnassigned verifies that when a task bead's
+// assignee is cleared (unclaimed), the previous assignee's card is refreshed.
+func TestAgents_HandleUpdated_TaskUnassigned(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Step 1: Task claimed by matt-1 — should trigger card refresh and track assignee.
+	claimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-20",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: "matt-1",
+	})
+	a.handleUpdated(context.Background(), claimedTask)
+	if len(notif.getTaskUpdates()) != 1 {
+		t.Fatalf("expected 1 task update after claim, got %d", len(notif.getTaskUpdates()))
+	}
+
+	// Step 2: Task unclaimed (assignee cleared) — should refresh matt-1's card.
+	unclaimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:     "task-20",
+		Type:   "task",
+		Status: "open",
+		// No assignee — cleared.
+	})
+	a.handleUpdated(context.Background(), unclaimedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 task updates (claim + unclaim), got %d", len(updates))
+	}
+	if updates[1] != "matt-1" {
+		t.Errorf("expected previous assignee matt-1 notified on unclaim, got %s", updates[1])
+	}
+}
+
+// TestAgents_HandleClosed_TaskBeadPreviousAssignee verifies that closing a task
+// bead with empty assignee still refreshes the previous assignee's card.
+func TestAgents_HandleClosed_TaskBeadPreviousAssignee(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Step 1: Task claimed by builder-2 — track the assignee.
+	claimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-21",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: "builder-2",
+	})
+	a.handleUpdated(context.Background(), claimedTask)
+
+	// Step 2: Task closed with empty assignee — should still refresh builder-2's card.
+	closedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:     "task-21",
+		Type:   "task",
+		Status: "closed",
+		// Assignee cleared before close.
+	})
+	a.handleClosed(context.Background(), closedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 task updates (claim + close), got %d", len(updates))
+	}
+	if updates[1] != "builder-2" {
+		t.Errorf("expected previous assignee builder-2 notified on close, got %s", updates[1])
+	}
+}
+
+// TestAgents_HandleUpdated_TaskReassigned verifies that when a task is
+// reassigned from one agent to another, the previous agent's card is refreshed.
+func TestAgents_HandleUpdated_TaskReassigned(t *testing.T) {
+	notif := &mockAgentNotifier{}
+	a := NewAgents(AgentsConfig{
+		Notifier: notif,
+		Logger:   slog.Default(),
+	})
+
+	// Step 1: Task claimed by matt-1.
+	claimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-22",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: "matt-1",
+	})
+	a.handleUpdated(context.Background(), claimedTask)
+
+	// Step 2: Task reassigned to matt-2.
+	reassignedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:       "task-22",
+		Type:     "task",
+		Status:   "in_progress",
+		Assignee: "matt-2",
+	})
+	a.handleUpdated(context.Background(), reassignedTask)
+
+	updates := notif.getTaskUpdates()
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 task updates (claim + reassign), got %d", len(updates))
+	}
+	// The second notification goes to matt-2 (the new assignee).
+	if updates[1] != "matt-2" {
+		t.Errorf("expected matt-2 notified on reassign, got %s", updates[1])
+	}
+
+	// Verify tracking was updated: unassigning should now notify matt-2, not matt-1.
+	unclaimedTask := marshalSSEBeadPayload(BeadEvent{
+		ID:     "task-22",
+		Type:   "task",
+		Status: "open",
+	})
+	a.handleUpdated(context.Background(), unclaimedTask)
+
+	updates = notif.getTaskUpdates()
+	if len(updates) != 3 {
+		t.Fatalf("expected 3 task updates, got %d", len(updates))
+	}
+	if updates[2] != "matt-2" {
+		t.Errorf("expected matt-2 (last assignee) notified on unclaim, got %s", updates[2])
+	}
+}
+
 // TestAgents_HandleUpdated_StateChange verifies that non-crash state changes
 // (e.g. spawning→working) trigger NotifyAgentState, not NotifyAgentCrash.
 func TestAgents_HandleUpdated_StateChange(t *testing.T) {

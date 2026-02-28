@@ -38,16 +38,18 @@ type Agents struct {
 	notifier AgentNotifier
 	logger   *slog.Logger
 
-	mu   sync.Mutex
-	seen map[string]bool // bead ID → already notified (dedup)
+	mu             sync.Mutex
+	seen           map[string]bool   // bead ID → already notified (dedup)
+	taskAssignees  map[string]string // task bead ID → last known assignee
 }
 
 // NewAgents creates a new agent lifecycle watcher.
 func NewAgents(cfg AgentsConfig) *Agents {
 	return &Agents{
-		notifier: cfg.Notifier,
-		logger:   cfg.Logger,
-		seen:     make(map[string]bool),
+		notifier:      cfg.Notifier,
+		logger:        cfg.Logger,
+		seen:          make(map[string]bool),
+		taskAssignees: make(map[string]string),
 	}
 }
 
@@ -85,8 +87,21 @@ func (a *Agents) handleClosed(ctx context.Context, data []byte) {
 	}
 	if bead.Type != "agent" {
 		// For task beads, refresh the agent's card so the completed task is cleared.
-		if bead.Assignee != "" && a.notifier != nil {
-			a.notifier.NotifyAgentTaskUpdate(ctx, bead.Assignee)
+		// When the assignee is empty (e.g. unassigned before close), use the
+		// last-known assignee so their card still gets refreshed.
+		assignee := bead.Assignee
+		if assignee == "" {
+			a.mu.Lock()
+			assignee = a.taskAssignees[bead.ID]
+			a.mu.Unlock()
+		}
+		// Clean up tracking entry — the bead is closed.
+		a.mu.Lock()
+		delete(a.taskAssignees, bead.ID)
+		a.mu.Unlock()
+
+		if assignee != "" && a.notifier != nil {
+			a.notifier.NotifyAgentTaskUpdate(ctx, assignee)
 		}
 		return
 	}
@@ -125,6 +140,25 @@ func (a *Agents) handleUpdated(ctx context.Context, data []byte) {
 		if bead.Assignee != "" && a.notifier != nil &&
 			(bead.Status == "in_progress" || bead.Status == "closed") {
 			a.notifier.NotifyAgentTaskUpdate(ctx, bead.Assignee)
+		}
+
+		// When assignee is cleared (unassigned), refresh the previous assignee's
+		// card so it no longer shows the stale task title.
+		if bead.Assignee == "" && a.notifier != nil {
+			a.mu.Lock()
+			prev := a.taskAssignees[bead.ID]
+			delete(a.taskAssignees, bead.ID)
+			a.mu.Unlock()
+			if prev != "" {
+				a.notifier.NotifyAgentTaskUpdate(ctx, prev)
+			}
+		}
+
+		// Track the current assignee for future unassignment detection.
+		if bead.Assignee != "" {
+			a.mu.Lock()
+			a.taskAssignees[bead.ID] = bead.Assignee
+			a.mu.Unlock()
 		}
 		return
 	}
