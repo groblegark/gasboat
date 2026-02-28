@@ -220,6 +220,13 @@ func runCoopOnce(ctx context.Context, cfg k8sConfig, coopStateDir, resumeLog str
 	coopCmd.Env = append(os.Environ(),
 		"COOP_LOG_LEVEL="+envOr("COOP_LOG_LEVEL", "info"),
 	)
+	// Send SIGTERM on context cancellation instead of the default SIGKILL.
+	// This gives coop a chance to save session state before being killed.
+	coopCmd.Cancel = func() error {
+		fmt.Printf("[gb agent start] sending SIGTERM to coop (pid %d)\n", coopCmd.Process.Pid)
+		return coopCmd.Process.Signal(syscall.SIGTERM)
+	}
+	coopCmd.WaitDelay = 20 * time.Second
 
 	if err := coopCmd.Start(); err != nil {
 		return 1, fmt.Errorf("start coop: %w", err)

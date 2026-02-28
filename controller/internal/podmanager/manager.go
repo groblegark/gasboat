@@ -328,8 +328,9 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 		podSpec.Affinity = spec.Affinity
 	}
 
-	// Use a 30s termination grace period for all modes.
-	gracePeriod := int64(30)
+	// Use a 45s termination grace period so the preStop hook and entrypoint
+	// signal handler have time to gracefully save the session before SIGKILL.
+	gracePeriod := int64(45)
 	podSpec.TerminationGracePeriodSeconds = &gracePeriod
 
 	return &corev1.Pod{
@@ -415,6 +416,19 @@ func (m *K8sManager) buildContainer(spec AgentPodSpec) corev1.Container {
 		},
 		FailureThreshold: 60,
 		PeriodSeconds:    5,
+	}
+
+	// PreStop hook: interrupt Claude and request graceful coop shutdown
+	// before K8s sends SIGTERM to PID-1.
+	c.Lifecycle = &corev1.Lifecycle{
+		PreStop: &corev1.LifecycleHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{
+					"sh", "-c",
+					`curl -sf -X POST http://localhost:8080/api/v1/input/keys -H 'Content-Type: application/json' -d '{"keys":["Escape"]}' 2>/dev/null; sleep 2; curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null; sleep 3`,
+				},
+			},
+		},
 	}
 
 	return c

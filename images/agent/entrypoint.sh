@@ -774,8 +774,20 @@ COOP_PID=""
 forward_signal() {
     deregister_from_mux
     if [ -n "${COOP_PID}" ]; then
-        echo "[entrypoint] Forwarding $1 to coop (pid ${COOP_PID})"
-        kill -"$1" "${COOP_PID}" 2>/dev/null || true
+        echo "[entrypoint] Graceful shutdown: interrupting Claude before forwarding $1"
+        # Send Escape to interrupt Claude mid-generation.
+        curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+            -H 'Content-Type: application/json' \
+            -d '{"keys":["Escape"]}' 2>/dev/null || true
+        sleep 2
+        # Request graceful coop shutdown via API.
+        curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+        sleep 3
+        # If coop is still running, send SIGTERM.
+        if kill -0 "${COOP_PID}" 2>/dev/null; then
+            echo "[entrypoint] Forwarding $1 to coop (pid ${COOP_PID})"
+            kill -"$1" "${COOP_PID}" 2>/dev/null || true
+        fi
         wait "${COOP_PID}" 2>/dev/null || true
     fi
     exit 0
