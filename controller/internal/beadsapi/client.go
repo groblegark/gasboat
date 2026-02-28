@@ -159,8 +159,18 @@ type ProjectInfo struct {
 	Image          string // Per-project agent image override
 	StorageClass   string // Per-project PVC storage class override
 	ServiceAccount string // Per-project K8s ServiceAccount override
-	Secrets        []SecretEntry // Per-project secret overrides
-	Repos          []RepoEntry   // Multi-repo definitions
+
+	// Per-project resource overrides (Kubernetes quantity strings, e.g. "500m", "2Gi").
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// Per-project environment variable overrides (merged into pod env).
+	EnvOverrides map[string]string
+
+	Secrets []SecretEntry // Per-project secret overrides
+	Repos   []RepoEntry   // Multi-repo definitions
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
@@ -185,6 +195,17 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			Image:          fields["image"],
 			StorageClass:   fields["storage_class"],
 			ServiceAccount: fields["service_account"],
+			CPURequest:     fields["cpu_request"],
+			CPULimit:       fields["cpu_limit"],
+			MemoryRequest:  fields["memory_request"],
+			MemoryLimit:    fields["memory_limit"],
+		}
+		// Parse per-project env overrides from JSON field.
+		if raw := fields["env_json"]; raw != "" {
+			var envMap map[string]string
+			if json.Unmarshal([]byte(raw), &envMap) == nil {
+				info.EnvOverrides = envMap
+			}
 		}
 		// Parse per-project secrets from JSON field.
 		if raw := fields["secrets"]; raw != "" {

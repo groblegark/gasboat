@@ -7,6 +7,9 @@ import (
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/subscriber"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // modeForRole returns the canonical mode for a role.
@@ -137,6 +140,42 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	if entry.ServiceAccount != "" {
 		spec.ServiceAccountName = entry.ServiceAccount
 	}
+
+	// Apply per-project resource overrides. Individual fields override the
+	// corresponding resource value while preserving other defaults.
+	if entry.CPURequest != "" || entry.CPULimit != "" || entry.MemoryRequest != "" || entry.MemoryLimit != "" {
+		if spec.Resources == nil {
+			spec.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{},
+				Limits:   corev1.ResourceList{},
+			}
+		}
+		applyResourceOverride(spec.Resources.Requests, corev1.ResourceCPU, entry.CPURequest)
+		applyResourceOverride(spec.Resources.Limits, corev1.ResourceCPU, entry.CPULimit)
+		applyResourceOverride(spec.Resources.Requests, corev1.ResourceMemory, entry.MemoryRequest)
+		applyResourceOverride(spec.Resources.Limits, corev1.ResourceMemory, entry.MemoryLimit)
+	}
+
+	// Apply per-project env overrides (additive; project values take precedence).
+	for k, v := range entry.EnvOverrides {
+		if spec.Env == nil {
+			spec.Env = make(map[string]string)
+		}
+		spec.Env[k] = v
+	}
+}
+
+// applyResourceOverride sets a resource quantity in a ResourceList if the value
+// is non-empty and parses as a valid Kubernetes quantity.
+func applyResourceOverride(list corev1.ResourceList, name corev1.ResourceName, value string) {
+	if value == "" {
+		return
+	}
+	q, err := resource.ParseQuantity(value)
+	if err != nil {
+		return // silently skip invalid values
+	}
+	list[name] = q
 }
 
 // applyCommonConfig wires controller-level config into an AgentPodSpec.

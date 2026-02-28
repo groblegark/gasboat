@@ -6,6 +6,8 @@ import (
 	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestOverrideOrAppendSecretEnv_OverridesExisting(t *testing.T) {
@@ -62,6 +64,124 @@ func TestRepoNameFromURL(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("repoNameFromURL(%q) = %q, want %q", tc.url, got, tc.want)
 		}
+	}
+}
+
+func TestApplyProjectDefaults_ResourceOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"heavy": {
+				CPURequest:    "4",
+				CPULimit:      "8",
+				MemoryRequest: "4Gi",
+				MemoryLimit:   "16Gi",
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "heavy",
+		Env:     map[string]string{},
+	}
+	// Apply mode defaults first (sets default Resources).
+	defaults := podmanager.DefaultPodDefaults("crew")
+	podmanager.ApplyDefaults(spec, defaults)
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Resources == nil {
+		t.Fatal("expected Resources to be set")
+	}
+	cpuReq := spec.Resources.Requests[corev1.ResourceCPU]
+	if cpuReq.String() != "4" {
+		t.Errorf("expected cpu request 4, got %s", cpuReq.String())
+	}
+	cpuLim := spec.Resources.Limits[corev1.ResourceCPU]
+	if cpuLim.String() != "8" {
+		t.Errorf("expected cpu limit 8, got %s", cpuLim.String())
+	}
+	memReq := spec.Resources.Requests[corev1.ResourceMemory]
+	if memReq.String() != "4Gi" {
+		t.Errorf("expected memory request 4Gi, got %s", memReq.String())
+	}
+	memLim := spec.Resources.Limits[corev1.ResourceMemory]
+	if memLim.String() != "16Gi" {
+		t.Errorf("expected memory limit 16Gi, got %s", memLim.String())
+	}
+}
+
+func TestApplyProjectDefaults_PartialResourceOverride(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"partial": {
+				CPURequest: "500m",
+				// Leave other resource fields empty — defaults should be preserved.
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "partial",
+		Env:     map[string]string{},
+	}
+	defaults := podmanager.DefaultPodDefaults("crew")
+	podmanager.ApplyDefaults(spec, defaults)
+	applyProjectDefaults(cfg, spec)
+
+	cpuReq := spec.Resources.Requests[corev1.ResourceCPU]
+	if cpuReq.String() != "500m" {
+		t.Errorf("expected cpu request 500m, got %s", cpuReq.String())
+	}
+	// Memory request should still be the default.
+	memReq := spec.Resources.Requests[corev1.ResourceMemory]
+	if memReq.String() != podmanager.DefaultMemoryRequest {
+		t.Errorf("expected default memory request %s, got %s", podmanager.DefaultMemoryRequest, memReq.String())
+	}
+}
+
+func TestApplyProjectDefaults_EnvOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"envtest": {
+				EnvOverrides: map[string]string{
+					"FEATURE_FLAG": "true",
+					"API_URL":      "https://api.example.com",
+				},
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "envtest",
+		Env:     map[string]string{"EXISTING": "keep"},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Env["FEATURE_FLAG"] != "true" {
+		t.Errorf("expected FEATURE_FLAG=true, got %s", spec.Env["FEATURE_FLAG"])
+	}
+	if spec.Env["API_URL"] != "https://api.example.com" {
+		t.Errorf("expected API_URL, got %s", spec.Env["API_URL"])
+	}
+	if spec.Env["EXISTING"] != "keep" {
+		t.Errorf("expected existing env to be preserved, got %s", spec.Env["EXISTING"])
+	}
+}
+
+func TestApplyProjectDefaults_NoOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"plain": {},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "plain",
+		Env:     map[string]string{},
+	}
+	defaults := podmanager.DefaultPodDefaults("crew")
+	podmanager.ApplyDefaults(spec, defaults)
+	origResources := spec.Resources
+	applyProjectDefaults(cfg, spec)
+
+	// Resources should remain unchanged when no overrides are set.
+	if spec.Resources != origResources {
+		t.Error("expected resources to remain unchanged")
 	}
 }
 
