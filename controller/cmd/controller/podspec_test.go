@@ -6,6 +6,8 @@ import (
 	"gasboat/controller/internal/beadsapi"
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestOverrideOrAppendSecretEnv_OverridesExisting(t *testing.T) {
@@ -267,5 +269,164 @@ func TestApplyCommonConfig_ReferenceOnlyRepos(t *testing.T) {
 	}
 	if len(spec.ReferenceRepos) != 2 {
 		t.Fatalf("expected 2 reference repos, got %d", len(spec.ReferenceRepos))
+	}
+}
+
+func TestApplyProjectDefaults_ResourceOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"heavy": {
+				CPURequest:    "4",
+				CPULimit:      "8",
+				MemoryRequest: "4Gi",
+				MemoryLimit:   "16Gi",
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "heavy",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Resources == nil {
+		t.Fatal("expected Resources to be set")
+	}
+	if got := spec.Resources.Requests[corev1.ResourceCPU]; got.String() != "4" {
+		t.Errorf("expected cpu request 4, got %s", got.String())
+	}
+	if got := spec.Resources.Requests[corev1.ResourceMemory]; got.String() != "4Gi" {
+		t.Errorf("expected memory request 4Gi, got %s", got.String())
+	}
+	if got := spec.Resources.Limits[corev1.ResourceCPU]; got.String() != "8" {
+		t.Errorf("expected cpu limit 8, got %s", got.String())
+	}
+	if got := spec.Resources.Limits[corev1.ResourceMemory]; got.String() != "16Gi" {
+		t.Errorf("expected memory limit 16Gi, got %s", got.String())
+	}
+}
+
+func TestApplyProjectDefaults_PartialResourceOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"partial": {
+				CPURequest:  "2",
+				MemoryLimit: "8Gi",
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "partial",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Resources == nil {
+		t.Fatal("expected Resources to be set for partial overrides")
+	}
+	if got := spec.Resources.Requests[corev1.ResourceCPU]; got.String() != "2" {
+		t.Errorf("expected cpu request 2, got %s", got.String())
+	}
+	// Memory request should not be set.
+	if _, ok := spec.Resources.Requests[corev1.ResourceMemory]; ok {
+		t.Error("expected memory request to be unset")
+	}
+	if got := spec.Resources.Limits[corev1.ResourceMemory]; got.String() != "8Gi" {
+		t.Errorf("expected memory limit 8Gi, got %s", got.String())
+	}
+}
+
+func TestApplyProjectDefaults_NoResourceOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"simple": {Image: "custom:latest"},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "simple",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Resources != nil {
+		t.Error("expected Resources to be nil when no resource fields set")
+	}
+}
+
+func TestApplyProjectDefaults_InvalidResourceQuantity(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"bad": {
+				CPURequest:  "not-a-quantity",
+				MemoryLimit: "8Gi", // valid
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "bad",
+		Env:     map[string]string{},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	// Resources should still be set (memory_limit is valid).
+	if spec.Resources == nil {
+		t.Fatal("expected Resources to be set")
+	}
+	// Invalid cpu_request should be silently ignored.
+	if _, ok := spec.Resources.Requests[corev1.ResourceCPU]; ok {
+		t.Error("expected invalid cpu_request to be skipped")
+	}
+	if got := spec.Resources.Limits[corev1.ResourceMemory]; got.String() != "8Gi" {
+		t.Errorf("expected memory limit 8Gi, got %s", got.String())
+	}
+}
+
+func TestApplyProjectDefaults_EnvOverrides(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {
+				EnvOverrides: map[string]string{
+					"CUSTOM_VAR": "custom_value",
+					"API_URL":    "https://api.example.com",
+				},
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "myproject",
+		Env:     map[string]string{"EXISTING": "keep"},
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Env["CUSTOM_VAR"] != "custom_value" {
+		t.Errorf("expected CUSTOM_VAR=custom_value, got %s", spec.Env["CUSTOM_VAR"])
+	}
+	if spec.Env["API_URL"] != "https://api.example.com" {
+		t.Errorf("expected API_URL, got %s", spec.Env["API_URL"])
+	}
+	if spec.Env["EXISTING"] != "keep" {
+		t.Errorf("expected EXISTING=keep to be preserved, got %s", spec.Env["EXISTING"])
+	}
+}
+
+func TestApplyProjectDefaults_EnvOverrides_NilMap(t *testing.T) {
+	cfg := &config.Config{
+		ProjectCache: map[string]config.ProjectCacheEntry{
+			"myproject": {
+				EnvOverrides: map[string]string{"KEY": "val"},
+			},
+		},
+	}
+	spec := &podmanager.AgentPodSpec{
+		Project: "myproject",
+		// Env is nil.
+	}
+	applyProjectDefaults(cfg, spec)
+
+	if spec.Env == nil {
+		t.Fatal("expected Env to be initialized")
+	}
+	if spec.Env["KEY"] != "val" {
+		t.Errorf("expected KEY=val, got %s", spec.Env["KEY"])
 	}
 }

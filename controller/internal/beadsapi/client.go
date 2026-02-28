@@ -161,6 +161,15 @@ type ProjectInfo struct {
 	ServiceAccount string // Per-project K8s ServiceAccount override
 	Secrets        []SecretEntry // Per-project secret overrides
 	Repos          []RepoEntry   // Multi-repo definitions
+
+	// Per-project resource overrides (K8s quantity strings, e.g. "500m", "1Gi").
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// Per-project env var overrides (parsed from env_json field).
+	EnvOverrides map[string]string
 }
 
 // ListProjectBeads queries the daemon for project beads (type=project) and extracts
@@ -185,6 +194,10 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			Image:          fields["image"],
 			StorageClass:   fields["storage_class"],
 			ServiceAccount: fields["service_account"],
+			CPURequest:     fields["cpu_request"],
+			CPULimit:       fields["cpu_limit"],
+			MemoryRequest:  fields["memory_request"],
+			MemoryLimit:    fields["memory_limit"],
 		}
 		// Parse per-project secrets from JSON field.
 		if raw := fields["secrets"]; raw != "" {
@@ -198,6 +211,13 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			var repos []RepoEntry
 			if json.Unmarshal([]byte(raw), &repos) == nil {
 				info.Repos = repos
+			}
+		}
+		// Parse per-project env var overrides from JSON field.
+		if raw := fields["env_json"]; raw != "" {
+			var env map[string]string
+			if json.Unmarshal([]byte(raw), &env) == nil {
+				info.EnvOverrides = env
 			}
 		}
 		if name != "" {

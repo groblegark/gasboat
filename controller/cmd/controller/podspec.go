@@ -7,6 +7,9 @@ import (
 	"gasboat/controller/internal/config"
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/subscriber"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // modeForRole returns the canonical mode for a role.
@@ -127,6 +130,60 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	if entry.ServiceAccount != "" {
 		spec.ServiceAccountName = entry.ServiceAccount
 	}
+
+	// Apply per-project resource overrides. Build a ResourceRequirements
+	// only when at least one resource field is set.
+	if res := buildResourceOverrides(entry); res != nil {
+		spec.Resources = res
+	}
+
+	// Merge per-project env var overrides into the spec.
+	if len(entry.EnvOverrides) > 0 {
+		if spec.Env == nil {
+			spec.Env = make(map[string]string)
+		}
+		for k, v := range entry.EnvOverrides {
+			spec.Env[k] = v
+		}
+	}
+}
+
+// buildResourceOverrides constructs a ResourceRequirements from project cache
+// resource fields. Returns nil if no resource overrides are set. Invalid
+// quantity strings are silently ignored (fall back to defaults).
+func buildResourceOverrides(entry config.ProjectCacheEntry) *corev1.ResourceRequirements {
+	if entry.CPURequest == "" && entry.CPULimit == "" &&
+		entry.MemoryRequest == "" && entry.MemoryLimit == "" {
+		return nil
+	}
+
+	res := &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{},
+		Limits:   corev1.ResourceList{},
+	}
+
+	if entry.CPURequest != "" {
+		if q, err := resource.ParseQuantity(entry.CPURequest); err == nil {
+			res.Requests[corev1.ResourceCPU] = q
+		}
+	}
+	if entry.MemoryRequest != "" {
+		if q, err := resource.ParseQuantity(entry.MemoryRequest); err == nil {
+			res.Requests[corev1.ResourceMemory] = q
+		}
+	}
+	if entry.CPULimit != "" {
+		if q, err := resource.ParseQuantity(entry.CPULimit); err == nil {
+			res.Limits[corev1.ResourceCPU] = q
+		}
+	}
+	if entry.MemoryLimit != "" {
+		if q, err := resource.ParseQuantity(entry.MemoryLimit); err == nil {
+			res.Limits[corev1.ResourceMemory] = q
+		}
+	}
+
+	return res
 }
 
 // applyCommonConfig wires controller-level config into an AgentPodSpec.

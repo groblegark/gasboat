@@ -157,10 +157,20 @@ type ProjectCacheEntry struct {
 	GitURL        string // e.g., "https://github.com/groblegark/kbeads.git"
 	DefaultBranch string // e.g., "main"
 
-	// Per-project pod customization (from project bead labels).
+	// Per-project pod customization (from project bead fields).
 	Image          string // Override agent image for this project
 	StorageClass   string // Override PVC storage class
 	ServiceAccount string // Override K8s ServiceAccount for this project's agents
+
+	// Per-project resource overrides (K8s quantity strings, e.g. "500m", "1Gi").
+	// Empty means use global default.
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// Per-project env var overrides (merged into pod env).
+	EnvOverrides map[string]string
 
 	// Per-project secret overrides (merged with globals at pod creation).
 	Secrets []beadsapi.SecretEntry
