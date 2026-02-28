@@ -48,8 +48,8 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 			screen, _ := getScreenText(client, base)
 
 			if strings.Contains(screen, "Resume Session") {
-				fmt.Printf("[gb agent start] detected resume session picker, pressing Escape\n")
-				postKeys(client, base, "Escape")
+				fmt.Printf("[gb agent start] detected resume session picker, selecting resume\n")
+				postKeys(client, base, "Return")
 				time.Sleep(3 * time.Second)
 				continue
 			}
