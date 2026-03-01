@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/slack-go/slack"
@@ -29,40 +28,24 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 		return
 	}
 
-	// Fetch all repos concurrently.
-	results := make([]*RepoUnreleased, len(b.repos))
-	var wg sync.WaitGroup
-	for i, repo := range b.repos {
-		wg.Add(1)
-		go func(idx int, r RepoRef) {
-			defer wg.Done()
-			results[idx] = b.github.GetUnreleased(ctx, r, "main")
-		}(i, repo)
-	}
+	data := GetUnreleasedData(ctx, UnreleasedConfig{
+		GitHub:        b.github,
+		Repos:         b.repos,
+		ControllerURL: b.controllerURL,
+		Version:       b.version,
+	})
 
-	// Fetch controller version concurrently.
-	var ctrlVersion *controllerVersionInfo
-	if b.controllerURL != "" {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctrlVersion = fetchControllerVersion(ctx, b.controllerURL)
-		}()
-	}
-
-	wg.Wait()
-
-	// Build Block Kit response.
+	// Build Block Kit response from the shared data.
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn", ":package: *Unreleased Changes*", false, false),
 			nil, nil),
 	}
 
-	for _, r := range results {
+	for _, r := range data.Repos {
 		blocks = append(blocks, slack.NewDividerBlock())
 
-		if r.Error != nil {
+		if r.Error != "" {
 			text := fmt.Sprintf(":warning: *%s* — error: %s", r.Repo, r.Error)
 			blocks = append(blocks,
 				slack.NewSectionBlock(
@@ -92,7 +75,7 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 		// Commit list.
 		var lines []string
 		for _, c := range r.Commits {
-			lines = append(lines, formatCommitLine(c))
+			lines = append(lines, fmt.Sprintf("`%s` %s — _%s_", shortSHA(c.SHA), c.Message, c.Author))
 		}
 		if r.AheadBy > len(r.Commits) {
 			lines = append(lines, fmt.Sprintf("_...and %d more_", r.AheadBy-len(r.Commits)))
@@ -106,15 +89,15 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 	}
 
 	// Cluster section.
-	if ctrlVersion != nil {
+	if data.Cluster != nil {
 		blocks = append(blocks, slack.NewDividerBlock())
 		clusterText := ":gear: *Cluster*"
-		clusterText += fmt.Sprintf("\nController: `%s` (%s)", ctrlVersion.Version, shortSHA(ctrlVersion.Commit))
-		if ctrlVersion.AgentImage != "" {
-			clusterText += fmt.Sprintf("\nAgent image: `%s`", ctrlVersion.AgentImage)
+		clusterText += fmt.Sprintf("\nController: `%s` (%s)", data.Cluster.Version, shortSHA(data.Cluster.Commit))
+		if data.Cluster.AgentImage != "" {
+			clusterText += fmt.Sprintf("\nAgent image: `%s`", data.Cluster.AgentImage)
 		}
-		if ctrlVersion.Namespace != "" {
-			clusterText += fmt.Sprintf("\nNamespace: `%s`", ctrlVersion.Namespace)
+		if data.Cluster.Namespace != "" {
+			clusterText += fmt.Sprintf("\nNamespace: `%s`", data.Cluster.Namespace)
 		}
 		blocks = append(blocks,
 			slack.NewSectionBlock(
@@ -123,7 +106,7 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 	}
 
 	// Footer.
-	footer := fmt.Sprintf("slack-bridge running: `%s`", b.version)
+	footer := fmt.Sprintf("slack-bridge running: `%s`", data.Bridge)
 	blocks = append(blocks,
 		slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn", footer, false, false)))
@@ -157,11 +140,6 @@ func fetchControllerVersion(ctx context.Context, baseURL string) *controllerVers
 		return nil
 	}
 	return &info
-}
-
-// formatCommitLine formats a commit as a Slack-friendly one-liner.
-func formatCommitLine(c GitCommit) string {
-	return fmt.Sprintf("`%s` %s — _%s_", shortSHA(c.SHA), firstLine(c.Message), c.Author)
 }
 
 // shortSHA returns the first 7 characters of a SHA.
