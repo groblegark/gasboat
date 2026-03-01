@@ -23,7 +23,7 @@ var readyCmd = &cobra.Command{
 			Statuses:   []string{"open"},
 			Types:      beadType,
 			Limit:      limit,
-			Sort:       "priority",
+			Sort:       "-created_at",
 			NoOpenDeps: true,
 		}
 		if assignee != "" {
