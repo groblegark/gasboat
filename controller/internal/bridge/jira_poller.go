@@ -253,6 +253,7 @@ func (p *JiraPoller) poll(ctx context.Context) {
 		p.cfg.Logger.Info("created bead for JIRA issue",
 			"key", issue.Key, "bead_id", beadID,
 			"summary", issue.Fields.Summary)
+
 	}
 
 	// Second pass: wire dependencies now that all beads from this batch exist.
@@ -285,6 +286,8 @@ func (p *JiraPoller) createBeadFromIssue(ctx context.Context, issue JiraIssue) (
 		project = jiraPrefix
 		labels = append(labels, "project:"+boatProject)
 	}
+
+	isEpic := issue.Fields.IssueType != nil && issue.Fields.IssueType.Name == "Epic"
 
 	// Add JIRA labels with prefix.
 	for _, l := range issue.Fields.Labels {
@@ -351,9 +354,11 @@ func (p *JiraPoller) createBeadFromIssue(ctx context.Context, issue JiraIssue) (
 		return "", fmt.Errorf("marshal fields: %w", err)
 	}
 
-	// Map priority.
+	// Map priority. Epics get priority=1 (high) since they're higher-level.
 	priority := 2 // default medium
-	if issue.Fields.Priority != nil {
+	if isEpic {
+		priority = 1
+	} else if issue.Fields.Priority != nil {
 		priority = MapJiraPriority(issue.Fields.Priority.Name)
 	}
 
