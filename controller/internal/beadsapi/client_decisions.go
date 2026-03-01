@@ -42,14 +42,32 @@ type DecisionDetail struct {
 	Issue    *BeadDetail `json:"issue,omitempty"`
 }
 
+// decisionDetailJSON is the raw JSON representation used for unmarshaling.
+// Fields may contain arrays/objects (e.g., options) that need ParseFieldsJSON.
+type decisionDetailJSON struct {
+	Decision *beadJSON `json:"decision"`
+	Issue    *beadJSON `json:"issue,omitempty"`
+}
+
+func (d *decisionDetailJSON) toDetail() *DecisionDetail {
+	dd := &DecisionDetail{}
+	if d.Decision != nil {
+		dd.Decision = d.Decision.toDetail()
+	}
+	if d.Issue != nil {
+		dd.Issue = d.Issue.toDetail()
+	}
+	return dd
+}
+
 // GetDecision fetches a decision by ID with its associated issue.
 func (c *Client) GetDecision(ctx context.Context, decisionID string) (*DecisionDetail, error) {
-	var resp DecisionDetail
+	var resp decisionDetailJSON
 	path := "/v1/decisions/" + url.PathEscape(decisionID)
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, fmt.Errorf("getting decision %s: %w", decisionID, err)
 	}
-	return &resp, nil
+	return resp.toDetail(), nil
 }
 
 // ListDecisions lists decisions with optional status/limit filters.
@@ -67,10 +85,15 @@ func (c *Client) ListDecisions(ctx context.Context, status string, limit int) ([
 	}
 
 	var resp struct {
-		Decisions []DecisionDetail `json:"decisions"`
+		Decisions []decisionDetailJSON `json:"decisions"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, fmt.Errorf("listing decisions: %w", err)
 	}
-	return resp.Decisions, nil
+	result := make([]DecisionDetail, len(resp.Decisions))
+	for i := range resp.Decisions {
+		dd := resp.Decisions[i].toDetail()
+		result[i] = *dd
+	}
+	return result, nil
 }
