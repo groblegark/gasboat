@@ -96,6 +96,12 @@ func main() {
 		Version:       version,
 	}))
 
+	// Decisions web UI and API.
+	decisionAPI := bridge.NewDecisionAPI(daemon, logger)
+	decisionAPI.RegisterRoutes(mux)
+	mux.Handle("/api/decisions/events", bridge.NewDecisionSSEProxy(cfg.beadsHTTPAddr, logger))
+	mux.Handle("/ui/", http.StripPrefix("/ui/", bridge.WebHandler()))
+
 	if cfg.slackBotToken != "" && cfg.slackAppToken != "" {
 		// Socket Mode: real-time WebSocket connection for events, interactions, slash commands.
 		bot = bridge.NewBot(bridge.BotConfig{
