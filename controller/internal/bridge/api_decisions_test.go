@@ -230,12 +230,12 @@ func TestDecisionSSEProxy_FilterDecisions(t *testing.T) {
 
 		// Decision event.
 		decBead := `{"bead":{"id":"kd-d1","type":"decision","title":"test","status":"open","fields":{}}}`
-		w.Write([]byte("event: beads.bead.created\ndata: " + decBead + "\n\n"))
+		_, _ = w.Write([]byte("event: beads.bead.created\ndata: " + decBead + "\n\n"))
 		flusher.Flush()
 
 		// Non-decision event (task).
 		taskBead := `{"bead":{"id":"kd-t1","type":"task","title":"task","status":"open","fields":{}}}`
-		w.Write([]byte("event: beads.bead.created\ndata: " + taskBead + "\n\n"))
+		_, _ = w.Write([]byte("event: beads.bead.created\ndata: " + taskBead + "\n\n"))
 		flusher.Flush()
 
 		// Wait for client disconnect.
