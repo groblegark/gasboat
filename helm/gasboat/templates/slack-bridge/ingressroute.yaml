@@ -1,0 +1,81 @@
+{{- if and .Values.slackBridge.enabled .Values.slackBridge.ingress.enabled }}
+{{- $fullname := printf "%s-slack-bridge" (include "gasboat.fullname" .) -}}
+{{- $host := .Values.slackBridge.ingress.host -}}
+{{- $port := .Values.slackBridge.service.port | default 8090 -}}
+{{- $pathPrefix := .Values.slackBridge.ingress.pathPrefix | default "" -}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: slack-bridge
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ $host }}`){{ if $pathPrefix }} && PathPrefix(`{{ $pathPrefix }}`){{ end }}
+      kind: Rule
+      priority: 100
+      services:
+        - name: {{ $fullname }}
+          port: {{ $port }}
+      middlewares:
+        {{- if $pathPrefix }}
+        - name: {{ $fullname }}-stripprefix
+        {{- end }}
+        {{- if .Values.slackBridge.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.slackBridge.ingress.basicAuth.enabled }}
+        - name: {{ $fullname }}-basicauth
+        {{- end }}
+{{- if $pathPrefix }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-stripprefix
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: slack-bridge
+spec:
+  stripPrefix:
+    prefixes:
+      - {{ $pathPrefix }}
+{{- end }}
+{{- if .Values.slackBridge.ingress.ipWhitelist.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-ipwhitelist
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: slack-bridge
+spec:
+  ipWhiteList:
+    sourceRange:
+      {{- toYaml .Values.slackBridge.ingress.ipWhitelist.sourceRange | nindent 6 }}
+    ipStrategy:
+      depth: {{ .Values.slackBridge.ingress.ipWhitelist.depth | default 1 }}
+{{- end }}
+{{- if .Values.slackBridge.ingress.basicAuth.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-basicauth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gasboat.labels" . | nindent 4 }}
+    app.kubernetes.io/component: slack-bridge
+spec:
+  basicAuth:
+    secret: {{ include "gasboat.basicAuth.secret" (dict "local" .Values.slackBridge.ingress.basicAuth.secret "global" .Values.global.basicAuth.secret) }}
+{{- end }}
+{{- end }}

@@ -525,6 +525,18 @@ slackBridge:
     channel: ""       # Dashboard channel (defaults to slack.channel if empty)
     interval: ""      # Poll interval (e.g., "15s", "30s"); default 15s
 
+  ingress:
+    enabled: false
+    host: ""
+    pathPrefix: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""
+
   service:
     type: ClusterIP
     port: 8090
