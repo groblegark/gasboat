@@ -228,19 +228,25 @@ func TestHandleAppMention_InAgentThread(t *testing.T) {
 	}
 }
 
-func TestHandleAppMention_NotInThread(t *testing.T) {
+func TestHandleAppMention_NotInThread_Broadcast(t *testing.T) {
 	daemon := newMockDaemon()
 
-	// A mention not in a thread with no channel mapping should be silently ignored.
+	dir := t.TempDir()
+	state, err := NewStateManager(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	b := &Bot{
 		daemon:     daemon,
 		logger:     slog.Default(),
 		botUserID:  "U-BOT",
+		state:      state,
 		agentCards: map[string]MessageRef{},
-		// router is nil — no channel mapping.
+		// router is nil — no channel mapping → triggers broadcast.
 	}
 
-	// Call the internal lookup to verify no agent is resolved.
+	// Verify no agent resolved for unmapped channel.
 	var agent string
 	if b.router != nil {
 		agent = b.router.GetAgentByChannel("C-random")
@@ -249,9 +255,45 @@ func TestHandleAppMention_NotInThread(t *testing.T) {
 		t.Errorf("expected empty agent for unmapped channel, got %q", agent)
 	}
 
-	// Verify no beads were created via daemon.
-	if daemon.getGetCalls() != 0 {
-		t.Errorf("expected 0 daemon calls, got %d", daemon.getGetCalls())
+	// Simulate the broadcast path: create an unassigned bead.
+	ctx := context.Background()
+	text := "check the logs"
+	title := truncateText("Mention: "+text, 80)
+	description := "Mention from testuser in Slack:\n\ncheck the logs\n\n---\n[slack:C-random:1234.5678]"
+
+	b.handleBroadcastMention(ctx, "C-random", "1234.5678", title, description, text, "testuser")
+
+	// Verify a bead was created.
+	daemon.mu.Lock()
+	var found *beadsapi.BeadDetail
+	for _, bd := range daemon.beads {
+		if bd.Type == "task" && bd.Title == "Mention: check the logs" {
+			found = bd
+			break
+		}
+	}
+	daemon.mu.Unlock()
+
+	if found == nil {
+		t.Fatal("expected broadcast mention bead to be created")
+	}
+	if found.Assignee != "" {
+		t.Errorf("broadcast bead assignee = %q, want empty (unassigned)", found.Assignee)
+	}
+	if !hasLabel(found.Labels, "slack-mention") {
+		t.Errorf("bead labels = %v, want slack-mention", found.Labels)
+	}
+	if !hasLabel(found.Labels, "broadcast") {
+		t.Errorf("bead labels = %v, want broadcast", found.Labels)
+	}
+
+	// Verify state was persisted.
+	ref, ok := state.GetChatMessage(found.ID)
+	if !ok {
+		t.Fatal("expected chat message in state")
+	}
+	if ref.ChannelID != "C-random" || ref.Timestamp != "1234.5678" {
+		t.Errorf("message ref = %+v, want C-random/1234.5678", ref)
 	}
 }
 
@@ -410,4 +452,40 @@ func TestChat_HandleClosed_IgnoresNonMentionBeads(t *testing.T) {
 	if daemon.getGetCalls() != 0 {
 		t.Errorf("expected 0 GetBead calls for non-chat/mention bead, got %d", daemon.getGetCalls())
 	}
+}
+
+func TestBroadcastNudge_NoAgents(t *testing.T) {
+	daemon := newMockDaemon()
+
+	b := &Bot{
+		daemon: daemon,
+		logger: slog.Default(),
+	}
+
+	// broadcastNudge with no agents should not panic.
+	b.broadcastNudge(context.Background(), "test message", "bd-test")
+}
+
+func TestBroadcastNudge_SkipsAgentsWithoutCoopURL(t *testing.T) {
+	daemon := newMockDaemon()
+
+	// Create an agent bead without coop_url metadata.
+	daemon.beads["bd-agent-1"] = &beadsapi.BeadDetail{
+		ID:    "bd-agent-1",
+		Title: "test-agent",
+		Type:  "agent",
+		Fields: map[string]string{
+			"agent":   "test-agent",
+			"project": "gasboat",
+			"role":    "crew",
+		},
+	}
+
+	b := &Bot{
+		daemon: daemon,
+		logger: slog.Default(),
+	}
+
+	// Should not panic; agent has no coop_url so it's skipped.
+	b.broadcastNudge(context.Background(), "test message", "bd-test")
 }
