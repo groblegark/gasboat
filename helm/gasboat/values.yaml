@@ -529,6 +529,18 @@ slackBridge:
     type: ClusterIP
     port: 8090
 
+  # Ingress for the decisions web UI (/ui/) and API (/api/).
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""  # Per-service override; falls back to global.basicAuth.secret
+
   resources:
     requests:
       cpu: 50m
