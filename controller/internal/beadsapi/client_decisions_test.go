@@ -44,7 +44,7 @@ func TestListDecisions_ParsesComplexFields(t *testing.T) {
 			}
 		}]}`
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer srv.Close()
 
@@ -95,7 +95,7 @@ func TestListDecisions_PassesQueryParams(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"decisions":[]}`))
+		_, _ = w.Write([]byte(`{"decisions":[]}`))
 	}))
 	defer srv.Close()
 
@@ -113,7 +113,7 @@ func TestListDecisions_PassesQueryParams(t *testing.T) {
 func TestListDecisions_EmptyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"decisions":[]}`))
+		_, _ = w.Write([]byte(`{"decisions":[]}`))
 	}))
 	defer srv.Close()
 
@@ -139,7 +139,7 @@ func TestListDecisions_NilIssue(t *testing.T) {
 			}
 		}]}`
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer srv.Close()
 
@@ -174,7 +174,7 @@ func TestGetDecision_ParsesComplexFields(t *testing.T) {
 			}
 		}`
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(resp))
+		_, _ = w.Write([]byte(resp))
 	}))
 	defer srv.Close()
 

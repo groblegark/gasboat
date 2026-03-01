@@ -124,7 +124,7 @@ func main() {
 	})
 	healthMux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"version":    version,
 			"commit":     commit,
 			"agentImage": cfg.CoopImage,
