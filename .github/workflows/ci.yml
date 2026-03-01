@@ -1,6 +1,4 @@
 name: CI
-# NOTE: Docker image builds have moved to RWX (.rwx/docker.yml).
-# This workflow only runs Go checks (test, lint, quench).
 
 on:
   push:
@@ -60,3 +58,49 @@ jobs:
         run: cargo install quench --git https://github.com/alfredjeanlab/quench
       - name: Run quench checks
         run: quench check
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: controller
+            context: controller
+            dockerfile: controller/Dockerfile
+          - image: agent
+            context: images/agent
+            dockerfile: images/agent/Dockerfile
+          - image: slack-bridge
+            context: .
+            dockerfile: images/slack-bridge/Dockerfile
+          - image: jira-bridge
+            context: .
+            dockerfile: images/jira-bridge/Dockerfile
+          - image: advice-viewer
+            context: .
+            dockerfile: images/advice-viewer/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  docker-build-beads3d:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: groblegark/beads3d
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha,scope=beads3d
+          cache-to: type=gha,mode=max,scope=beads3d
