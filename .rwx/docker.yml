@@ -121,6 +121,7 @@ tasks:
       REF_NAME: ${{ init.ref-name }}
     filter:
       - controller/**/*.go
+      - controller/**/*.html
       - controller/go.mod
       - controller/go.sum
     outputs:
@@ -160,6 +161,7 @@ tasks:
       REF_NAME: ${{ init.ref-name }}
     filter:
       - controller/**/*.go
+      - controller/**/*.html
       - controller/go.mod
       - controller/go.sum
     outputs:
