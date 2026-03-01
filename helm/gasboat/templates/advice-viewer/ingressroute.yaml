@@ -76,6 +76,6 @@ metadata:
     app.kubernetes.io/component: advice-viewer
 spec:
   basicAuth:
-    secret: {{ .Values.adviceViewer.ingress.basicAuth.secret }}
+    secret: {{ include "gasboat.basicAuth.secret" (dict "local" .Values.adviceViewer.ingress.basicAuth.secret "global" .Values.global.basicAuth.secret) }}
 {{- end }}
 {{- end }}

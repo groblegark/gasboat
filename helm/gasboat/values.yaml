@@ -10,6 +10,16 @@
 imagePullSecrets: []
 
 # =============================================================================
+# Global settings (shared across all components)
+# =============================================================================
+global:
+  # Shared basic auth secret for Traefik ingress protection.
+  # Individual services can override with their own basicAuth.secret value.
+  # The secret must contain htpasswd-formatted credentials.
+  basicAuth:
+    secret: ""
+
+# =============================================================================
 # Registry Pull Secrets (ExternalSecrets for private container registries)
 # =============================================================================
 registrySecrets:
@@ -290,7 +300,7 @@ coopmux:
       depth: 1
     basicAuth:
       enabled: false
-      secret: ""
+      secret: ""  # Per-service override; falls back to global.basicAuth.secret
     rateLimit:
       enabled: false
       average: 100
@@ -580,7 +590,51 @@ adviceViewer:
       depth: 1
     basicAuth:
       enabled: false
-      secret: ""
+      secret: ""  # Per-service override; falls back to global.basicAuth.secret
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Beads3D — 3D visualization frontend for beads issues
+# Static SPA served by nginx, reverse-proxies /api/ to beads daemon.
+# =============================================================================
+beads3d:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/beads3d
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Beads daemon URL for nginx reverse proxy (e.g. "http://release-beads:8080")
+  # Auto-wired to the in-chart beads daemon when empty.
+  daemonURL: ""
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""  # Per-service override; falls back to global.basicAuth.secret
 
   resources:
     requests:

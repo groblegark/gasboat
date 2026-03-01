@@ -193,6 +193,54 @@ Accepts a dict with "fullname" and "Values" keys plus an "includeBasicAuth" bool
 {{- end }}
 {{- end }}
 
+{{/*
+Resolve basic auth secret — returns per-service override if set, otherwise global.
+Usage: include "gasboat.basicAuth.secret" (dict "local" .Values.coopmux.ingress.basicAuth.secret "global" .Values.global.basicAuth.secret)
+*/}}
+{{- define "gasboat.basicAuth.secret" -}}
+{{- if .local -}}
+{{- .local -}}
+{{- else -}}
+{{- .global -}}
+{{- end -}}
+{{- end }}
+
+{{/* ===== Beads3D component helpers ===== */}}
+
+{{/*
+Beads3D fully qualified name
+*/}}
+{{- define "gasboat.beads3d.fullname" -}}
+{{- printf "%s-beads3d" (include "gasboat.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Beads3D labels
+*/}}
+{{- define "gasboat.beads3d.labels" -}}
+{{ include "gasboat.labels" . }}
+app.kubernetes.io/component: beads3d
+{{- end }}
+
+{{/*
+Beads3D selector labels
+*/}}
+{{- define "gasboat.beads3d.selectorLabels" -}}
+{{ include "gasboat.selectorLabels" . }}
+app.kubernetes.io/component: beads3d
+{{- end }}
+
+{{/*
+Beads3D daemon URL — falls back to in-chart beads daemon HTTP endpoint.
+*/}}
+{{- define "gasboat.beads3d.daemonURL" -}}
+{{- if .Values.beads3d.daemonURL -}}
+{{- .Values.beads3d.daemonURL -}}
+{{- else -}}
+{{- printf "http://%s:%s" (include "gasboat.beads.fullname" .) (include "gasboat.beads.httpPort" .) -}}
+{{- end -}}
+{{- end }}
+
 {{/* ===== PostgreSQL component helpers ===== */}}
 
 {{/*
