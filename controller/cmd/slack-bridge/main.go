@@ -88,6 +88,14 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ok"}`)
 	})
 
+	// Unreleased changes API — same data as the /unreleased Slack command.
+	mux.HandleFunc("/api/unreleased", bridge.HandleUnreleased(bridge.UnreleasedConfig{
+		GitHub:        bridge.NewGitHubClientIfConfigured(cfg.githubToken, cfg.repos, logger),
+		Repos:         cfg.repos,
+		ControllerURL: cfg.controllerURL,
+		Version:       version,
+	}))
+
 	if cfg.slackBotToken != "" && cfg.slackAppToken != "" {
 		// Socket Mode: real-time WebSocket connection for events, interactions, slash commands.
 		bot = bridge.NewBot(bridge.BotConfig{
