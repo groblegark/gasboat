@@ -408,7 +408,8 @@ func outputRosterSection(w io.Writer, self string) {
 
 // outputAutoAssign checks if the agent has in_progress beads and auto-assigns
 // the highest-priority ready task if idle. Skips if BOAT_TASK_ID is set (the
-// agent was spawned with a specific pre-assigned task).
+// agent was spawned with a specific pre-assigned task) or if auto_assign is
+// disabled on the agent bead.
 func outputAutoAssign(w io.Writer, agentID string) {
 	if os.Getenv("BOAT_TASK_ID") != "" {
 		return
@@ -421,6 +422,16 @@ func outputAutoAssign(w io.Writer, agentID string) {
 	}
 
 	ctx := context.Background()
+
+	// Check agent bead's auto_assign field. Default is enabled; only skip
+	// if explicitly set to "false".
+	if agentBeadID := os.Getenv("KD_AGENT_ID"); agentBeadID != "" {
+		if agentBead, err := daemon.GetBead(ctx, agentBeadID); err == nil {
+			if agentBead.Fields["auto_assign"] == "false" {
+				return
+			}
+		}
+	}
 
 	// Check if agent already has in_progress work.
 	resp, err := daemon.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{

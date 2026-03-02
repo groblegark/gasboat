@@ -95,6 +95,8 @@ func configs() map[string]any {
 				// Advice subscription overrides.
 				{Name: "advice_subscriptions", Type: "string[]"},
 				{Name: "advice_subscriptions_exclude", Type: "string[]"},
+				// Auto-assignment control: "true" (default) or "false".
+				{Name: "auto_assign", Type: "string"},
 			},
 		},
 		"type:mail": TypeConfig{
