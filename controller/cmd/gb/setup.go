@@ -23,17 +23,22 @@ var gbHookPrefixes = []string{"gb hook ", "gb bus emit --hook="}
 
 var setupClaudeCmd = &cobra.Command{
 	Use:   "claude",
-	Short: "Materialize Claude Code hooks from config beads",
-	Long: `Fetches claude-hooks config beads from the daemon, merges them by
-specificity (global → role → agent), and writes .claude/settings.json
-in the workspace directory.
+	Short: "Materialize Claude Code settings and hooks from config beads",
+	Long: `Fetches claude-settings and claude-hooks config beads from the daemon,
+merges them by specificity (global → role), and writes settings files.
+
+User-level settings (permissions, model, plugins) are written to
+~/.claude/settings.json. Workspace-level hooks are written to
+{workspace}/.claude/settings.json.
 
 Config bead keys (checked in order, later overrides earlier):
-  claude-hooks:global   — base hooks for all agents
-  claude-hooks:<role>   — role-specific overrides
+  claude-settings:global — base user-level settings for all agents
+  claude-settings:<role> — role-specific settings overrides
+  claude-hooks:global    — base hooks for all agents
+  claude-hooks:<role>    — role-specific hook overrides
 
 Flags:
-  --defaults   Install hardcoded default hooks (no server needed)
+  --defaults   Install hardcoded settings and hooks (no server needed)
   --check      Verify hooks are installed, exit 1 if missing
   --remove     Remove gb hooks from settings.json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -89,6 +94,58 @@ func hookEntry(command string) map[string]any {
 			},
 		},
 	}
+}
+
+// defaultUserSettings returns the hardcoded user-level Claude Code settings
+// (permissions, thinking mode, dangerous mode bypass). This is the fallback
+// when claude-settings config beads are not available.
+func defaultUserSettings() map[string]any {
+	return map[string]any{
+		"permissions": map[string]any{
+			"allow": []any{
+				"Bash(*)", "Read(*)", "Write(*)", "Edit(*)",
+				"Glob(*)", "Grep(*)", "WebFetch(*)", "WebSearch(*)",
+			},
+			"deny": []any{},
+		},
+		"alwaysThinkingEnabled":          true,
+		"skipDangerousModePermissionPrompt": true,
+	}
+}
+
+// appendDetectedPlugins auto-detects installed LSP servers and adds them
+// to the settings' enabledPlugins map.
+func appendDetectedPlugins(settings map[string]any) {
+	plugins := make(map[string]any)
+	if existing, ok := settings["enabledPlugins"].(map[string]any); ok {
+		for k, v := range existing {
+			plugins[k] = v
+		}
+	}
+
+	detected := false
+	if pathExists("gopls") {
+		plugins["gopls-lsp@claude-plugins-official"] = true
+		detected = true
+	}
+	if pathExists("rust-analyzer") {
+		plugins["rust-analyzer-lsp@claude-plugins-official"] = true
+		detected = true
+	}
+
+	if detected {
+		settings["enabledPlugins"] = plugins
+	}
+}
+
+// pathExists checks if a command exists on PATH.
+func pathExists(name string) bool {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultHookSettings() map[string]any {
@@ -165,6 +222,12 @@ func appendRTKHooks(settings map[string]any) {
 }
 
 func runSetupClaudeDefaults(workspace string) error {
+	// Write user-level settings (permissions, plugins, thinking).
+	if err := writeUserSettings(defaultUserSettings()); err != nil {
+		return fmt.Errorf("writing user settings: %w", err)
+	}
+
+	// Write workspace-level hooks.
 	settings := defaultHookSettings()
 	appendRTKHooks(settings)
 
@@ -185,6 +248,36 @@ func runSetupClaudeDefaults(workspace string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "[setup] wrote default hooks to %s\n", outPath)
+	return nil
+}
+
+// writeUserSettings writes user-level Claude Code settings to ~/.claude/settings.json.
+// Auto-detects installed LSP plugins and adds them.
+func writeUserSettings(settings map[string]any) error {
+	appendDetectedPlugins(settings)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("determining home dir: %w", err)
+	}
+
+	claudeDir := filepath.Join(homeDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return fmt.Errorf("creating ~/.claude dir: %w", err)
+	}
+
+	outPath := filepath.Join(claudeDir, "settings.json")
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshalling user settings: %w", err)
+	}
+	data = append(data, '\n')
+
+	if err := os.WriteFile(outPath, data, 0600); err != nil {
+		return fmt.Errorf("writing user settings: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "[setup] wrote user settings to %s\n", outPath)
 	return nil
 }
 
@@ -335,25 +428,53 @@ func runSetupClaudeRemove(workspace string) error {
 }
 
 func runSetupClaude(ctx context.Context, workspace, role string) error {
-	var layers []json.RawMessage
+	// ── User-level settings (claude-settings:*) ──────────────────────────
+	var settingsLayers []json.RawMessage
+
+	if cfg, err := daemon.GetConfig(ctx, "claude-settings:global"); err == nil && cfg != nil {
+		settingsLayers = append(settingsLayers, cfg.Value)
+		fmt.Fprintf(os.Stderr, "[setup] loaded claude-settings:global\n")
+	}
+
+	if role != "" {
+		if cfg, err := daemon.GetConfig(ctx, "claude-settings:"+role); err == nil && cfg != nil {
+			settingsLayers = append(settingsLayers, cfg.Value)
+			fmt.Fprintf(os.Stderr, "[setup] loaded claude-settings:%s\n", role)
+		}
+	}
+
+	if len(settingsLayers) > 0 {
+		merged := mergeSimpleLayers(settingsLayers)
+		if err := writeUserSettings(merged); err != nil {
+			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write user settings: %v\n", err)
+		}
+	} else {
+		// Fall back to hardcoded defaults when no config beads found.
+		if err := writeUserSettings(defaultUserSettings()); err != nil {
+			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write default user settings: %v\n", err)
+		}
+	}
+
+	// ── Workspace-level hooks (claude-hooks:*) ───────────────────────────
+	var hookLayers []json.RawMessage
 
 	if cfg, err := daemon.GetConfig(ctx, "claude-hooks:global"); err == nil && cfg != nil {
-		layers = append(layers, cfg.Value)
+		hookLayers = append(hookLayers, cfg.Value)
 		fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:global\n")
 	}
 
 	if role != "" {
 		if cfg, err := daemon.GetConfig(ctx, "claude-hooks:"+role); err == nil && cfg != nil {
-			layers = append(layers, cfg.Value)
+			hookLayers = append(hookLayers, cfg.Value)
 			fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:%s\n", role)
 		}
 	}
 
-	if len(layers) == 0 {
+	if len(hookLayers) == 0 {
 		return fmt.Errorf("no claude-hooks config beads found")
 	}
 
-	merged := mergeHookLayers(layers)
+	merged := mergeHookLayers(hookLayers)
 	appendRTKHooks(merged)
 
 	outDir := filepath.Join(workspace, ".claude")
@@ -374,6 +495,23 @@ func runSetupClaude(ctx context.Context, workspace, role string) error {
 
 	fmt.Fprintf(os.Stderr, "[setup] wrote %s\n", outPath)
 	return nil
+}
+
+// mergeSimpleLayers merges JSON config layers with simple key override.
+// Later layers override earlier ones. Used for user-level settings
+// (permissions, model, plugins) where the last value wins.
+func mergeSimpleLayers(layers []json.RawMessage) map[string]any {
+	result := make(map[string]any)
+	for _, raw := range layers {
+		var layer map[string]any
+		if err := json.Unmarshal(raw, &layer); err != nil {
+			continue
+		}
+		for k, v := range layer {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func mergeHookLayers(layers []json.RawMessage) map[string]any {

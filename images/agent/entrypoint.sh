@@ -275,8 +275,14 @@ fi
 
 # ── Claude settings ──────────────────────────────────────────────────────
 #
-# User-level settings (permissions + LSP plugins) written to ~/.claude/settings.json.
-# LSP plugins are always enabled — gopls and rust-analyzer are in the agent image.
+# User-level settings (permissions, plugins, model) and workspace hooks are
+# both materialized from config beads via `gb setup claude`. The command
+# fetches claude-settings:* and claude-hooks:* config beads, merges them by
+# specificity (global → role), and writes:
+#   ~/.claude/settings.json           — user-level (permissions, plugins)
+#   {workspace}/.claude/settings.json — workspace-level (hooks)
+#
+# When config beads are unavailable, --defaults installs hardcoded fallbacks.
 # Mock mode: skip Claude settings entirely (claudeless doesn't use them).
 
 if [ "${MOCK_MODE}" = "1" ]; then
@@ -286,49 +292,30 @@ if [ "${MOCK_MODE}" = "1" ]; then
     echo '{}' > "${CLAUDE_DIR}/settings.json"
 else
 
-# Start with base settings JSON (permissions + plugins + autonomous agent defaults).
-SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]},"alwaysThinkingEnabled":true,"skipDangerousModePermissionPrompt":true}'
-
 # Disable interactive features that interrupt autonomous agents.
 export CLAUDE_CODE_ENABLE_TASKS="${CLAUDE_CODE_ENABLE_TASKS:-false}"
 
-# Enable LSP plugins (gopls + rust-analyzer are always present in the agent image).
-PLUGINS_JSON=""
-if command -v gopls &>/dev/null; then
-    PLUGINS_JSON="${PLUGINS_JSON}\"gopls-lsp@claude-plugins-official\":true,"
-    echo "[entrypoint] Enabling gopls LSP plugin"
-fi
-if command -v rust-analyzer &>/dev/null; then
-    PLUGINS_JSON="${PLUGINS_JSON}\"rust-analyzer-lsp@claude-plugins-official\":true,"
-    echo "[entrypoint] Enabling rust-analyzer LSP plugin"
-fi
-
-if [ -n "${PLUGINS_JSON}" ]; then
-    PLUGINS_JSON="{${PLUGINS_JSON%,}}"
-    SETTINGS_JSON=$(echo "${SETTINGS_JSON}" | jq --argjson p "${PLUGINS_JSON}" '. + {enabledPlugins: $p}')
-fi
-
-echo "${SETTINGS_JSON}" | jq . > "${CLAUDE_DIR}/settings.json"
-
-# Materialize hooks from config beads (writes workspace .claude/settings.json).
-# Falls back to hardcoded hooks if daemon is unreachable or no config beads exist.
+# Materialize settings + hooks from config beads.
+# gb setup claude writes both:
+#   ~/.claude/settings.json           (user-level: permissions, plugins, model)
+#   {workspace}/.claude/settings.json (workspace-level: hooks)
 mkdir -p "${WORKSPACE}/.claude"
 MATERIALIZED=0
 
 if command -v gb &>/dev/null; then
-    echo "[entrypoint] Materializing hooks from config beads (role: ${ROLE})"
+    echo "[entrypoint] Materializing settings and hooks from config beads (role: ${ROLE})"
     if gb setup claude --workspace="${WORKSPACE}" --role="${ROLE}" 2>&1; then
         if grep -q '"hooks"' "${WORKSPACE}/.claude/settings.json" 2>/dev/null; then
             MATERIALIZED=1
-            echo "[entrypoint] Hooks materialized from config beads"
+            echo "[entrypoint] Settings and hooks materialized from config beads"
         fi
     fi
 fi
 
 if [ "${MATERIALIZED}" = "0" ]; then
-    echo "[entrypoint] No config beads found, installing default gb hooks"
+    echo "[entrypoint] No config beads found, installing defaults"
     gb setup claude --defaults --workspace="${WORKSPACE}" 2>&1 || \
-        echo "[entrypoint] WARNING: gb setup --defaults failed, no hooks installed"
+        echo "[entrypoint] WARNING: gb setup --defaults failed"
 fi
 
 # ── RTK context file ─────────────────────────────────────────────────────
