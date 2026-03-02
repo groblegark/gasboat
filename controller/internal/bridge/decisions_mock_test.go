@@ -41,6 +41,20 @@ func (m *mockDaemon) seedProject(name string) {
 	}
 }
 
+// seedProjectWithPrefix pre-populates a project bead with a ticket prefix
+// (e.g., "pe") so that ticket-prefix resolution tests can match PE-1234 → project.
+func (m *mockDaemon) seedProjectWithPrefix(name, prefix string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := "proj-" + name
+	m.beads[id] = &beadsapi.BeadDetail{
+		ID:     id,
+		Title:  name,
+		Type:   "project",
+		Fields: map[string]string{"prefix": prefix},
+	}
+}
+
 func (m *mockDaemon) GetBead(_ context.Context, beadID string) (*beadsapi.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -132,7 +146,7 @@ func (m *mockDaemon) ListProjectBeads(_ context.Context) (map[string]beadsapi.Pr
 	result := make(map[string]beadsapi.ProjectInfo)
 	for _, b := range m.beads {
 		if b.Type == "project" {
-			result[b.Title] = beadsapi.ProjectInfo{Name: b.Title}
+			result[b.Title] = beadsapi.ProjectInfo{Name: b.Title, Prefix: b.Fields["prefix"]}
 		}
 	}
 	return result, nil

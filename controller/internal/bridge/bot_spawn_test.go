@@ -217,6 +217,119 @@ func TestHandleSpawnCommand_InvalidAgentName_NoBeadCreated(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnCommand_TicketPrefix_ResolvesProject(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProjectWithPrefix("monorepo", "pe")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	// /spawn my-bot PE-1234 → should auto-resolve project "monorepo" from prefix "pe"
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot PE-1234",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["project"] != "monorepo" {
+			t.Errorf("expected project=monorepo (resolved from PE prefix), got %s", b.Fields["project"])
+		}
+		if b.Description != "Assigned to task: PE-1234" {
+			t.Errorf("expected task assignment in description, got %q", b.Description)
+		}
+	}
+}
+
+func TestHandleSpawnCommand_TicketPrefix_CaseInsensitive(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProjectWithPrefix("gasboat", "KD")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot kd-42",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["project"] != "gasboat" {
+			t.Errorf("expected project=gasboat (resolved from kd prefix), got %s", b.Fields["project"])
+		}
+	}
+}
+
+func TestHandleSpawnCommand_TicketPrefix_WithExplicitProject(t *testing.T) {
+	// When project is given explicitly along with a task ID, use the explicit project.
+	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot gasboat kd-42",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["project"] != "gasboat" {
+			t.Errorf("expected project=gasboat, got %s", b.Fields["project"])
+		}
+		if b.Description != "Assigned to task: kd-42" {
+			t.Errorf("expected task in description, got %q", b.Description)
+		}
+	}
+}
+
+func TestHandleSpawnCommand_TicketPrefix_NoMatchingProject(t *testing.T) {
+	// Ticket prefix doesn't match any project — agent still spawns without a project.
+	daemon := newMockDaemon()
+	daemon.seedProjectWithPrefix("gasboat", "kd")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      "my-bot UNKNOWN-99",
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created (no project match is OK), got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["project"] != "" {
+			t.Errorf("expected empty project (no prefix match), got %s", b.Fields["project"])
+		}
+	}
+}
+
 func TestIsValidAgentName(t *testing.T) {
 	cases := []struct {
 		name  string

@@ -3,10 +3,14 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/slack-go/slack"
 )
+
+// ticketIDPattern matches ticket IDs like PE-1234, KD-42, PROJ-999.
+var ticketIDPattern = regexp.MustCompile(`^[A-Za-z]+-\d+$`)
 
 // handleSlashCommand processes Slack slash commands.
 func (b *Bot) handleSlashCommand(ctx context.Context, cmd slack.SlashCommand) {
@@ -61,27 +65,46 @@ func (b *Bot) handleSpawnCommand(ctx context.Context, cmd slack.SlashCommand) {
 
 	project := ""
 	customPrompt := ""
+	taskID := ""
 	if len(positional) >= 2 {
 		arg2 := positional[1]
 		// Quoted strings are custom prompts, not project names.
 		if strings.Contains(arg2, " ") {
 			customPrompt = arg2
+		} else if ticketIDPattern.MatchString(arg2) {
+			// Ticket ID (e.g., PE-1234) — treat as task ID and auto-resolve project.
+			taskID = arg2
 		} else {
 			project = arg2
 		}
 	}
 
-	taskID := ""
-	if len(positional) >= 3 {
+	if taskID == "" && len(positional) >= 3 {
 		taskID = positional[2]
 	}
 
-	// Validate project exists.
-	if project != "" {
-		projects, err := b.daemon.ListProjectBeads(ctx)
-		if err != nil {
-			b.logger.Error("failed to list projects for validation", "error", err)
-		} else if _, ok := projects[project]; !ok {
+	// Load projects for validation or prefix-based resolution.
+	projects, projErr := b.daemon.ListProjectBeads(ctx)
+	if projErr != nil {
+		b.logger.Error("failed to list projects", "error", projErr)
+	}
+
+	// Auto-resolve project from ticket prefix when not explicitly given.
+	if project == "" && taskID != "" && projects != nil {
+		if idx := strings.Index(taskID, "-"); idx > 0 {
+			prefix := strings.ToLower(taskID[:idx])
+			for _, p := range projects {
+				if strings.EqualFold(p.Prefix, prefix) {
+					project = p.Name
+					break
+				}
+			}
+		}
+	}
+
+	// Validate explicit project exists.
+	if project != "" && projects != nil {
+		if _, ok := projects[project]; !ok {
 			names := make([]string, 0, len(projects))
 			for name := range projects {
 				names = append(names, name)
