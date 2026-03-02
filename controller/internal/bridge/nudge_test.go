@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,121 +107,6 @@ func TestNudgeCoop_AllBusy_ReturnsError(t *testing.T) {
 	mu.Unlock()
 	if c != nudgeRetryConfig.maxAttempts {
 		t.Errorf("expected %d retry attempts, got %d", nudgeRetryConfig.maxAttempts, c)
-	}
-}
-
-func TestNudgeCoop_WorkingAgent_SendsEscapeBeforeRetry(t *testing.T) {
-	orig := nudgeRetryConfig
-	nudgeRetryConfig.baseDelay = 10 * time.Millisecond
-	nudgeRetryConfig.maxDelay = 50 * time.Millisecond
-	defer func() { nudgeRetryConfig = orig }()
-
-	var mu sync.Mutex
-	var paths []string
-	nudgeCount := 0
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		paths = append(paths, r.URL.Path)
-		if strings.HasSuffix(r.URL.Path, "/agent/nudge") {
-			nudgeCount++
-			n := nudgeCount
-			mu.Unlock()
-			if n == 1 {
-				_ = json.NewEncoder(w).Encode(nudgeCoopResult{Delivered: false, Reason: "agent is working"})
-			} else {
-				_ = json.NewEncoder(w).Encode(nudgeCoopResult{Delivered: true})
-			}
-		} else {
-			mu.Unlock()
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer srv.Close()
-
-	err := nudgeCoop(context.Background(), srv.Client(), srv.URL, "hello")
-	if err != nil {
-		t.Fatalf("expected delivery after interrupt, got %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Should have: nudge (working) → keys (Escape) → nudge (delivered)
-	if nudgeCount != 2 {
-		t.Errorf("expected 2 nudge calls, got %d", nudgeCount)
-	}
-
-	hasKeys := false
-	for _, p := range paths {
-		if strings.HasSuffix(p, "/input/keys") {
-			hasKeys = true
-			break
-		}
-	}
-	if !hasKeys {
-		t.Errorf("expected Escape key POST to /input/keys, paths: %v", paths)
-	}
-}
-
-func TestNudgeCoop_PromptAgent_SendsEscapeBeforeRetry(t *testing.T) {
-	orig := nudgeRetryConfig
-	nudgeRetryConfig.baseDelay = 10 * time.Millisecond
-	nudgeRetryConfig.maxDelay = 50 * time.Millisecond
-	defer func() { nudgeRetryConfig = orig }()
-
-	var mu sync.Mutex
-	var keysSent bool
-	nudgeCount := 0
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		if strings.HasSuffix(r.URL.Path, "/input/keys") {
-			keysSent = true
-			mu.Unlock()
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		nudgeCount++
-		n := nudgeCount
-		mu.Unlock()
-
-		if n == 1 {
-			_ = json.NewEncoder(w).Encode(nudgeCoopResult{Delivered: false, Reason: "agent is prompt"})
-		} else {
-			_ = json.NewEncoder(w).Encode(nudgeCoopResult{Delivered: true})
-		}
-	}))
-	defer srv.Close()
-
-	err := nudgeCoop(context.Background(), srv.Client(), srv.URL, "hello")
-	if err != nil {
-		t.Fatalf("expected delivery after interrupt, got %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if !keysSent {
-		t.Error("expected Escape key to be sent for 'prompt' state")
-	}
-}
-
-func TestIsWorkingReason(t *testing.T) {
-	tests := []struct {
-		reason string
-		want   bool
-	}{
-		{"agent is working", true},
-		{"agent is prompt", true},
-		{"working", true},
-		{"agent_busy", false},
-		{"rate_limited", false},
-		{"", false},
-	}
-	for _, tt := range tests {
-		if got := isWorkingReason(tt.reason); got != tt.want {
-			t.Errorf("isWorkingReason(%q) = %v, want %v", tt.reason, got, tt.want)
-		}
 	}
 }
 

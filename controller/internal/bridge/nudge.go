@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"gasboat/controller/internal/beadsapi"
@@ -31,9 +30,8 @@ var nudgeRetryConfig = struct {
 }
 
 // NudgeAgent looks up an agent's coop_url from its agent bead and delivers
-// a nudge message with retry. When the agent is actively working, it sends
-// an Escape key to interrupt Claude's generation, then retries. This is the
-// single entry point for all agent nudge delivery in the bridge package.
+// a nudge message with retry. This is the single entry point for all agent
+// nudge delivery in the bridge package.
 func NudgeAgent(ctx context.Context, daemon BeadClient, client *http.Client, logger *slog.Logger, agentName, message string) error {
 	if agentName == "" {
 		return fmt.Errorf("empty agent name")
@@ -59,11 +57,10 @@ func NudgeAgent(ctx context.Context, daemon BeadClient, client *http.Client, log
 }
 
 // nudgeCoop POSTs a nudge message to a coop agent endpoint with retry.
-// When the agent explicitly reports busy ({"delivered":false,"reason":"..."}),
-// it sends an Escape key to interrupt the agent's current generation, waits
-// briefly, then retries up to nudgeRetryConfig.maxAttempts times.
 // If the response body is empty or unparseable, the nudge is treated as
 // delivered (backwards-compatible with older coop versions).
+// When coop reports the agent is busy, we retry with backoff — the agent
+// will pick up the message when the current turn finishes.
 func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string) error {
 	body, err := json.Marshal(map[string]string{"message": message})
 	if err != nil {
@@ -71,7 +68,6 @@ func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string
 	}
 
 	nudgeURL := coopURL + "/api/v1/agent/nudge"
-	base := strings.TrimRight(coopURL, "/") + "/api/v1"
 
 	var lastErr error
 	delay := nudgeRetryConfig.baseDelay
@@ -105,11 +101,6 @@ func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string
 			return nil
 		}
 
-		// Agent is busy — interrupt with Escape so it can receive the nudge.
-		if isWorkingReason(result.Reason) {
-			postCoopKeys(ctx, client, base, "Escape")
-		}
-
 		lastErr = fmt.Errorf("nudge not delivered: %s", result.Reason)
 		if attempt < nudgeRetryConfig.maxAttempts {
 			select {
@@ -125,11 +116,4 @@ func nudgeCoop(ctx context.Context, client *http.Client, coopURL, message string
 	}
 
 	return lastErr
-}
-
-// isWorkingReason returns true if the nudge rejection reason indicates the
-// agent is actively generating (working) or stuck at a prompt, meaning an
-// Escape interrupt could free it up to receive the nudge.
-func isWorkingReason(reason string) bool {
-	return strings.Contains(reason, "working") || strings.Contains(reason, "prompt")
 }
