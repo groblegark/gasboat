@@ -94,23 +94,46 @@ func hookEntry(command string) map[string]any {
 func defaultHookSettings() map[string]any {
 	return map[string]any{
 		"hooks": map[string]any{
-			// SessionStart: prime context + check mail + audit worktrees.
+			// SessionStart: prime context + check mail + audit worktrees + relay.
 			"SessionStart": []any{
 				hookEntry("gb hook prime 2>/dev/null || true"),
 				hookEntry("gb hook check-mail 2>/dev/null || true"),
 				hookEntry("gb workspace audit 2>/dev/null || true"),
+				hookEntry("gb hook relay 2>/dev/null || true"),
 			},
-			// PreCompact: re-prime so context survives compaction.
+			// PreCompact: re-prime so context survives compaction + relay.
 			"PreCompact": []any{
 				hookEntry("gb hook prime 2>/dev/null || true"),
+				hookEntry("gb hook relay 2>/dev/null || true"),
 			},
 			// UserPromptSubmit: check mail on every human message.
 			"UserPromptSubmit": []any{
 				hookEntry("gb hook check-mail 2>/dev/null || true"),
 			},
-			// Stop: gate check — exit code 2 blocks the agent.
+			// PreToolUse: relay tool events to NATS for doots.
+			"PreToolUse": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
+			},
+			// PostToolUse: relay tool results to NATS for doots.
+			"PostToolUse": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
+			},
+			// SubagentStart: relay subagent spawn events.
+			"SubagentStart": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
+			},
+			// SubagentStop: relay subagent completion events.
+			"SubagentStop": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
+			},
+			// Stop: relay + gate check — gate must be last (exit 2 blocks).
 			"Stop": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
 				hookEntry("gb hook stop-gate"),
+			},
+			// SessionEnd: relay session termination.
+			"SessionEnd": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
 			},
 		},
 	}
