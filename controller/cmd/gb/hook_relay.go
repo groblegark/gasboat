@@ -6,14 +6,22 @@ package main
 // (see docs/hook-event-schema.md), and publishes to the HOOK_EVENTS NATS
 // stream on subject hooks.<agent>.<event>.
 //
+// Publishing strategy (in order of preference):
+//   1. HTTP POST to kbeads daemon ($BEADS_HTTP_ADDR/v1/hooks/publish)
+//   2. Direct NATS publish ($BEADS_NATS_URL) with short timeout
+//
 // Env vars:
-//   BEADS_NATS_URL  — NATS server URL (e.g., nats://gasboat-nats:4222)
+//   BEADS_HTTP_ADDR — kbeads daemon HTTP address (preferred publisher)
+//   BEADS_NATS_URL  — NATS server URL, fallback (e.g., nats://gasboat-nats:4222)
 //   HOSTNAME        — Agent name for the subject hierarchy
+//   BOAT_AGENT      — Agent name override (set by controller)
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -32,7 +40,11 @@ Subject format: hooks.<agent>.<event>
 Example: hooks.worker-1.PreToolUse
 
 Events published: PreToolUse, PostToolUse, Stop, SubagentStart,
-SubagentStop, SessionStart, SessionEnd, PreCompact.`,
+SubagentStop, SessionStart, SessionEnd, PreCompact.
+
+Publishing strategy (in order of preference):
+  1. HTTP POST to kbeads daemon (BEADS_HTTP_ADDR/v1/hooks/publish)
+  2. Direct NATS publish (BEADS_NATS_URL) with optimized connection`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runHookRelay()
 	},
@@ -67,10 +79,14 @@ type hookRelayEvent struct {
 	Trigger string `json:"trigger,omitempty"`
 }
 
+// errSkipEvent signals that the event should be silently skipped.
+var errSkipEvent = fmt.Errorf("skip event")
+
 func runHookRelay() error {
+	httpAddr := os.Getenv("BEADS_HTTP_ADDR")
 	natsURL := os.Getenv("BEADS_NATS_URL")
-	if natsURL == "" {
-		return nil // No NATS configured — silently skip.
+	if httpAddr == "" && natsURL == "" {
+		return nil // No publish target configured — silently skip.
 	}
 
 	// Read hook input from stdin.
@@ -84,17 +100,46 @@ func runHookRelay() error {
 		return nil // Invalid JSON — silently skip.
 	}
 
-	eventName, _ := input["hook_event_name"].(string)
-	if eventName == "" {
+	agentName := resolveAgentName()
+	evt, subject, err := buildRelayEvent(input, agentName)
+	if err != nil {
+		return nil // Unknown or empty event — silently skip.
+	}
+
+	payload, err := json.Marshal(evt)
+	if err != nil {
 		return nil
 	}
 
-	// Build the relay event.
-	agentName := resolveAgentName()
+	// Try HTTP POST to kbeads daemon first (preferred: no per-event NATS connection).
+	if httpAddr != "" {
+		if err := publishViaHTTP(httpAddr, subject, payload); err == nil {
+			return nil
+		}
+		// Fall through to NATS on HTTP failure.
+		fmt.Fprintf(os.Stderr, "gb hook relay: HTTP publish failed, trying NATS\n")
+	}
+
+	// Fallback: direct NATS publish.
+	if natsURL != "" {
+		return publishToNATS(natsURL, subject, payload)
+	}
+
+	return nil
+}
+
+// buildRelayEvent transforms raw hook input into a relay event and NATS subject.
+// Returns errSkipEvent for unknown or empty event names.
+func buildRelayEvent(input map[string]any, agentName string) (*hookRelayEvent, string, error) {
+	eventName, _ := input["hook_event_name"].(string)
+	if eventName == "" {
+		return nil, "", errSkipEvent
+	}
+
 	sessionID, _ := input["session_id"].(string)
 	cwd, _ := input["cwd"].(string)
 
-	evt := hookRelayEvent{
+	evt := &hookRelayEvent{
 		Agent:     agentName,
 		SessionID: sessionID,
 		Event:     eventName,
@@ -126,24 +171,17 @@ func runHookRelay() error {
 	case "Stop":
 		// No additional fields.
 	default:
-		return nil // Unknown event — skip.
+		return nil, "", errSkipEvent
 	}
 
-	// Build NATS subject: hooks.<agent>.<event>
 	subject := fmt.Sprintf("hooks.%s.%s", sanitizeSubject(agentName), eventName)
-
-	payload, err := json.Marshal(evt)
-	if err != nil {
-		return nil
-	}
-
-	return publishToNATS(natsURL, subject, payload)
+	return evt, subject, nil
 }
 
 // resolveAgentName extracts the agent name from environment.
 func resolveAgentName() string {
-	// BOAT_AGENT_NAME is set by the controller.
-	if name := os.Getenv("BOAT_AGENT_NAME"); name != "" {
+	// BOAT_AGENT is set by the controller.
+	if name := os.Getenv("BOAT_AGENT"); name != "" {
 		return name
 	}
 	// Fall back to HOSTNAME, stripping the pod prefix.
@@ -180,12 +218,43 @@ func truncateAny(v any, maxBytes int) any {
 	return string(data[:maxBytes]) + "..."
 }
 
+// publishViaHTTP POSTs the hook event to the kbeads daemon.
+// Uses a short timeout to stay within the hook execution budget.
+func publishViaHTTP(httpAddr, subject string, payload []byte) error {
+	body := struct {
+		Subject string          `json:"subject"`
+		Payload json.RawMessage `json:"payload"`
+	}{
+		Subject: subject,
+		Payload: payload,
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := strings.TrimRight(httpAddr, "/") + "/v1/hooks/publish"
+	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("http post: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("http %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // publishToNATS connects to NATS, publishes the message, and disconnects.
-// Uses a short timeout to stay within the <50ms hook budget.
+// Uses optimized settings: no reconnect, short timeouts.
 func publishToNATS(natsURL, subject string, payload []byte) error {
 	opts := []nats.Option{
 		nats.Name("gb-hook-relay"),
-		nats.Timeout(2 * time.Second),
+		nats.Timeout(1 * time.Second),
+		nats.NoReconnect(),
 	}
 
 	// Use NATS token if available.
@@ -203,6 +272,6 @@ func publishToNATS(natsURL, subject string, payload []byte) error {
 		return fmt.Errorf("nats publish: %w", err)
 	}
 
-	// Flush to ensure the message is sent before we disconnect.
-	return nc.Flush()
+	// FlushTimeout avoids blocking indefinitely on slow connections.
+	return nc.FlushTimeout(500 * time.Millisecond)
 }
