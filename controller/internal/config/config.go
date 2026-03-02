@@ -189,6 +189,17 @@ type ProjectCacheEntry struct {
 	ServiceAccount string // Override K8s ServiceAccount for this project's agents
 	RTKEnabled     bool   // Enable RTK token optimization for this project's agents
 
+	// Tier 1: resource overrides (Kubernetes quantity strings, e.g. "500m", "1Gi").
+	// Zero value means "use the global default".
+	CPURequest    string
+	CPULimit      string
+	MemoryRequest string
+	MemoryLimit   string
+
+	// EnvOverrides holds extra env vars to inject into agent pods for this project.
+	// Applied before controller-level config; pod-level metadata takes precedence.
+	EnvOverrides map[string]string
+
 	// Per-project secret overrides (merged with globals at pod creation).
 	Secrets []beadsapi.SecretEntry
 	// Per-project plain env vars (non-secret config like JIRA_BASE_URL).
