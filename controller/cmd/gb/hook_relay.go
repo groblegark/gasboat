@@ -17,14 +17,15 @@ package main
 //   BOAT_AGENT      — Agent name override (set by controller)
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"gasboat/controller/internal/beadsapi"
 
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
@@ -83,9 +84,8 @@ type hookRelayEvent struct {
 var errSkipEvent = fmt.Errorf("skip event")
 
 func runHookRelay() error {
-	httpAddr := os.Getenv("BEADS_HTTP_ADDR")
 	natsURL := os.Getenv("BEADS_NATS_URL")
-	if httpAddr == "" && natsURL == "" {
+	if daemon == nil && natsURL == "" {
 		return nil // No publish target configured — silently skip.
 	}
 
@@ -112,8 +112,12 @@ func runHookRelay() error {
 	}
 
 	// Try HTTP POST to kbeads daemon first (preferred: no per-event NATS connection).
-	if httpAddr != "" {
-		if err := publishViaHTTP(httpAddr, subject, payload); err == nil {
+	if daemon != nil {
+		pubErr := daemon.PublishHookEvent(context.Background(), beadsapi.PublishHookEventRequest{
+			Subject: subject,
+			Payload: payload,
+		})
+		if pubErr == nil {
 			return nil
 		}
 		// Fall through to NATS on HTTP failure.
@@ -216,36 +220,6 @@ func truncateAny(v any, maxBytes int) any {
 	}
 	// Truncate: re-parse the first maxBytes as a string summary.
 	return string(data[:maxBytes]) + "..."
-}
-
-// publishViaHTTP POSTs the hook event to the kbeads daemon.
-// Uses a short timeout to stay within the hook execution budget.
-func publishViaHTTP(httpAddr, subject string, payload []byte) error {
-	body := struct {
-		Subject string          `json:"subject"`
-		Payload json.RawMessage `json:"payload"`
-	}{
-		Subject: subject,
-		Payload: payload,
-	}
-
-	data, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	client := &http.Client{Timeout: 2 * time.Second}
-	url := strings.TrimRight(httpAddr, "/") + "/v1/hooks/publish"
-	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("http post: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("http %d", resp.StatusCode)
-	}
-	return nil
 }
 
 // publishToNATS connects to NATS, publishes the message, and disconnects.
