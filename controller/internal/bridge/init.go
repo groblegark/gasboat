@@ -131,6 +131,9 @@ func configs() map[string]any {
 				{Name: "service_account", Type: "string"},
 				{Name: "secrets", Type: "json"},
 				{Name: "repos", Type: "json"},
+				// Auto-assignment control: "true" (default) or "false".
+				// Inherited by agents unless overridden on the agent bead.
+				{Name: "auto_assign", Type: "string"},
 			},
 		},
 
