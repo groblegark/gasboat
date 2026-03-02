@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
 )
 
@@ -67,6 +68,11 @@ type hookRelayEvent struct {
 }
 
 func runHookRelay() error {
+	natsURL := os.Getenv("BEADS_NATS_URL")
+	if natsURL == "" {
+		return nil // No NATS configured — silently skip.
+	}
+
 	// Read hook input from stdin.
 	data, err := io.ReadAll(os.Stdin)
 	if err != nil || len(data) == 0 {
@@ -131,12 +137,6 @@ func runHookRelay() error {
 		return nil
 	}
 
-	// Publish to NATS via the daemon's bus endpoint.
-	natsURL := os.Getenv("BEADS_NATS_URL")
-	if natsURL == "" {
-		return nil // No NATS — silently skip.
-	}
-
 	return publishToNATS(natsURL, subject, payload)
 }
 
@@ -180,17 +180,29 @@ func truncateAny(v any, maxBytes int) any {
 	return string(data[:maxBytes]) + "..."
 }
 
-// publishToNATS publishes a message to NATS JetStream.
-// This is a placeholder — the full implementation will use the NATS Go client
-// or POST to the kbeads daemon's bus publish endpoint.
+// publishToNATS connects to NATS, publishes the message, and disconnects.
+// Uses a short timeout to stay within the <50ms hook budget.
 func publishToNATS(natsURL, subject string, payload []byte) error {
-	// TODO(kd-GKBYMPyGts): Implement NATS publishing.
-	// Options:
-	//   1. Add nats.go client dependency and publish directly
-	//   2. POST to kbeads daemon /v1/bus/publish endpoint (needs new endpoint)
-	//   3. Shell out to nats-pub if available
-	//
-	// For now, log the event for debugging.
-	fmt.Fprintf(os.Stderr, "[relay] %s (%d bytes)\n", subject, len(payload))
-	return nil
+	opts := []nats.Option{
+		nats.Name("gb-hook-relay"),
+		nats.Timeout(2 * time.Second),
+	}
+
+	// Use NATS token if available.
+	if token := os.Getenv("COOP_NATS_TOKEN"); token != "" {
+		opts = append(opts, nats.Token(token))
+	}
+
+	nc, err := nats.Connect(natsURL, opts...)
+	if err != nil {
+		return fmt.Errorf("nats connect: %w", err)
+	}
+	defer nc.Close()
+
+	if err := nc.Publish(subject, payload); err != nil {
+		return fmt.Errorf("nats publish: %w", err)
+	}
+
+	// Flush to ensure the message is sent before we disconnect.
+	return nc.Flush()
 }
