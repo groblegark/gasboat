@@ -112,18 +112,19 @@ func main() {
 	if cfg.slackBotToken != "" && cfg.slackAppToken != "" {
 		// Socket Mode: real-time WebSocket connection for events, interactions, slash commands.
 		bot = bridge.NewBot(bridge.BotConfig{
-			BotToken:      cfg.slackBotToken,
-			AppToken:      cfg.slackAppToken,
-			Channel:       cfg.slackChannel,
-			ThreadingMode: cfg.threadingMode,
-			Daemon:        daemon,
-			State:         state,
-			Logger:        logger,
-			Debug:         cfg.debug,
-			GitHubToken:   cfg.githubToken,
-			Repos:         cfg.repos,
-			Version:       version,
-			ControllerURL: cfg.controllerURL,
+			BotToken:         cfg.slackBotToken,
+			AppToken:         cfg.slackAppToken,
+			Channel:          cfg.slackChannel,
+			ThreadingMode:    cfg.threadingMode,
+			Daemon:           daemon,
+			State:            state,
+			Logger:           logger,
+			Debug:            cfg.debug,
+			GitHubToken:      cfg.githubToken,
+			Repos:            cfg.repos,
+			Version:          version,
+			ControllerURL:    cfg.controllerURL,
+			CoopmuxPublicURL: cfg.coopmuxPublicURL,
 		})
 		notifier = bot
 		logger.Info("Slack Socket Mode bot enabled", "channel", cfg.slackChannel)
@@ -245,9 +246,10 @@ func main() {
 			dashChannel = cfg.slackChannel
 		}
 		dash := bridge.NewDashboard(bot.API(), daemon, state, logger, bridge.DashboardConfig{
-			Enabled:   true,
-			ChannelID: dashChannel,
-			Interval:  cfg.dashboardInterval,
+			Enabled:          true,
+			ChannelID:        dashChannel,
+			Interval:         cfg.dashboardInterval,
+			CoopmuxPublicURL: cfg.coopmuxPublicURL,
 		})
 		dash.RegisterHandlers(sseStream)
 		go dash.Run(ctx)
@@ -312,6 +314,9 @@ type config struct {
 	githubToken   string
 	repos         []bridge.RepoRef
 	controllerURL string
+
+	// Coopmux terminal links
+	coopmuxPublicURL string
 }
 
 func parseConfig() *config {
@@ -356,6 +361,8 @@ func parseConfig() *config {
 		githubToken:   os.Getenv("GITHUB_TOKEN"),
 		repos:         repos,
 		controllerURL: os.Getenv("CONTROLLER_URL"),
+
+		coopmuxPublicURL: os.Getenv("COOPMUX_PUBLIC_URL"),
 	}
 }
 

@@ -55,6 +55,9 @@ type Bot struct {
 	version       string
 	controllerURL string
 
+	// Coopmux terminal link support.
+	coopmuxPublicURL string // e.g., "https://gasboat.app.e2e.dev.fics.ai/mux"
+
 	// In-memory decision tracking (augments StateManager).
 	mu           sync.Mutex
 	messages     map[string]MessageRef // bead ID → Slack message ref (hot cache)
@@ -62,6 +65,7 @@ type Bot struct {
 	agentPending map[string]int        // agent identity → pending decision count
 	agentState   map[string]string     // agent identity → last known agent_state
 	agentSeen    map[string]time.Time  // agent identity → last activity timestamp
+	agentPodName map[string]string     // agent identity → pod hostname (coopmux session ID)
 }
 
 // BotConfig holds configuration for the Socket Mode bot.
@@ -81,6 +85,11 @@ type BotConfig struct {
 	Repos         []RepoRef
 	Version       string
 	ControllerURL string
+
+	// CoopmuxPublicURL is the public base URL for the coopmux terminal dashboard
+	// (e.g., "https://gasboat.app.e2e.dev.fics.ai/mux"). When set, agent names
+	// in Slack are rendered as clickable links to their terminal sessions.
+	CoopmuxPublicURL string
 }
 
 // NewBot creates a new Socket Mode bot.
@@ -101,23 +110,25 @@ func NewBot(cfg BotConfig) *Bot {
 	}
 
 	b := &Bot{
-		api:           api,
-		socket:        socket,
-		state:         cfg.State,
-		daemon:        cfg.Daemon,
-		router:        cfg.Router,
-		logger:        cfg.Logger,
-		channel:       cfg.Channel,
-		threadingMode: cfg.ThreadingMode,
-		messages:      make(map[string]MessageRef),
-		agentCards:    make(map[string]MessageRef),
-		agentPending:  make(map[string]int),
-		agentState:    make(map[string]string),
-		agentSeen:     make(map[string]time.Time),
-		github:        gh,
-		repos:         cfg.Repos,
-		version:       cfg.Version,
-		controllerURL: cfg.ControllerURL,
+		api:              api,
+		socket:           socket,
+		state:            cfg.State,
+		daemon:           cfg.Daemon,
+		router:           cfg.Router,
+		logger:           cfg.Logger,
+		channel:          cfg.Channel,
+		threadingMode:    cfg.ThreadingMode,
+		coopmuxPublicURL: strings.TrimRight(cfg.CoopmuxPublicURL, "/"),
+		messages:         make(map[string]MessageRef),
+		agentCards:       make(map[string]MessageRef),
+		agentPending:     make(map[string]int),
+		agentState:       make(map[string]string),
+		agentSeen:        make(map[string]time.Time),
+		agentPodName:     make(map[string]string),
+		github:           gh,
+		repos:            cfg.Repos,
+		version:          cfg.Version,
+		controllerURL:    cfg.ControllerURL,
 	}
 
 	// Hydrate hot caches from persisted state.
@@ -541,6 +552,16 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	if hadRef && b.agentThreadingEnabled() && agent != "" {
 		b.updateAgentCard(ctx, agent)
 	}
+}
+
+// coopmuxAgentLink returns a Slack mrkdwn link to the agent's coopmux terminal
+// session if both coopmuxPublicURL and podName are available. Otherwise it
+// returns the plain agent name in bold.
+func coopmuxAgentLink(coopmuxURL, podName, agentName string) string {
+	if coopmuxURL != "" && podName != "" {
+		return fmt.Sprintf("<%s#%s|%s>", coopmuxURL, podName, agentName)
+	}
+	return agentName
 }
 
 // Ensure Bot implements Notifier, AgentNotifier, and JackNotifier.

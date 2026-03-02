@@ -32,6 +32,10 @@ type DashboardConfig struct {
 	MaxIdleShown      int // Max idle agents to display (default 5).
 	MaxDeadShown      int // Max dead agents to display (default 5).
 	MaxDecisionsShown int // Max pending decisions to display (default 5).
+
+	// CoopmuxPublicURL is the public base URL for coopmux terminal links.
+	// When set, agent names in the dashboard become clickable links.
+	CoopmuxPublicURL string
 }
 
 // dashboardMessage tracks the posted dashboard message for later updates.
@@ -176,6 +180,14 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 		}
 	}
 
+	// Build agent name → pod_name lookup for coopmux links.
+	agentPodNames := make(map[string]string, len(agents))
+	for _, a := range agents {
+		if pn := a.Metadata["pod_name"]; pn != "" {
+			agentPodNames[a.AgentName] = pn
+		}
+	}
+
 	// Classify agents into four buckets.
 	var working, starting, idle, dead []beadsapi.AgentBead
 	for _, a := range agents {
@@ -233,7 +245,7 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 			shown = shown[:cfg.MaxWorkingShown]
 		}
 		for _, a := range shown {
-			blocks = append(blocks, dashboardAgentWorkingBlock(a))
+			blocks = append(blocks, dashboardAgentWorkingBlock(a, cfg.CoopmuxPublicURL))
 		}
 		if overflow := len(working) - cfg.MaxWorkingShown; overflow > 0 {
 			blocks = append(blocks, slack.NewContextBlock("",
@@ -273,7 +285,7 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 			shown = shown[:cfg.MaxIdleShown]
 		}
 		for _, a := range shown {
-			blocks = append(blocks, dashboardAgentIdleBlock(a, pendingByAgent[a.ID]))
+			blocks = append(blocks, dashboardAgentIdleBlock(a, pendingByAgent[a.ID], cfg.CoopmuxPublicURL))
 		}
 		if overflow := len(idle) - cfg.MaxIdleShown; overflow > 0 {
 			blocks = append(blocks, slack.NewContextBlock("",
@@ -293,7 +305,7 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 			shown = shown[:cfg.MaxDeadShown]
 		}
 		for _, a := range shown {
-			blocks = append(blocks, dashboardAgentDeadBlock(a))
+			blocks = append(blocks, dashboardAgentDeadBlock(a, cfg.CoopmuxPublicURL))
 		}
 		if overflow := len(dead) - cfg.MaxDeadShown; overflow > 0 {
 			blocks = append(blocks, slack.NewContextBlock("",
@@ -331,7 +343,9 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 			}
 			line := fmt.Sprintf("%s `%s` %s", urgency, dec.ID, question)
 			if dec.Assignee != "" {
-				line = fmt.Sprintf("%s `%s` · *%s* · %s", urgency, dec.ID, extractAgentName(dec.Assignee), question)
+				agentName := extractAgentName(dec.Assignee)
+				displayName := coopmuxAgentLink(cfg.CoopmuxPublicURL, agentPodNames[agentName], agentName)
+				line = fmt.Sprintf("%s `%s` · *%s* · %s", urgency, dec.ID, displayName, question)
 			}
 			lines = append(lines, line)
 		}
@@ -349,8 +363,9 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 	return blocks, hash
 }
 
-func dashboardAgentWorkingBlock(a beadsapi.AgentBead) slack.Block {
-	line := fmt.Sprintf(":large_green_circle: *%s*", a.AgentName)
+func dashboardAgentWorkingBlock(a beadsapi.AgentBead, coopmuxURL string) slack.Block {
+	displayName := coopmuxAgentLink(coopmuxURL, a.Metadata["pod_name"], a.AgentName)
+	line := fmt.Sprintf(":large_green_circle: *%s*", displayName)
 	if a.Project != "" {
 		line += fmt.Sprintf(" · %s", a.Project)
 	}
@@ -370,7 +385,8 @@ func dashboardAgentStartingBlock(a beadsapi.AgentBead) slack.Block {
 		slack.NewTextBlockObject("mrkdwn", line, false, false), nil, nil)
 }
 
-func dashboardAgentIdleBlock(a beadsapi.AgentBead, pendingCount int) slack.Block {
+func dashboardAgentIdleBlock(a beadsapi.AgentBead, pendingCount int, coopmuxURL string) slack.Block {
+	displayName := coopmuxAgentLink(coopmuxURL, a.Metadata["pod_name"], a.AgentName)
 	var indicator, suffix string
 	if pendingCount > 0 {
 		indicator = ":large_blue_circle:"
@@ -378,7 +394,7 @@ func dashboardAgentIdleBlock(a beadsapi.AgentBead, pendingCount int) slack.Block
 	} else {
 		indicator = ":white_circle:"
 	}
-	line := fmt.Sprintf("%s *%s*", indicator, a.AgentName)
+	line := fmt.Sprintf("%s *%s*", indicator, displayName)
 	if a.Project != "" {
 		line += fmt.Sprintf(" · %s", a.Project)
 	}
@@ -387,8 +403,9 @@ func dashboardAgentIdleBlock(a beadsapi.AgentBead, pendingCount int) slack.Block
 		slack.NewTextBlockObject("mrkdwn", line, false, false), nil, nil)
 }
 
-func dashboardAgentDeadBlock(a beadsapi.AgentBead) slack.Block {
-	line := fmt.Sprintf(":red_circle: *%s*", a.AgentName)
+func dashboardAgentDeadBlock(a beadsapi.AgentBead, coopmuxURL string) slack.Block {
+	displayName := coopmuxAgentLink(coopmuxURL, a.Metadata["pod_name"], a.AgentName)
+	line := fmt.Sprintf(":red_circle: *%s*", displayName)
 	if a.Project != "" {
 		line += fmt.Sprintf(" · %s", a.Project)
 	}

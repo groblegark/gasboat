@@ -52,10 +52,11 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	pending := b.agentPending[agent]
 	state := b.agentState[agent]
 	seen := b.agentSeen[agent]
+	podName := b.agentPodName[agent]
 	b.mu.Unlock()
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -103,6 +104,9 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 	b.agentSeen[agent] = time.Now()
 	b.mu.Unlock()
 
+	// Fetch pod_name from the agent bead notes for coopmux terminal linking.
+	b.fetchAndCachePodName(ctx, agent)
+
 	channel := b.resolveChannel(agent)
 
 	if b.agentThreadingEnabled() {
@@ -112,12 +116,16 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 		}
 	} else {
 		name := extractAgentName(agent)
+		b.mu.Lock()
+		podName := b.agentPodName[agent]
+		b.mu.Unlock()
+		displayName := coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
 		_, _, err := b.api.PostMessageContext(ctx, channel,
 			slack.MsgOptionText(fmt.Sprintf("Agent spawned: %s", name), false),
 			slack.MsgOptionBlocks(
 				slack.NewSectionBlock(
 					slack.NewTextBlockObject("mrkdwn",
-						fmt.Sprintf(":rocket: *Agent spawned: %s*", name), false, false),
+						fmt.Sprintf(":rocket: *Agent spawned: %s*", displayName), false, false),
 					nil, nil),
 			),
 		)
@@ -147,7 +155,13 @@ func (b *Bot) NotifyAgentState(_ context.Context, bead BeadEvent) {
 	b.mu.Lock()
 	b.agentState[agent] = state
 	b.agentSeen[agent] = time.Now()
+	_, hasPod := b.agentPodName[agent]
 	b.mu.Unlock()
+
+	// Fetch pod_name if not yet cached (e.g., spawn event missed or reconnect).
+	if !hasPod {
+		b.fetchAndCachePodName(context.Background(), agent)
+	}
 
 	// Refresh the card if one exists for this agent.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -187,6 +201,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	pending := b.agentPending[agent]
 	state := b.agentState[agent]
 	seen := b.agentSeen[agent]
+	podName := b.agentPodName[agent]
 	b.mu.Unlock()
 
 	if !ok {
@@ -204,7 +219,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	}
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -218,7 +233,8 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 // agentState is the agent's current lifecycle state (spawning, working, etc.).
 // taskTitle is the title of the bead the agent currently has in_progress ("" if idle).
 // seen is the last time activity was recorded for this agent (zero = unknown).
-func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time) []slack.Block {
+// coopmuxURL and podName are used to render the agent name as a clickable terminal link.
+func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time, coopmuxURL, podName string) []slack.Block {
 	name := extractAgentName(agent)
 	project := extractAgentProject(agent)
 
@@ -244,7 +260,8 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 		status = "idle"
 	}
 
-	headerText := fmt.Sprintf("%s *%s*", indicator, name)
+	displayName := coopmuxAgentLink(coopmuxURL, podName, name)
+	headerText := fmt.Sprintf("%s *%s*", indicator, displayName)
 	if project != "" {
 		headerText += fmt.Sprintf(" \u00b7 _%s_", project)
 	}
@@ -277,6 +294,26 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 	}
 
 	return blocks
+}
+
+// fetchAndCachePodName fetches the agent bead from the daemon, extracts
+// pod_name from Notes, and caches it for coopmux terminal linking.
+func (b *Bot) fetchAndCachePodName(ctx context.Context, agent string) {
+	if b.coopmuxPublicURL == "" {
+		return // No point fetching if we can't build links.
+	}
+	detail, err := b.daemon.FindAgentBead(ctx, agent)
+	if err != nil {
+		b.logger.Debug("could not fetch agent bead for pod_name", "agent", agent, "error", err)
+		return
+	}
+	podName := beadsapi.ParseNotes(detail.Notes)["pod_name"]
+	if podName == "" {
+		return
+	}
+	b.mu.Lock()
+	b.agentPodName[agent] = podName
+	b.mu.Unlock()
 }
 
 // extractAgentProject returns the first segment (project) of an agent identity.
@@ -334,6 +371,7 @@ func (b *Bot) killAgent(ctx context.Context, agentName string, force bool) error
 		delete(b.agentCards, agentName)
 		delete(b.agentPending, agentName)
 		delete(b.agentState, agentName)
+		delete(b.agentPodName, agentName)
 	}
 	b.mu.Unlock()
 
