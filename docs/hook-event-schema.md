@@ -33,6 +33,13 @@ activity ("doots").
 | `SessionEnd` | Agent session ended | Session terminates |
 | `PreCompact` | Context compaction | Before compaction |
 
+### Agent teams (when enabled)
+
+| Event | Purpose | Fires when |
+|-------|---------|------------|
+| `TeammateIdle` | Teammate went idle | Teammate has no more work |
+| `TaskCompleted` | Task marked done | Teammate finishes a task |
+
 ### Not captured
 
 | Event | Reason |
@@ -43,8 +50,6 @@ activity ("doots").
 | `PostToolUseFailure` | Captured via `PostToolUse` with error field |
 | `ConfigChange` | Infrastructure noise |
 | `WorktreeCreate/Remove` | Low frequency, not useful for doots |
-| `TeammateIdle` | Not applicable to single-agent pods |
-| `TaskCompleted` | Not applicable to single-agent pods |
 
 ## Payload Schema
 
@@ -209,6 +214,42 @@ Same fields as SubagentStart.
 | Field | Type | Description |
 |-------|------|-------------|
 | `trigger` | string | `manual` or `auto` |
+
+### TeammateIdle
+
+```json
+{
+  "agent": "worker-1",
+  "session_id": "abc-123",
+  "event": "TeammateIdle",
+  "ts": "2026-03-02T07:50:00.000Z",
+  "teammate_id": "teammate-abc",
+  "teammate_type": "research"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `teammate_id` | string | ID of the idle teammate session |
+| `teammate_type` | string | Role/type of the teammate |
+
+### TaskCompleted
+
+```json
+{
+  "agent": "worker-1",
+  "session_id": "abc-123",
+  "event": "TaskCompleted",
+  "ts": "2026-03-02T07:52:00.000Z",
+  "task_id": "task-123",
+  "task_subject": "Fix login bug"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `task_id` | string | ID of the completed task |
+| `task_subject` | string | Subject/title of the completed task |
 
 ## Publishing Mechanism
 

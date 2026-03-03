@@ -174,6 +174,52 @@ func TestBuildRelayEvent_SubagentStart(t *testing.T) {
 	}
 }
 
+func TestBuildRelayEvent_TeammateIdle(t *testing.T) {
+	input := map[string]any{
+		"hook_event_name": "TeammateIdle",
+		"session_id":      "sess-team",
+		"teammate_id":     "teammate-abc",
+		"teammate_type":   "research",
+	}
+
+	evt, subject, err := buildRelayEvent(input, "worker-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.TeammateID != "teammate-abc" {
+		t.Errorf("expected teammate_id teammate-abc, got %s", evt.TeammateID)
+	}
+	if evt.TeammateType != "research" {
+		t.Errorf("expected teammate_type research, got %s", evt.TeammateType)
+	}
+	if subject != "hooks.worker-1.TeammateIdle" {
+		t.Errorf("expected subject hooks.worker-1.TeammateIdle, got %s", subject)
+	}
+}
+
+func TestBuildRelayEvent_TaskCompleted(t *testing.T) {
+	input := map[string]any{
+		"hook_event_name": "TaskCompleted",
+		"session_id":      "sess-task",
+		"task_id":         "task-123",
+		"task_subject":    "Fix login bug",
+	}
+
+	evt, subject, err := buildRelayEvent(input, "worker-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if evt.TaskID != "task-123" {
+		t.Errorf("expected task_id task-123, got %s", evt.TaskID)
+	}
+	if evt.TaskSubject != "Fix login bug" {
+		t.Errorf("expected task_subject 'Fix login bug', got %s", evt.TaskSubject)
+	}
+	if subject != "hooks.worker-1.TaskCompleted" {
+		t.Errorf("expected subject hooks.worker-1.TaskCompleted, got %s", subject)
+	}
+}
+
 func TestBuildRelayEvent_UnknownEvent(t *testing.T) {
 	input := map[string]any{
 		"hook_event_name": "UnknownEvent",
@@ -248,7 +294,7 @@ func TestRelayEventJSON_OmitsEmptyFields(t *testing.T) {
 	}
 
 	// These fields should be omitted for a Stop event.
-	for _, key := range []string{"tool_name", "tool_input", "tool_response", "source", "reason", "subagent_id", "subagent_type", "trigger", "cwd"} {
+	for _, key := range []string{"tool_name", "tool_input", "tool_response", "source", "reason", "subagent_id", "subagent_type", "teammate_id", "teammate_type", "task_id", "task_subject", "trigger", "cwd"} {
 		if _, ok := m[key]; ok {
 			t.Errorf("expected field %q to be omitted, but it was present", key)
 		}
