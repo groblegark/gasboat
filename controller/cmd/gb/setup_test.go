@@ -570,3 +570,28 @@ func TestDefaultHookSettings_IncludesTeamHooks(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallRTKContext_WhenEnabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("RTK_ENABLED", "true")
+
+	if !rtkEnabled() {
+		t.Fatal("expected rtkEnabled() to return true")
+	}
+
+	// When source file doesn't exist, installRTKContext should be a no-op.
+	installRTKContext()
+
+	dst := filepath.Join(tmpDir, ".claude", "RTK.md")
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Error("expected no RTK.md when source /hooks/RTK.md doesn't exist")
+	}
+}
+
+func TestInstallRTKContext_WhenDisabled(t *testing.T) {
+	t.Setenv("RTK_ENABLED", "false")
+	if rtkEnabled() {
+		t.Fatal("expected rtkEnabled() to return false")
+	}
+}

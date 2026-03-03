@@ -326,15 +326,7 @@ fi
 # {workspace}/.mcp.json from claude-mcp:* config beads (or auto-detects
 # playwright-mcp as a default).
 
-# ── RTK context file ─────────────────────────────────────────────────────
-# When RTK is enabled, install the RTK.md context file so Claude knows
-# commands are being proxied through RTK.
-if [ "${RTK_ENABLED:-}" = "true" ] || [ "${RTK_ENABLED:-}" = "1" ]; then
-    if [ -f /hooks/RTK.md ]; then
-        cp /hooks/RTK.md "${CLAUDE_DIR}/RTK.md"
-        echo "[entrypoint] RTK enabled — installed RTK.md context file"
-    fi
-fi
+# RTK context file (RTK.md) is now installed by gb setup claude.
 
 # CLAUDE.md is now written by gb setup claude (from config beads or defaults).
 

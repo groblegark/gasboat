@@ -307,6 +307,35 @@ func appendRTKHooks(settings map[string]any) {
 	fmt.Fprintf(os.Stderr, "[setup] RTK hooks enabled (PreToolUse + Stop report)\n")
 }
 
+// installRTKContext copies the RTK.md context file to ~/.claude/RTK.md
+// when RTK is enabled and the source file exists. This tells Claude that
+// commands are being proxied through RTK.
+func installRTKContext() {
+	if !rtkEnabled() {
+		return
+	}
+	const src = "/hooks/RTK.md"
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return // source not present — nothing to install
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[setup] warning: cannot determine home dir for RTK.md: %v\n", err)
+		return
+	}
+	dst := filepath.Join(homeDir, ".claude", "RTK.md")
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "[setup] warning: mkdir for RTK.md: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "[setup] warning: failed to write RTK.md: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[setup] RTK enabled — installed RTK.md context file\n")
+}
+
 func runSetupClaudeDefaults(workspace, role string) error {
 	// Write user-level settings (permissions, plugins, thinking).
 	if err := writeUserSettings(defaultUserSettings()); err != nil {
@@ -316,6 +345,9 @@ func runSetupClaudeDefaults(workspace, role string) error {
 	// Write workspace-level hooks.
 	settings := defaultHookSettings()
 	appendRTKHooks(settings)
+
+	// Install RTK context file if enabled.
+	installRTKContext()
 
 	outDir := filepath.Join(workspace, ".claude")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -603,6 +635,7 @@ func runSetupClaude(ctx context.Context, workspace, role string) error {
 	}
 
 	appendRTKHooks(hooks)
+	installRTKContext()
 
 	outDir := filepath.Join(workspace, ".claude")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
