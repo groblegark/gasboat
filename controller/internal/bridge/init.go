@@ -129,7 +129,16 @@ func configs() map[string]any {
 				{Name: "image", Type: "string"},
 				{Name: "storage_class", Type: "string"},
 				{Name: "service_account", Type: "string"},
+				{Name: "rtk_enabled", Type: "boolean"},
+				// Pod resource overrides.
+				{Name: "cpu_request", Type: "string"},
+				{Name: "cpu_limit", Type: "string"},
+				{Name: "memory_request", Type: "string"},
+				{Name: "memory_limit", Type: "string"},
+				// Per-project secrets, plain env vars, and multi-repo definitions.
 				{Name: "secrets", Type: "json"},
+				{Name: "env", Type: "json"},
+				{Name: "env_json", Type: "json"},
 				{Name: "repos", Type: "json"},
 				// Auto-assignment control: "true" (default) or "false".
 				// Inherited by agents unless overridden on the agent bead.
