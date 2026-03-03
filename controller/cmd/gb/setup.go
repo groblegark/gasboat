@@ -196,6 +196,23 @@ func appendDetectedPlugins(settings map[string]any) {
 	}
 }
 
+// injectTeamsEnv adds the Claude Code Agent Teams feature flag to the
+// settings env block when CLAUDE_TEAMS_ENABLED is set in the environment.
+// Claude Code reads env vars from settings.json and injects them into its
+// own process, enabling the TeamCreate/TaskCreate/SendMessage tools.
+func injectTeamsEnv(settings map[string]any) {
+	if v := os.Getenv("CLAUDE_TEAMS_ENABLED"); v != "true" && v != "1" {
+		return
+	}
+	env, ok := settings["env"].(map[string]any)
+	if !ok {
+		env = make(map[string]any)
+	}
+	env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "1"
+	settings["env"] = env
+	fmt.Fprintf(os.Stderr, "[setup] Agent Teams enabled (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1)\n")
+}
+
 // lookPath is the function used to check if an executable exists on PATH.
 // Defaults to exec.LookPath; overridden in tests for deterministic behavior.
 var lookPath = exec.LookPath
@@ -226,6 +243,13 @@ func defaultHookSettings() map[string]any {
 			// Stop: gate check — exit code 2 blocks the agent.
 			"Stop": []any{
 				hookEntry("gb hook stop-gate"),
+			},
+			// Agent Teams: relay teammate and task events to NATS for visibility.
+			"TaskCompleted": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
+			},
+			"TeammateIdle": []any{
+				hookEntry("gb hook relay 2>/dev/null || true"),
 			},
 		},
 	}
@@ -310,9 +334,10 @@ func runSetupClaudeDefaults(workspace string) error {
 }
 
 // writeUserSettings writes user-level Claude Code settings to ~/.claude/settings.json.
-// Auto-detects installed LSP plugins and adds them.
+// Auto-detects installed LSP plugins and injects feature flags.
 func writeUserSettings(settings map[string]any) error {
 	appendDetectedPlugins(settings)
+	injectTeamsEnv(settings)
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {

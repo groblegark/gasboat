@@ -445,3 +445,58 @@ func TestRunSetupClaudeDefaults_WritesBothFiles(t *testing.T) {
 		t.Error("expected hooks in workspace settings")
 	}
 }
+
+func TestInjectTeamsEnv_Enabled(t *testing.T) {
+	t.Setenv("CLAUDE_TEAMS_ENABLED", "true")
+
+	settings := map[string]any{"model": "opus"}
+	injectTeamsEnv(settings)
+
+	env, ok := settings["env"].(map[string]any)
+	if !ok {
+		t.Fatal("expected env key in settings")
+	}
+	if env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] != "1" {
+		t.Errorf("expected CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1, got %v", env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"])
+	}
+}
+
+func TestInjectTeamsEnv_Disabled(t *testing.T) {
+	t.Setenv("CLAUDE_TEAMS_ENABLED", "false")
+
+	settings := map[string]any{"model": "opus"}
+	injectTeamsEnv(settings)
+
+	if _, ok := settings["env"]; ok {
+		t.Error("expected no env key when teams is disabled")
+	}
+}
+
+func TestInjectTeamsEnv_PreservesExistingEnv(t *testing.T) {
+	t.Setenv("CLAUDE_TEAMS_ENABLED", "1")
+
+	settings := map[string]any{
+		"env": map[string]any{"EXISTING_VAR": "keep"},
+	}
+	injectTeamsEnv(settings)
+
+	env := settings["env"].(map[string]any)
+	if env["EXISTING_VAR"] != "keep" {
+		t.Error("expected existing env var to be preserved")
+	}
+	if env["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] != "1" {
+		t.Error("expected teams flag to be injected")
+	}
+}
+
+func TestDefaultHookSettings_IncludesTeamHooks(t *testing.T) {
+	settings := defaultHookSettings()
+	hooks := settings["hooks"].(map[string]any)
+
+	for _, hookType := range []string{"TaskCompleted", "TeammateIdle"} {
+		arr, ok := hooks[hookType].([]any)
+		if !ok || len(arr) == 0 {
+			t.Errorf("expected %s hook in default settings", hookType)
+		}
+	}
+}
