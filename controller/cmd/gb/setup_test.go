@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -88,31 +89,109 @@ func TestWriteUserSettings(t *testing.T) {
 	}
 }
 
-func TestAppendDetectedPlugins_NoPlugins(t *testing.T) {
-	settings := map[string]any{}
-	// With no gopls or rust-analyzer on PATH, no plugins should be added.
-	// We can't guarantee they're absent, so just verify the function doesn't panic.
-	appendDetectedPlugins(settings)
-	// If no plugins detected, enabledPlugins key may or may not exist.
-}
-
-func TestAppendDetectedPlugins_PreservesExisting(t *testing.T) {
-	settings := map[string]any{
-		"enabledPlugins": map[string]any{
-			"custom-plugin": true,
+func TestAppendDetectedPlugins(t *testing.T) {
+	tests := []struct {
+		name        string
+		existing    map[string]any // initial enabledPlugins (nil = no key)
+		goplsFound  bool
+		rustFound   bool
+		wantPlugins map[string]bool // expected plugin keys and values; nil = no enabledPlugins key
+	}{
+		{
+			name:        "nothing detected, no existing",
+			existing:    nil,
+			goplsFound:  false,
+			rustFound:   false,
+			wantPlugins: nil,
+		},
+		{
+			name:        "nothing detected, preserves existing",
+			existing:    map[string]any{"custom-plugin": true},
+			goplsFound:  false,
+			rustFound:   false,
+			wantPlugins: map[string]bool{"custom-plugin": true},
+		},
+		{
+			name:       "gopls only",
+			existing:   nil,
+			goplsFound: true,
+			rustFound:  false,
+			wantPlugins: map[string]bool{
+				"gopls-lsp@claude-plugins-official": true,
+			},
+		},
+		{
+			name:       "rust-analyzer only",
+			existing:   nil,
+			goplsFound: false,
+			rustFound:  true,
+			wantPlugins: map[string]bool{
+				"rust-analyzer-lsp@claude-plugins-official": true,
+			},
+		},
+		{
+			name:       "both detected with existing",
+			existing:   map[string]any{"custom-plugin": true},
+			goplsFound: true,
+			rustFound:  true,
+			wantPlugins: map[string]bool{
+				"custom-plugin":                            true,
+				"gopls-lsp@claude-plugins-official":        true,
+				"rust-analyzer-lsp@claude-plugins-official": true,
+			},
 		},
 	}
-	appendDetectedPlugins(settings)
-	plugins := settings["enabledPlugins"].(map[string]any)
-	if plugins["custom-plugin"] != true {
-		t.Error("existing plugin should be preserved")
-	}
-}
 
-func TestAppendDetectedPlugins_EmptySettings(t *testing.T) {
-	settings := map[string]any{}
-	// Should not panic on empty settings.
-	appendDetectedPlugins(settings)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := lookPath
+			t.Cleanup(func() { lookPath = orig })
+
+			lookPath = func(name string) (string, error) {
+				switch name {
+				case "gopls":
+					if tt.goplsFound {
+						return "/usr/bin/gopls", nil
+					}
+				case "rust-analyzer":
+					if tt.rustFound {
+						return "/usr/bin/rust-analyzer", nil
+					}
+				}
+				return "", fmt.Errorf("not found: %s", name)
+			}
+
+			settings := map[string]any{}
+			if tt.existing != nil {
+				ep := make(map[string]any, len(tt.existing))
+				for k, v := range tt.existing {
+					ep[k] = v
+				}
+				settings["enabledPlugins"] = ep
+			}
+
+			appendDetectedPlugins(settings)
+
+			plugins, hasKey := settings["enabledPlugins"].(map[string]any)
+			if tt.wantPlugins == nil {
+				if hasKey {
+					t.Errorf("expected no enabledPlugins key, got %v", plugins)
+				}
+				return
+			}
+			if !hasKey {
+				t.Fatal("expected enabledPlugins key")
+			}
+			if len(plugins) != len(tt.wantPlugins) {
+				t.Errorf("expected %d plugins, got %d: %v", len(tt.wantPlugins), len(plugins), plugins)
+			}
+			for k, want := range tt.wantPlugins {
+				if got, ok := plugins[k].(bool); !ok || got != want {
+					t.Errorf("plugin %q: want %v, got %v", k, want, plugins[k])
+				}
+			}
+		})
+	}
 }
 
 func TestWriteUserSettings_FilePermissions(t *testing.T) {

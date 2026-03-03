@@ -85,7 +85,11 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	}
 
 	// Decision context — additional background provided by the agent.
+	// Slack mrkdwn text blocks have a 3000-char limit; truncate with ellipsis.
 	if decisionCtx := bead.Fields["context"]; decisionCtx != "" {
+		if len(decisionCtx) > 2900 {
+			decisionCtx = decisionCtx[:2897] + "..."
+		}
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn", decisionCtx, false, false),

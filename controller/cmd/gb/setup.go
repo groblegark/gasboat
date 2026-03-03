@@ -38,6 +38,14 @@ Config bead keys (checked in order, later overrides earlier):
   claude-hooks:global    — base hooks for all agents
   claude-hooks:<role>    — role-specific hook overrides
 
+Settings merge uses shallow key override: a role-level key completely
+replaces the global value for that key. For example, if global defines
+"permissions" and role also defines "permissions", the role value wins
+entirely — the two are not deep-merged.
+
+Hooks merge uses array concatenation: role hooks are appended to (not
+replacing) global hooks for each hook type.
+
 Flags:
   --defaults   Install hardcoded settings and hooks (no server needed)
   --check      Verify hooks are installed, exit 1 if missing
@@ -139,9 +147,13 @@ func appendDetectedPlugins(settings map[string]any) {
 	}
 }
 
+// lookPath is the function used to check if an executable exists on PATH.
+// Defaults to exec.LookPath; overridden in tests for deterministic behavior.
+var lookPath = exec.LookPath
+
 // pathExists checks if an executable exists on PATH.
 func pathExists(name string) bool {
-	_, err := exec.LookPath(name)
+	_, err := lookPath(name)
 	return err == nil
 }
 
