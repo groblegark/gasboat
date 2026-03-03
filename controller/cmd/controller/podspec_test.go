@@ -577,20 +577,22 @@ func TestApplyProjectDefaults_PartialResourceOverride(t *testing.T) {
 	}
 }
 
-func TestApplyProjectDefaults_EnvOverrides(t *testing.T) {
+func TestApplyProjectDefaults_EnvVarsWithOverride(t *testing.T) {
 	cfg := &config.Config{
 		ProjectCache: map[string]config.ProjectCacheEntry{
 			"envtest": {
-				EnvOverrides: map[string]string{
-					"FEATURE_FLAG": "true",
-					"API_URL":      "https://api.example.com",
+				EnvVars: []beadsapi.EnvEntry{
+					{Name: "FEATURE_FLAG", Value: "true", Override: true},
+					{Name: "API_URL", Value: "https://api.example.com", Override: true},
+					{Name: "EXISTING", Value: "overwritten", Override: true},
+					{Name: "NO_OVERRIDE", Value: "skipped"},
 				},
 			},
 		},
 	}
 	spec := &podmanager.AgentPodSpec{
 		Project: "envtest",
-		Env:     map[string]string{"EXISTING": "keep"},
+		Env:     map[string]string{"EXISTING": "keep", "NO_OVERRIDE": "original"},
 	}
 	applyProjectDefaults(cfg, spec)
 
@@ -600,8 +602,11 @@ func TestApplyProjectDefaults_EnvOverrides(t *testing.T) {
 	if spec.Env["API_URL"] != "https://api.example.com" {
 		t.Errorf("expected API_URL, got %s", spec.Env["API_URL"])
 	}
-	if spec.Env["EXISTING"] != "keep" {
-		t.Errorf("expected existing env to be preserved, got %s", spec.Env["EXISTING"])
+	if spec.Env["EXISTING"] != "overwritten" {
+		t.Errorf("expected EXISTING to be overwritten, got %s", spec.Env["EXISTING"])
+	}
+	if spec.Env["NO_OVERRIDE"] != "original" {
+		t.Errorf("expected NO_OVERRIDE to be preserved, got %s", spec.Env["NO_OVERRIDE"])
 	}
 }
 

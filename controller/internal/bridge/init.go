@@ -130,6 +130,7 @@ func configs() map[string]any {
 				{Name: "storage_class", Type: "string"},
 				{Name: "service_account", Type: "string"},
 				{Name: "secrets", Type: "json"},
+				{Name: "env", Type: "json"},
 				{Name: "repos", Type: "json"},
 				// Auto-assignment control: "true" (default) or "false".
 				// Inherited by agents unless overridden on the agent bead.

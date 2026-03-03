@@ -153,9 +153,12 @@ type SecretEntry struct {
 
 // EnvEntry maps a plain environment variable name to a value.
 // Used for non-secret configuration on project beads.
+// When Override is true, the env var replaces any existing value in the pod spec;
+// when false (default), it is only set if the env var is not already present.
 type EnvEntry struct {
-	Name  string `json:"name"`  // env var name in the pod
-	Value string `json:"value"` // plain text value
+	Name     string `json:"name"`              // env var name in the pod
+	Value    string `json:"value"`             // plain text value
+	Override bool   `json:"override,omitempty"` // if true, overrides existing env vars
 }
 
 // RepoEntry declares a repository to clone into the agent workspace.
@@ -182,10 +185,6 @@ type ProjectInfo struct {
 	CPULimit      string // Kubernetes quantity string, e.g. "2000m"
 	MemoryRequest string // Kubernetes quantity string, e.g. "512Mi"
 	MemoryLimit   string // Kubernetes quantity string, e.g. "2Gi"
-
-	// EnvOverrides holds extra env vars parsed from the env_json bead field.
-	// Keys absent or empty in the JSON are silently skipped.
-	EnvOverrides map[string]string
 
 	Secrets        []SecretEntry // Per-project secret overrides
 	EnvVars        []EnvEntry    // Per-project plain env vars
@@ -240,16 +239,6 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			var repos []RepoEntry
 			if json.Unmarshal([]byte(raw), &repos) == nil {
 				info.Repos = repos
-			}
-		}
-		// Parse env_json field.
-		if raw := fields["env_json"]; raw != "" {
-			var envMap map[string]string
-			if err := json.Unmarshal([]byte(raw), &envMap); err != nil {
-				// Log and skip malformed env_json rather than failing the whole refresh.
-				_ = fmt.Errorf("project %q: malformed env_json (skipped): %w", name, err)
-			} else {
-				info.EnvOverrides = envMap
 			}
 		}
 		if name != "" {

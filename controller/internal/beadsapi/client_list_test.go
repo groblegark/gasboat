@@ -387,7 +387,7 @@ func TestListProjectBeads_EmptySecretsAndRepos(t *testing.T) {
 	}
 }
 
-func TestListProjectBeads_ParsesResourceAndEnvOverrides(t *testing.T) {
+func TestListProjectBeads_ParsesResourceAndEnvWithOverride(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := listBeadsResponse{
 			Beads: []beadJSON{
@@ -402,7 +402,7 @@ func TestListProjectBeads_ParsesResourceAndEnvOverrides(t *testing.T) {
 						"cpu_limit":"8",
 						"memory_request":"4Gi",
 						"memory_limit":"16Gi",
-						"env_json":"{\"FEATURE_FLAG\":\"true\",\"API_URL\":\"https://api.example.com\"}"
+						"env":"[{\"name\":\"FEATURE_FLAG\",\"value\":\"true\",\"override\":true},{\"name\":\"API_URL\",\"value\":\"https://api.example.com\",\"override\":true}]"
 					}`),
 				},
 			},
@@ -436,14 +436,14 @@ func TestListProjectBeads_ParsesResourceAndEnvOverrides(t *testing.T) {
 		t.Errorf("expected memory_limit 16Gi, got %s", p.MemoryLimit)
 	}
 
-	if len(p.EnvOverrides) != 2 {
-		t.Fatalf("expected 2 env overrides, got %d", len(p.EnvOverrides))
+	if len(p.EnvVars) != 2 {
+		t.Fatalf("expected 2 env vars, got %d", len(p.EnvVars))
 	}
-	if p.EnvOverrides["FEATURE_FLAG"] != "true" {
-		t.Errorf("expected FEATURE_FLAG=true, got %s", p.EnvOverrides["FEATURE_FLAG"])
+	if p.EnvVars[0].Name != "FEATURE_FLAG" || p.EnvVars[0].Value != "true" || !p.EnvVars[0].Override {
+		t.Errorf("expected FEATURE_FLAG=true with override, got %+v", p.EnvVars[0])
 	}
-	if p.EnvOverrides["API_URL"] != "https://api.example.com" {
-		t.Errorf("expected API_URL, got %s", p.EnvOverrides["API_URL"])
+	if p.EnvVars[1].Name != "API_URL" || p.EnvVars[1].Value != "https://api.example.com" || !p.EnvVars[1].Override {
+		t.Errorf("expected API_URL with override, got %+v", p.EnvVars[1])
 	}
 }
 
@@ -474,9 +474,6 @@ func TestListProjectBeads_EmptyResourceAndEnvFields(t *testing.T) {
 	if p.CPURequest != "" || p.CPULimit != "" || p.MemoryRequest != "" || p.MemoryLimit != "" {
 		t.Errorf("expected empty resource fields, got cpu_request=%q cpu_limit=%q memory_request=%q memory_limit=%q",
 			p.CPURequest, p.CPULimit, p.MemoryRequest, p.MemoryLimit)
-	}
-	if len(p.EnvOverrides) != 0 {
-		t.Errorf("expected no env overrides, got %d", len(p.EnvOverrides))
 	}
 	if len(p.EnvVars) != 0 {
 		t.Errorf("expected no env vars, got %d", len(p.EnvVars))
@@ -610,7 +607,7 @@ func TestListProjectBeads_Tier1Fields(t *testing.T) {
 						"memory_request":"512Mi",
 						"memory_limit":"2Gi",
 						"service_account":"my-sa",
-						"env_json":"{\"FOO\":\"bar\",\"BAZ\":\"qux\"}"
+						"env":"[{\"name\":\"FOO\",\"value\":\"bar\",\"override\":true},{\"name\":\"BAZ\",\"value\":\"qux\"}]"
 					}`),
 				},
 			},
@@ -645,23 +642,29 @@ func TestListProjectBeads_Tier1Fields(t *testing.T) {
 	if p.ServiceAccount != "my-sa" {
 		t.Errorf("service_account: got %q, want %q", p.ServiceAccount, "my-sa")
 	}
-	if p.EnvOverrides["FOO"] != "bar" {
-		t.Errorf("env_json FOO: got %q, want %q", p.EnvOverrides["FOO"], "bar")
+	if len(p.EnvVars) != 2 {
+		t.Fatalf("expected 2 env vars, got %d", len(p.EnvVars))
 	}
-	if p.EnvOverrides["BAZ"] != "qux" {
-		t.Errorf("env_json BAZ: got %q, want %q", p.EnvOverrides["BAZ"], "qux")
+	if p.EnvVars[0].Name != "FOO" || p.EnvVars[0].Value != "bar" || !p.EnvVars[0].Override {
+		t.Errorf("env FOO: got %+v, want name=FOO value=bar override=true", p.EnvVars[0])
+	}
+	if p.EnvVars[1].Name != "BAZ" || p.EnvVars[1].Value != "qux" {
+		t.Errorf("env BAZ: got %+v, want name=BAZ value=qux", p.EnvVars[1])
 	}
 }
 
-func TestListProjectBeads_MalformedEnvJSON(t *testing.T) {
+func TestListProjectBeads_EnvVarsWithOverrideFlag(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := listBeadsResponse{
 			Beads: []beadJSON{
 				{
-					ID:     "proj-bad-env",
-					Title:  "bad-env",
-					Type:   "project",
-					Fields: json.RawMessage(`{"prefix":"kd","env_json":"not-valid-json"}`),
+					ID:    "proj-override",
+					Title: "override-test",
+					Type:  "project",
+					Fields: json.RawMessage(`{
+						"prefix":"kd",
+						"env":"[{\"name\":\"OVERRIDE_VAR\",\"value\":\"yes\",\"override\":true},{\"name\":\"NORMAL_VAR\",\"value\":\"no\"}]"
+					}`),
 				},
 			},
 			Total: 1,
@@ -675,12 +678,17 @@ func TestListProjectBeads_MalformedEnvJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Project is still returned, just without env overrides.
-	p, ok := projects["bad-env"]
+	p, ok := projects["override-test"]
 	if !ok {
-		t.Fatal("expected project 'bad-env' in map despite malformed env_json")
+		t.Fatal("expected project 'override-test' in map")
 	}
-	if len(p.EnvOverrides) != 0 {
-		t.Errorf("expected no EnvOverrides for malformed env_json, got %v", p.EnvOverrides)
+	if len(p.EnvVars) != 2 {
+		t.Fatalf("expected 2 env vars, got %d", len(p.EnvVars))
+	}
+	if !p.EnvVars[0].Override {
+		t.Errorf("expected first env var to have override=true")
+	}
+	if p.EnvVars[1].Override {
+		t.Errorf("expected second env var to have override=false")
 	}
 }

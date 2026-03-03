@@ -207,18 +207,15 @@ func applyProjectDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		spec.Env["RTK_ENABLED"] = "true"
 	}
 
-	// Apply per-project env overrides (additive; project values take precedence).
-	for k, v := range entry.EnvOverrides {
+	// Inject per-project env vars. Entries with Override=true replace existing
+	// values; entries without override only set if the var is not already present.
+	for _, ev := range entry.EnvVars {
 		if spec.Env == nil {
 			spec.Env = make(map[string]string)
 		}
-		spec.Env[k] = v
-	}
-
-	// Inject per-project plain env vars. Project values do not override
-	// env vars that are already set (e.g., from controller config).
-	for _, ev := range entry.EnvVars {
-		if _, exists := spec.Env[ev.Name]; !exists {
+		if ev.Override {
+			spec.Env[ev.Name] = ev.Value
+		} else if _, exists := spec.Env[ev.Name]; !exists {
 			spec.Env[ev.Name] = ev.Value
 		}
 	}
@@ -459,13 +456,18 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 			}
 		}
 
-		// Per-project plain env vars: inject non-secret config like
-		// JIRA_BASE_URL, JIRA_EMAIL, GIT_AUTHOR_EMAIL, etc.
+		// Per-project env vars: inject config like JIRA_BASE_URL, JIRA_EMAIL, etc.
+		// Entries with Override=true replace existing values; otherwise only set
+		// if the var is not already present.
 		if spec.Env == nil {
 			spec.Env = make(map[string]string)
 		}
 		for _, ev := range entry.EnvVars {
-			spec.Env[ev.Name] = ev.Value
+			if ev.Override {
+				spec.Env[ev.Name] = ev.Value
+			} else if _, exists := spec.Env[ev.Name]; !exists {
+				spec.Env[ev.Name] = ev.Value
+			}
 		}
 	}
 }

@@ -208,10 +208,6 @@ type ProjectCacheEntry struct {
 	MemoryRequest string
 	MemoryLimit   string
 
-	// EnvOverrides holds extra env vars to inject into agent pods for this project.
-	// Applied before controller-level config; pod-level metadata takes precedence.
-	EnvOverrides map[string]string
-
 	// Per-project secret overrides (merged with globals at pod creation).
 	Secrets []beadsapi.SecretEntry
 	// Per-project plain env vars (non-secret config like JIRA_BASE_URL).
