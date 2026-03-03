@@ -29,7 +29,7 @@ ARG TARGETARCH
 
 # ── System packages (minimal) ─────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git git-lfs jq xz-utils ca-certificates screen \
+    curl git git-lfs jq xz-utils ca-certificates screen tmux \
     openssh-client sudo \
     python3 python3-pip python3-venv && \
     ln -sf /usr/bin/python3 /usr/bin/python && \
