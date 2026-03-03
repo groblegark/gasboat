@@ -175,6 +175,22 @@ func writeMCPConfig(workspace string, config map[string]any) error {
 	return nil
 }
 
+// defaultMCPConfig returns a fallback MCP config with Playwright if the
+// playwright-mcp binary is on PATH. Returns nil if not found.
+func defaultMCPConfig() map[string]any {
+	if !pathExists("playwright-mcp") {
+		return nil
+	}
+	return map[string]any{
+		"mcpServers": map[string]any{
+			"playwright": map[string]any{
+				"command": "playwright-mcp",
+				"args":    []any{"--headless", "--no-sandbox"},
+			},
+		},
+	}
+}
+
 // appendDetectedPlugins auto-detects installed LSP servers and adds them
 // to the settings' enabledPlugins map.
 func appendDetectedPlugins(settings map[string]any) {
@@ -340,6 +356,13 @@ func runSetupClaudeDefaults(workspace, role string) error {
 	// Write user-level settings (permissions, plugins, thinking).
 	if err := writeUserSettings(defaultUserSettings()); err != nil {
 		return fmt.Errorf("writing user settings: %w", err)
+	}
+
+	// MCP fallback: inject Playwright if binary is on PATH.
+	if mcpConfig := defaultMCPConfig(); mcpConfig != nil {
+		if err := writeMCPConfig(workspace, mcpConfig); err != nil {
+			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write default MCP config: %v\n", err)
+		}
 	}
 
 	// Write workspace-level hooks.
@@ -622,6 +645,9 @@ func runSetupClaude(ctx context.Context, workspace, role string) error {
 
 	// ── Project-level MCP config (claude-mcp) ───────────────────────────
 	mcpConfig, _ := ResolveConfigBeads(ctx, daemon, "claude-mcp", subs)
+	if mcpConfig == nil {
+		mcpConfig = defaultMCPConfig()
+	}
 	if mcpConfig != nil {
 		if err := writeMCPConfig(workspace, mcpConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write MCP config: %v\n", err)

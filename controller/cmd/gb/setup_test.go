@@ -403,6 +403,13 @@ func TestRunSetupClaudeDefaults_WritesBothFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
+	// Mock lookPath so playwright-mcp is not found (tests the no-MCP path).
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	lookPath = func(name string) (string, error) {
+		return "", fmt.Errorf("not found: %s", name)
+	}
+
 	workspace := filepath.Join(tmpDir, "workspace")
 	if err := os.MkdirAll(workspace, 0755); err != nil {
 		t.Fatal(err)
@@ -426,10 +433,10 @@ func TestRunSetupClaudeDefaults_WritesBothFiles(t *testing.T) {
 		t.Error("expected permissions in user settings")
 	}
 
-	// No .mcp.json should be created without config beads.
+	// No .mcp.json should be created without config beads or playwright-mcp.
 	mcpPath := filepath.Join(workspace, ".mcp.json")
 	if _, err := os.Stat(mcpPath); !os.IsNotExist(err) {
-		t.Error("expected no .mcp.json in defaults mode (no config beads)")
+		t.Error("expected no .mcp.json when playwright-mcp is not on PATH")
 	}
 
 	// Workspace-level hooks should exist.
@@ -593,5 +600,86 @@ func TestInstallRTKContext_WhenDisabled(t *testing.T) {
 	t.Setenv("RTK_ENABLED", "false")
 	if rtkEnabled() {
 		t.Fatal("expected rtkEnabled() to return false")
+	}
+}
+
+func TestDefaultMCPConfig_PlaywrightFound(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+
+	lookPath = func(name string) (string, error) {
+		if name == "playwright-mcp" {
+			return "/usr/bin/playwright-mcp", nil
+		}
+		return "", fmt.Errorf("not found: %s", name)
+	}
+
+	config := defaultMCPConfig()
+	if config == nil {
+		t.Fatal("expected non-nil MCP config when playwright-mcp is on PATH")
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("expected mcpServers key")
+	}
+	if servers["playwright"] == nil {
+		t.Error("expected playwright server entry")
+	}
+}
+
+func TestDefaultMCPConfig_PlaywrightNotFound(t *testing.T) {
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+
+	lookPath = func(name string) (string, error) {
+		return "", fmt.Errorf("not found: %s", name)
+	}
+
+	config := defaultMCPConfig()
+	if config != nil {
+		t.Errorf("expected nil MCP config when playwright-mcp is not on PATH, got %v", config)
+	}
+}
+
+func TestRunSetupClaudeDefaults_PlaywrightFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	orig := lookPath
+	t.Cleanup(func() { lookPath = orig })
+	lookPath = func(name string) (string, error) {
+		if name == "playwright-mcp" {
+			return "/usr/bin/playwright-mcp", nil
+		}
+		return "", fmt.Errorf("not found: %s", name)
+	}
+
+	workspace := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runSetupClaudeDefaults(workspace, "crew"); err != nil {
+		t.Fatalf("runSetupClaudeDefaults: %v", err)
+	}
+
+	// .mcp.json should be created with Playwright server.
+	data, err := os.ReadFile(filepath.Join(workspace, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("expected .mcp.json: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
+	}
+
+	servers, ok := result["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatal("expected mcpServers key")
+	}
+	if servers["playwright"] == nil {
+		t.Error("expected playwright server in fallback .mcp.json")
 	}
 }
