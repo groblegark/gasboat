@@ -268,6 +268,7 @@ slackBridge:
   slack:
     channel: C0AHE7C0E1G
     secretName: slack-bot-credentials
+    threadingMode: "agent"
 tls:
   dns:
     target: k8s-tenantsy-traefikn-3262dde0b9-f3980e040346c573.elb.us-east-1.amazonaws.com
