@@ -485,77 +485,52 @@ func runSetupClaudeRemove(workspace string) error {
 	return nil
 }
 
-func runSetupClaude(ctx context.Context, workspace, role string) error {
-	// ── User-level settings (claude-settings:*) ──────────────────────────
-	var settingsLayers []json.RawMessage
-
-	if cfg, err := daemon.GetConfig(ctx, "claude-settings:global"); err == nil && cfg != nil {
-		settingsLayers = append(settingsLayers, cfg.Value)
-		fmt.Fprintf(os.Stderr, "[setup] loaded claude-settings:global\n")
-	}
-
+// buildSubscriptions computes the agent subscription labels for config
+// resolution. Uses the role to build role: labels, plus always includes global.
+func buildSubscriptions(role string) []string {
+	subs := []string{"global"}
 	if role != "" {
-		if cfg, err := daemon.GetConfig(ctx, "claude-settings:"+role); err == nil && cfg != nil {
-			settingsLayers = append(settingsLayers, cfg.Value)
-			fmt.Fprintf(os.Stderr, "[setup] loaded claude-settings:%s\n", role)
-		}
+		subs = append(subs, "role:"+role)
 	}
+	if rig := os.Getenv("BOAT_RIG"); rig != "" {
+		subs = append(subs, "rig:"+rig)
+	}
+	if project := os.Getenv("BOAT_PROJECT"); project != "" {
+		subs = append(subs, "project:"+project)
+	}
+	return subs
+}
 
-	if len(settingsLayers) > 0 {
-		merged := mergeSimpleLayers(settingsLayers)
-		if err := writeUserSettings(merged); err != nil {
+func runSetupClaude(ctx context.Context, workspace, role string) error {
+	subs := buildSubscriptions(role)
+
+	// ── User-level settings (claude-settings) ───────────────────────────
+	settings, _ := ResolveConfigWithFallback(ctx, daemon, daemon, "claude-settings", role, subs)
+	if settings != nil {
+		if err := writeUserSettings(settings); err != nil {
 			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write user settings: %v\n", err)
 		}
 	} else {
-		// Fall back to hardcoded defaults when no config beads found.
 		if err := writeUserSettings(defaultUserSettings()); err != nil {
 			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write default user settings: %v\n", err)
 		}
 	}
 
-	// ── Project-level MCP config (claude-mcp:*) ─────────────────────────
-	var mcpLayers []json.RawMessage
-
-	if cfg, err := daemon.GetConfig(ctx, "claude-mcp:global"); err == nil && cfg != nil {
-		mcpLayers = append(mcpLayers, cfg.Value)
-		fmt.Fprintf(os.Stderr, "[setup] loaded claude-mcp:global\n")
-	}
-
-	if role != "" {
-		if cfg, err := daemon.GetConfig(ctx, "claude-mcp:"+role); err == nil && cfg != nil {
-			mcpLayers = append(mcpLayers, cfg.Value)
-			fmt.Fprintf(os.Stderr, "[setup] loaded claude-mcp:%s\n", role)
-		}
-	}
-
-	if len(mcpLayers) > 0 {
-		mcpConfig := mergeSimpleLayers(mcpLayers)
+	// ── Project-level MCP config (claude-mcp) ───────────────────────────
+	mcpConfig, _ := ResolveConfigWithFallback(ctx, daemon, daemon, "claude-mcp", role, subs)
+	if mcpConfig != nil {
 		if err := writeMCPConfig(workspace, mcpConfig); err != nil {
 			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write MCP config: %v\n", err)
 		}
 	}
 
-	// ── Workspace-level hooks (claude-hooks:*) ───────────────────────────
-	var hookLayers []json.RawMessage
-
-	if cfg, err := daemon.GetConfig(ctx, "claude-hooks:global"); err == nil && cfg != nil {
-		hookLayers = append(hookLayers, cfg.Value)
-		fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:global\n")
+	// ── Workspace-level hooks (claude-hooks) ────────────────────────────
+	hooks, _ := ResolveConfigWithFallback(ctx, daemon, daemon, "claude-hooks", role, subs)
+	if hooks == nil {
+		return fmt.Errorf("no claude-hooks config found")
 	}
 
-	if role != "" {
-		if cfg, err := daemon.GetConfig(ctx, "claude-hooks:"+role); err == nil && cfg != nil {
-			hookLayers = append(hookLayers, cfg.Value)
-			fmt.Fprintf(os.Stderr, "[setup] loaded claude-hooks:%s\n", role)
-		}
-	}
-
-	if len(hookLayers) == 0 {
-		return fmt.Errorf("no claude-hooks config beads found")
-	}
-
-	merged := mergeHookLayers(hookLayers)
-	appendRTKHooks(merged)
+	appendRTKHooks(hooks)
 
 	outDir := filepath.Join(workspace, ".claude")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -563,7 +538,7 @@ func runSetupClaude(ctx context.Context, workspace, role string) error {
 	}
 
 	outPath := filepath.Join(outDir, "settings.json")
-	data, err := json.MarshalIndent(merged, "", "  ")
+	data, err := json.MarshalIndent(hooks, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshalling settings: %w", err)
 	}
