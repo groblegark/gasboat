@@ -39,10 +39,18 @@ type adviceEntry struct {
 	Priority    int      `json:"priority"`
 }
 
+// configBeadEntry represents a label-based config bead in the dump format.
+type configBeadEntry struct {
+	Title       string          `json:"title"`
+	Labels      []string        `json:"labels"`
+	Value       json.RawMessage `json:"value"`
+}
+
 // configDump is the top-level dump/load format.
 type configDump struct {
-	Configs []configEntry `json:"configs"`
-	Advice  []adviceEntry `json:"advice,omitempty"`
+	Configs     []configEntry     `json:"configs,omitempty"`
+	ConfigBeads []configBeadEntry `json:"config_beads,omitempty"`
+	Advice      []adviceEntry     `json:"advice,omitempty"`
 }
 
 // --- Interfaces for testability ---
@@ -121,23 +129,109 @@ func loadConfigs(ctx context.Context, client configLoader, entries []configEntry
 	return restored, errors
 }
 
+// configBeadCreator is the interface for creating config beads during load.
+type configBeadCreator interface {
+	ListBeadsFiltered(ctx context.Context, q beadsapi.ListBeadsQuery) (*beadsapi.ListBeadsResult, error)
+	CreateBead(ctx context.Context, req beadsapi.CreateBeadRequest) (string, error)
+}
+
+func dumpConfigBeads(ctx context.Context, client beadLister) ([]configBeadEntry, error) {
+	result, err := client.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
+		Types:    []string{"config"},
+		Statuses: []string{"open"},
+		Limit:    500,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing config beads: %w", err)
+	}
+
+	entries := make([]configBeadEntry, 0, len(result.Beads))
+	for _, b := range result.Beads {
+		entries = append(entries, configBeadEntry{
+			Title:  b.Title,
+			Labels: b.Labels,
+			Value:  json.RawMessage(b.Description),
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Title != entries[j].Title {
+			return entries[i].Title < entries[j].Title
+		}
+		return strings.Join(entries[i].Labels, ",") < strings.Join(entries[j].Labels, ",")
+	})
+
+	return entries, nil
+}
+
+func loadConfigBeads(ctx context.Context, client configBeadCreator, entries []configBeadEntry) (created, skipped, errors int) {
+	// Fetch existing config beads for dedup.
+	existing, err := client.ListBeadsFiltered(ctx, beadsapi.ListBeadsQuery{
+		Types:    []string{"config"},
+		Statuses: []string{"open"},
+		Limit:    500,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[config] warning: failed to list existing config beads: %v\n", err)
+	}
+
+	existingSet := make(map[string]bool)
+	if existing != nil {
+		for _, b := range existing.Beads {
+			sorted := make([]string, len(b.Labels))
+			copy(sorted, b.Labels)
+			sort.Strings(sorted)
+			existingSet[b.Title+"|"+strings.Join(sorted, ",")] = true
+		}
+	}
+
+	for _, e := range entries {
+		sorted := make([]string, len(e.Labels))
+		copy(sorted, e.Labels)
+		sort.Strings(sorted)
+		dedupKey := e.Title + "|" + strings.Join(sorted, ",")
+
+		if existingSet[dedupKey] {
+			fmt.Fprintf(os.Stderr, "[config] config bead exists, skipping: %s %v\n", e.Title, e.Labels)
+			skipped++
+			continue
+		}
+
+		_, err := client.CreateBead(ctx, beadsapi.CreateBeadRequest{
+			Title:       e.Title,
+			Type:        "config",
+			Kind:        "config",
+			Description: string(e.Value),
+			Labels:      e.Labels,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[config] warning: failed to create config bead %s %v: %v\n", e.Title, e.Labels, err)
+			errors++
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "[config] created config bead: %s %v\n", e.Title, e.Labels)
+		created++
+	}
+	return created, skipped, errors
+}
+
 // --- Commands ---
 
 var configDumpCmd = &cobra.Command{
 	Use:   "dump",
 	Short: "Dump all configs and advice as JSON (pipe to file for backup)",
-	Long: `Fetches config entries from all known namespaces and all advice
-beads, then prints them as a JSON object with "configs" and "advice"
-sections. The output is suitable for saving to a file and restoring
-later with 'gb config load'.
+	Long: `Fetches config entries from all known namespaces, config beads,
+and advice beads, then prints them as a JSON object. The output is
+suitable for saving to a file and restoring with 'gb config load'.
 
 Sections:
-  configs — key/value config beads (settings, hooks, MCP, types, views)
-  advice  — advice beads (rules and guidance for agents)
+  configs      — legacy KV config entries (settings, hooks, MCP, types, views)
+  config_beads — label-based config beads (new unified format)
+  advice       — advice beads (rules and guidance for agents)
 
 Example:
   gb config dump > backup.json
-  gb config dump | jq .advice`,
+  gb config dump | jq .config_beads`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
@@ -146,14 +240,20 @@ Example:
 			return err
 		}
 
+		configBeads, err := dumpConfigBeads(ctx, daemon)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[config] warning: failed to dump config beads: %v\n", err)
+		}
+
 		advice, err := dumpAdvice(ctx, daemon)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[config] warning: failed to dump advice: %v\n", err)
 		}
 
 		dump := configDump{
-			Configs: configs,
-			Advice:  advice,
+			Configs:     configs,
+			ConfigBeads: configBeads,
+			Advice:      advice,
 		}
 
 		data, err := json.MarshalIndent(dump, "", "  ")
@@ -162,7 +262,8 @@ Example:
 		}
 
 		fmt.Fprintln(os.Stdout, string(data))
-		fmt.Fprintf(os.Stderr, "[config] dumped %d configs, %d advice\n", len(configs), len(advice))
+		fmt.Fprintf(os.Stderr, "[config] dumped %d KV configs, %d config beads, %d advice\n",
+			len(configs), len(configBeads), len(advice))
 		return nil
 	},
 }
@@ -171,10 +272,15 @@ var configLoadCmd = &cobra.Command{
 	Use:   "load <file>",
 	Short: "Restore configs and advice from a dump file",
 	Long: `Reads a JSON file produced by 'gb config dump' and restores
-config entries and advice beads to the daemon.
+config entries, config beads, and advice beads to the daemon.
 
-Advice beads are matched by title — existing advice with the same
-title is skipped to avoid duplicates.
+Config beads and advice are deduplicated by title+labels — existing
+entries with matching identity are skipped.
+
+Supports three input formats:
+  - Current: {"configs": [...], "config_beads": [...], "advice": [...]}
+  - Legacy sectioned: {"configs": [...], "advice": [...]}
+  - Legacy flat: [{key, value}, ...]
 
 Example:
   gb config load backup.json`,
@@ -198,9 +304,19 @@ Example:
 			}
 		}
 
-		restored, _ := loadConfigs(ctx, daemon, dump.Configs)
-		fmt.Fprintf(os.Stderr, "[config] loaded %d config entries\n", restored)
+		// Restore KV config entries.
+		if len(dump.Configs) > 0 {
+			restored, _ := loadConfigs(ctx, daemon, dump.Configs)
+			fmt.Fprintf(os.Stderr, "[config] loaded %d KV config entries\n", restored)
+		}
 
+		// Restore config beads.
+		if len(dump.ConfigBeads) > 0 {
+			created, skipped, _ := loadConfigBeads(ctx, daemon, dump.ConfigBeads)
+			fmt.Fprintf(os.Stderr, "[config] loaded %d config beads (%d skipped)\n", created, skipped)
+		}
+
+		// Restore advice beads.
 		if len(dump.Advice) > 0 {
 			// Build set of existing advice titles for dedup.
 			existing, _ := dumpAdvice(ctx, daemon)
@@ -216,13 +332,13 @@ Example:
 					continue
 				}
 				_, err := daemon.CreateBead(ctx, beadsapi.CreateBeadRequest{
-				Title:       a.Title,
-				Type:        "advice",
-				Description: a.Description,
-				Labels:      a.Labels,
-				Priority:    a.Priority,
-			})
-			if err != nil {
+					Title:       a.Title,
+					Type:        "advice",
+					Description: a.Description,
+					Labels:      a.Labels,
+					Priority:    a.Priority,
+				})
+				if err != nil {
 					fmt.Fprintf(os.Stderr, "[config] warning: failed to create advice %q: %v\n", a.Title, err)
 					continue
 				}
