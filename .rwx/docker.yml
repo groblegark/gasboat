@@ -786,8 +786,9 @@ tasks:
       mv ~/.local/bin/uv $OUT/usr/local/bin/uv
       mv ~/.local/bin/uvx $OUT/usr/local/bin/uvx
 
-      # Bun
-      BUN_INSTALL=$OUT/usr/local/bun curl -fsSL https://bun.sh/install | bash
+      # Bun — export BUN_INSTALL so the piped bash process inherits it
+      export BUN_INSTALL=$OUT/usr/local/bun
+      curl -fsSL https://bun.sh/install | bash
       ln -sf /usr/local/bun/bin/bun $OUT/usr/local/bin/bun
       ln -sf /usr/local/bun/bin/bunx $OUT/usr/local/bin/bunx
 
