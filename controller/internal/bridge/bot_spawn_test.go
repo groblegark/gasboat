@@ -20,15 +20,16 @@ import (
 func newTestBot(daemon BeadClient, slackSrv *httptest.Server) *Bot {
 	api := slack.New("xoxb-test", slack.OptionAPIURL(slackSrv.URL+"/"))
 	return &Bot{
-		api:          api,
-		daemon:       daemon,
-		logger:       slog.Default(),
-		messages:     make(map[string]MessageRef),
-		agentCards:   make(map[string]MessageRef),
-		agentPending: make(map[string]int),
-		agentState:   make(map[string]string),
-		agentSeen:    make(map[string]time.Time),
-		agentPodName: make(map[string]string),
+		api:           api,
+		daemon:        daemon,
+		logger:        slog.Default(),
+		messages:      make(map[string]MessageRef),
+		agentCards:    make(map[string]MessageRef),
+		agentPending:  make(map[string]int),
+		agentState:    make(map[string]string),
+		agentSeen:     make(map[string]time.Time),
+		agentPodName:  make(map[string]string),
+		agentImageTag: make(map[string]string),
 	}
 }
 
@@ -378,6 +379,164 @@ func TestIsTicketRef(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isTicketRef(tc.input); got != tc.want {
 				t.Errorf("isTicketRef(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- Task-first spawn tests ---
+
+func TestHandleSpawnCommand_TaskFirst_CreatesTaskAndAgent(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      `"fix the login bug" gasboat`,
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	// Should create both a task bead and an agent bead.
+	taskBeads := filterBeadsByType(daemon.beads, "task")
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(taskBeads) != 1 {
+		t.Fatalf("expected 1 task bead created, got %d", len(taskBeads))
+	}
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead created, got %d", len(agentBeads))
+	}
+
+	// Verify task bead has the description as title.
+	for _, b := range taskBeads {
+		if b.Title != "fix the login bug" {
+			t.Errorf("expected task title='fix the login bug', got %q", b.Title)
+		}
+	}
+
+	// Verify agent bead was created with auto-generated name and task assignment.
+	for _, b := range agentBeads {
+		if b.Title != "fix-the-login" {
+			t.Errorf("expected auto-generated agent name='fix-the-login', got %q", b.Title)
+		}
+		if b.Fields["project"] != "gasboat" {
+			t.Errorf("expected project=gasboat, got %s", b.Fields["project"])
+		}
+	}
+}
+
+func TestHandleSpawnCommand_TaskFirst_WithRole(t *testing.T) {
+	daemon := newMockDaemon()
+	daemon.seedProject("gasboat")
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      `"deploy the new service" gasboat --role devops`,
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead, got %d", len(agentBeads))
+	}
+	for _, b := range agentBeads {
+		if b.Fields["role"] != "devops" {
+			t.Errorf("expected role=devops, got %s", b.Fields["role"])
+		}
+	}
+}
+
+func TestHandleSpawnCommand_TaskFirst_NoProject(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      `"refactor auth module"`,
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	taskBeads := filterBeadsByType(daemon.beads, "task")
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(taskBeads) != 1 {
+		t.Fatalf("expected 1 task bead, got %d", len(taskBeads))
+	}
+	if len(agentBeads) != 1 {
+		t.Fatalf("expected 1 agent bead, got %d", len(agentBeads))
+	}
+}
+
+func TestHandleSpawnCommand_TaskFirst_InvalidProject(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.handleSpawnCommand(context.Background(), slack.SlashCommand{
+		Command:   "/spawn",
+		Text:      `"fix something" nonexistent`,
+		ChannelID: "C123",
+		UserID:    "U456",
+	})
+
+	// Should not create any beads when project doesn't exist.
+	taskBeads := filterBeadsByType(daemon.beads, "task")
+	agentBeads := filterAgentBeads(daemon.beads)
+	if len(taskBeads) != 0 {
+		t.Errorf("expected 0 task beads for invalid project, got %d", len(taskBeads))
+	}
+	if len(agentBeads) != 0 {
+		t.Errorf("expected 0 agent beads for invalid project, got %d", len(agentBeads))
+	}
+}
+
+// filterBeadsByType returns beads of a specific type.
+func filterBeadsByType(beads map[string]*beadsapi.BeadDetail, beadType string) []*beadsapi.BeadDetail {
+	var result []*beadsapi.BeadDetail
+	for _, b := range beads {
+		if b.Type == beadType {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// --- generateAgentName tests ---
+
+func TestGenerateAgentName(t *testing.T) {
+	cases := []struct {
+		name        string
+		description string
+		want        string
+	}{
+		{"basic", "fix the login bug", "fix-the-login"},
+		{"short", "refactor", "refactor"},
+		{"with punctuation", "Fix: the login bug!", "fix-the-login"},
+		{"long description", "implement a new feature for the authentication system", "implement-a-new"},
+		{"numbers", "add 3 retries to API", "add-3-retries"},
+		{"empty", "", "task-agent"},
+		{"only punctuation", "!!! ???", "task-agent"},
+		{"mixed case", "Deploy The Service", "deploy-the-service"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := generateAgentName(tc.description)
+			if got != tc.want {
+				t.Errorf("generateAgentName(%q) = %q, want %q", tc.description, got, tc.want)
 			}
 		})
 	}

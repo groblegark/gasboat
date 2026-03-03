@@ -2,9 +2,14 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/slack-go/slack"
 )
 
 // mockAgentNotifier records calls to NotifyAgentCrash, NotifyAgentSpawn, NotifyAgentState, and NotifyAgentTaskUpdate.
@@ -597,4 +602,73 @@ func TestAgents_HandleUpdated_StateChange(t *testing.T) {
 	if changes[0].Fields["agent_state"] != "working" {
 		t.Errorf("expected agent_state=working, got %q", changes[0].Fields["agent_state"])
 	}
+}
+
+// --- buildAgentCardBlocks tests ---
+
+func TestBuildAgentCardBlocks_IncludesImageTag(t *testing.T) {
+	blocks := buildAgentCardBlocks("test-bot", 0, "working", "", time.Time{}, "", "", "v2026.58.3")
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(blocks))
+	}
+	// The context block (second block) should contain the image tag.
+	ctx := blocks[1]
+	// Extract the text from the context block.
+	rendered := renderBlockText(ctx)
+	if !strings.Contains(rendered, "v2026.58.3") {
+		t.Errorf("expected context block to contain image tag 'v2026.58.3', got: %s", rendered)
+	}
+}
+
+func TestBuildAgentCardBlocks_NoImageTag(t *testing.T) {
+	blocks := buildAgentCardBlocks("test-bot", 0, "working", "", time.Time{}, "", "", "")
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(blocks))
+	}
+	rendered := renderBlockText(blocks[1])
+	// Should not contain a stray backtick-pair from an empty image tag.
+	if strings.Contains(rendered, "``") {
+		t.Errorf("context block should not contain empty backtick pair when no image tag, got: %s", rendered)
+	}
+}
+
+func TestBuildAgentCardBlocks_ImageTagWithTask(t *testing.T) {
+	blocks := buildAgentCardBlocks("test-bot", 0, "working", "Fix login", time.Time{}, "", "", "latest")
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(blocks))
+	}
+	rendered := renderBlockText(blocks[1])
+	if !strings.Contains(rendered, "`latest`") {
+		t.Errorf("expected context block to contain image tag, got: %s", rendered)
+	}
+	if !strings.Contains(rendered, "Fix login") {
+		t.Errorf("expected context block to contain task title, got: %s", rendered)
+	}
+}
+
+// renderBlockText is a test helper that extracts text from a Slack block
+// by marshaling to JSON and pulling out text fields.
+func renderBlockText(block slack.Block) string {
+	data, _ := json.Marshal(block)
+	var m map[string]any
+	_ = json.Unmarshal(data, &m)
+	// Context blocks have an "elements" array containing text objects.
+	if elems, ok := m["elements"].([]any); ok {
+		var texts []string
+		for _, e := range elems {
+			if em, ok := e.(map[string]any); ok {
+				if txt, ok := em["text"].(string); ok {
+					texts = append(texts, txt)
+				}
+			}
+		}
+		return strings.Join(texts, " ")
+	}
+	// Section blocks have a "text" field.
+	if textObj, ok := m["text"].(map[string]any); ok {
+		if txt, ok := textObj["text"].(string); ok {
+			return txt
+		}
+	}
+	return ""
 }

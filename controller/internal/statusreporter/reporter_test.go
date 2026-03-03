@@ -496,3 +496,84 @@ func TestMetrics_SkippedPhaseStillCounts(t *testing.T) {
 		t.Errorf("expected 0 errors for skipped phase, got %d", m.StatusReportErrors)
 	}
 }
+
+// --- extractContainerImage tests ---
+
+func TestExtractContainerImage_WithTag(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: podmanager.ContainerName, Image: "ghcr.io/org/agent:v2026.58.3"},
+			},
+		},
+	}
+	got := extractContainerImage(pod)
+	if got != "v2026.58.3" {
+		t.Errorf("expected 'v2026.58.3', got %q", got)
+	}
+}
+
+func TestExtractContainerImage_LatestTag(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: podmanager.ContainerName, Image: "myregistry/agent:latest"},
+			},
+		},
+	}
+	got := extractContainerImage(pod)
+	if got != "latest" {
+		t.Errorf("expected 'latest', got %q", got)
+	}
+}
+
+func TestExtractContainerImage_NoTag(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: podmanager.ContainerName, Image: "myregistry/agent"},
+			},
+		},
+	}
+	got := extractContainerImage(pod)
+	if got != "myregistry/agent" {
+		t.Errorf("expected full image ref when no tag, got %q", got)
+	}
+}
+
+func TestExtractContainerImage_NoAgentContainer(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "sidecar", Image: "sidecar:v1"},
+			},
+		},
+	}
+	got := extractContainerImage(pod)
+	if got != "" {
+		t.Errorf("expected empty string when no agent container, got %q", got)
+	}
+}
+
+func TestReportBackendMetadata_IncludesImageTag(t *testing.T) {
+	daemon := &mockBeadUpdater{}
+	fakeClient := fake.NewSimpleClientset()
+	r := NewHTTPReporter(daemon, fakeClient, "default", slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	err := r.ReportBackendMetadata(context.Background(), "bd-agent1", BackendMetadata{
+		PodName:  "pod-1",
+		Backend:  "coop",
+		ImageTag: "v2026.58.3",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(daemon.notesCalls) != 1 {
+		t.Fatalf("expected 1 notes update, got %d", len(daemon.notesCalls))
+	}
+	notes := daemon.notesCalls[0].notes
+	if !strings.Contains(notes, "image_tag: v2026.58.3") {
+		t.Errorf("expected notes to contain 'image_tag: v2026.58.3', got: %s", notes)
+	}
+}

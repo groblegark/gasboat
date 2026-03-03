@@ -34,6 +34,7 @@ type BackendMetadata struct {
 	Backend   string // "coop" or "k8s"
 	CoopURL   string // e.g., "http://crew-gasboat-crew-furiosa.gasboat.svc.cluster.local:8080"
 	CoopToken string // auth token (optional)
+	ImageTag  string // container image tag (e.g., "v2026.58.3" or full image ref)
 }
 
 // Reporter syncs pod status back to beads.
@@ -199,6 +200,9 @@ func (r *HTTPReporter) ReportBackendMetadata(ctx context.Context, agentName stri
 	if meta.CoopToken != "" {
 		lines = append(lines, fmt.Sprintf("coop_token: %s", meta.CoopToken))
 	}
+	if meta.ImageTag != "" {
+		lines = append(lines, fmt.Sprintf("image_tag: %s", meta.ImageTag))
+	}
 
 	if len(lines) == 0 {
 		return nil
@@ -260,6 +264,7 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 				Namespace: pod.Namespace,
 				Backend:   "coop",
 				CoopURL:   fmt.Sprintf("http://%s:%d", pod.Status.PodIP, coopPort),
+				ImageTag:  extractContainerImage(&pod),
 			}); err != nil {
 				r.logger.Warn("SyncAll: failed to report backend metadata",
 					"bead", beadID, "pod", pod.Name, "error", err)
@@ -269,6 +274,22 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 
 	r.logger.Info("sync completed", "pods", len(pods.Items))
 	return nil
+}
+
+// extractContainerImage returns the image tag of the agent container in a pod.
+// Returns the tag portion (after the last ':') or the full image ref if no tag separator.
+func extractContainerImage(pod *corev1.Pod) string {
+	for _, c := range pod.Spec.Containers {
+		if c.Name == podmanager.ContainerName {
+			img := c.Image
+			// Extract just the tag portion: "ghcr.io/org/img:v1.2.3" → "v1.2.3"
+			if idx := strings.LastIndex(img, ":"); idx >= 0 {
+				return img[idx+1:]
+			}
+			return img
+		}
+	}
+	return ""
 }
 
 // Metrics returns a snapshot of current metric values.
