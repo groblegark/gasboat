@@ -17,15 +17,10 @@ var configCmd = &cobra.Command{
 	GroupID: "session",
 }
 
-// configNamespaces are the known config bead namespaces to dump.
-// The daemon API requires a namespace parameter, so we enumerate all known ones.
-var configNamespaces = []string{
-	"claude-settings",
-	"claude-hooks",
-	"claude-mcp",
-	"type",
-	"context",
-	"view",
+// configNamespaces returns the known config bead namespaces to dump.
+// Delegates to the config registry (config_registry.go).
+func configNamespaces() []string {
+	return ConfigCategoryNames()
 }
 
 // --- Serialization types ---
@@ -144,7 +139,7 @@ Example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
-		configs, err := dumpConfigs(ctx, daemon, configNamespaces)
+		configs, err := dumpConfigs(ctx, daemon, configNamespaces())
 		if err != nil {
 			return err
 		}
