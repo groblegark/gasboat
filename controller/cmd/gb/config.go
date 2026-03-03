@@ -369,21 +369,46 @@ type migrateAction struct {
 	Skipped  bool     // true if a matching bead already exists
 }
 
-// parseKVKeyToLabels converts a KV config key like "claude-settings:global"
-// or "claude-settings:captain" into (category, labels).
-func parseKVKeyToLabels(key string) (category string, labels []string) {
+// roleKeyedNamespaces are KV namespaces where the suffix after ":"
+// represents a role (or "global"). Other namespaces (type, view) use
+// the suffix as a type/view identifier — not a role.
+var roleKeyedNamespaces = map[string]bool{
+	"claude-settings": true,
+	"claude-hooks":    true,
+	"claude-mcp":      true,
+	"context":         true,
+}
+
+// parseKVKeyToLabels converts a KV config key into (title, labels) for
+// the config bead representation.
+//
+// For role-keyed namespaces (claude-settings, claude-hooks, claude-mcp, context):
+//
+//	"claude-settings:global"  → title="claude-settings", labels=["global"]
+//	"claude-settings:captain" → title="claude-settings", labels=["role:captain"]
+//
+// For definition namespaces (type, view):
+//
+//	"type:task"          → title="type:task",          labels=["global"]
+//	"view:agents:active" → title="view:agents:active", labels=["global"]
+func parseKVKeyToLabels(key string) (title string, labels []string) {
 	idx := strings.Index(key, ":")
 	if idx < 0 {
 		return key, []string{"global"}
 	}
-	category = key[:idx]
+
+	namespace := key[:idx]
 	suffix := key[idx+1:]
 
-	if suffix == "global" {
-		return category, []string{"global"}
+	if !roleKeyedNamespaces[namespace] {
+		// Definition namespace: the full key is the title, always global.
+		return key, []string{"global"}
 	}
-	// Treat the suffix as a role name.
-	return category, []string{"role:" + suffix}
+
+	if suffix == "global" {
+		return namespace, []string{"global"}
+	}
+	return namespace, []string{"role:" + suffix}
 }
 
 // planMigration scans all KV config entries and checks for existing

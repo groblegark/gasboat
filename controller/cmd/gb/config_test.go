@@ -487,6 +487,36 @@ func TestParseKVKeyToLabels_NoColon(t *testing.T) {
 	}
 }
 
+func TestParseKVKeyToLabels_TypeDefinition(t *testing.T) {
+	title, labels := parseKVKeyToLabels("type:task")
+	if title != "type:task" {
+		t.Errorf("expected title=type:task, got %s", title)
+	}
+	if len(labels) != 1 || labels[0] != "global" {
+		t.Errorf("expected [global] for type definitions, got %v", labels)
+	}
+}
+
+func TestParseKVKeyToLabels_ViewDefinition(t *testing.T) {
+	title, labels := parseKVKeyToLabels("view:agents:active")
+	if title != "view:agents:active" {
+		t.Errorf("expected title=view:agents:active, got %s", title)
+	}
+	if len(labels) != 1 || labels[0] != "global" {
+		t.Errorf("expected [global] for view definitions, got %v", labels)
+	}
+}
+
+func TestParseKVKeyToLabels_ContextRole(t *testing.T) {
+	title, labels := parseKVKeyToLabels("context:captain")
+	if title != "context" {
+		t.Errorf("expected title=context, got %s", title)
+	}
+	if len(labels) != 1 || labels[0] != "role:captain" {
+		t.Errorf("expected [role:captain], got %v", labels)
+	}
+}
+
 // --- Mock for migration ---
 
 type mockMigrator struct {
