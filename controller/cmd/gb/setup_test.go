@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -407,7 +408,7 @@ func TestRunSetupClaudeDefaults_WritesBothFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := runSetupClaudeDefaults(workspace); err != nil {
+	if err := runSetupClaudeDefaults(workspace, "crew"); err != nil {
 		t.Fatalf("runSetupClaudeDefaults: %v", err)
 	}
 
@@ -443,6 +444,75 @@ func TestRunSetupClaudeDefaults_WritesBothFiles(t *testing.T) {
 	}
 	if wsSettings["hooks"] == nil {
 		t.Error("expected hooks in workspace settings")
+	}
+
+	// CLAUDE.md should be written as fallback.
+	claudeMDPath := filepath.Join(workspace, "CLAUDE.md")
+	claudeData, err := os.ReadFile(claudeMDPath)
+	if err != nil {
+		t.Fatalf("expected CLAUDE.md at %s: %v", claudeMDPath, err)
+	}
+	content := string(claudeData)
+	if !strings.Contains(content, "# Gasboat Agent: crew") {
+		t.Error("CLAUDE.md should contain role header")
+	}
+	if !strings.Contains(content, "## Claim Protocol") {
+		t.Error("CLAUDE.md should contain Claim Protocol section")
+	}
+	if !strings.Contains(content, "## Development Tools") {
+		t.Error("CLAUDE.md should contain Development Tools section")
+	}
+}
+
+func TestRunSetupClaudeDefaults_DoesNotOverwriteExistingClaudeMD(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	workspace := filepath.Join(tmpDir, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create CLAUDE.md with custom content.
+	claudeMDPath := filepath.Join(workspace, "CLAUDE.md")
+	existing := "# Custom CLAUDE.md\nDo not overwrite me."
+	if err := os.WriteFile(claudeMDPath, []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runSetupClaudeDefaults(workspace, "captain"); err != nil {
+		t.Fatalf("runSetupClaudeDefaults: %v", err)
+	}
+
+	// CLAUDE.md should NOT be overwritten.
+	data, err := os.ReadFile(claudeMDPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != existing {
+		t.Errorf("CLAUDE.md was overwritten; got %q, want %q", string(data), existing)
+	}
+}
+
+func TestDefaultClaudeMD_SubstitutesRole(t *testing.T) {
+	content := defaultClaudeMD("captain")
+	if !strings.Contains(content, "# Gasboat Agent: captain") {
+		t.Error("expected role in header")
+	}
+	if !strings.Contains(content, "**captain** agent") {
+		t.Error("expected role in body")
+	}
+}
+
+func TestDefaultClaudeMD_IncludesProject(t *testing.T) {
+	t.Setenv("BOAT_PROJECT", "testproject")
+	t.Setenv("BOAT_AGENT", "test-agent")
+	content := defaultClaudeMD("crew")
+	if !strings.Contains(content, "(project: testproject)") {
+		t.Error("expected project in output")
+	}
+	if !strings.Contains(content, "Agent name: test-agent") {
+		t.Error("expected agent name in output")
 	}
 }
 

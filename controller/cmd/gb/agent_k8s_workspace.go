@@ -152,99 +152,6 @@ func symlinkClaudeExtensions(workspace string) {
 	}
 }
 
-// roleBlurb returns a role-specific identity description for CLAUDE.md.
-func roleBlurb(role, projectLine string) string {
-	switch role {
-	case "captain":
-		return "You are the **captain** — a persistent team lead" + projectLine + ". You coordinate crew agents, assign work, review output, and ensure project objectives are met. You persist across sessions."
-	case "polecat":
-		return "You are a **polecat** — a single-task ephemeral agent" + projectLine + ". You were spawned for one specific task. Complete it, push your work, close the bead, and call `gb done`. Do NOT look for more work."
-	default: // crew and others
-		return "You are a **crew** agent — a persistent team member" + projectLine + ". Pick up tasks from the ready queue, complete them thoroughly, push your work, and move to the next task. You persist across sessions."
-	}
-}
-
-// writeClaudeMD writes CLAUDE.md into the workspace if it doesn't already
-// exist, then appends the dev-tools table if the guard string is absent.
-func writeClaudeMD(cfg k8sConfig) {
-	path := filepath.Join(cfg.workspace, "CLAUDE.md")
-
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		projectLine := ""
-		if cfg.project != "" {
-			projectLine = " (project: " + cfg.project + ")"
-		}
-		content := fmt.Sprintf(`# Gasboat Agent: %s
-
-%s
-Agent name: %s
-
-## Quick Reference
-
-- `+"`"+`gb ready`+"`"+` — See your workflow steps
-- `+"`"+`gb mail inbox`+"`"+` — Check messages
-- `+"`"+`kd show <issue>`+"`"+` — View specific issue details
-
-## Delivery Protocol
-
-**CRITICAL**: Never push directly to `+"`"+`main`+"`"+`. Always deliver work via a pull request:
-
-1. Create a feature branch: `+"`"+`git checkout -b <descriptive-branch-name>`+"`"+`
-2. Commit your changes with a clear message
-3. Push the branch: `+"`"+`git push -u origin <branch-name>`+"`"+`
-4. Create a PR: `+"`"+`gh pr create --title "..." --body "..."`+"`"+`
-5. Post the PR URL in your Slack thread so humans can review
-
-If you finish without creating a PR, your work is invisible. A commit on main without review is a liability.
-
-## Checkpoint Protocol (Stop Hook)
-
-When you hit a Stop hook block, you MUST create a decision checkpoint:
-
-1. Review what you accomplished
-2. Create a decision:
-   `+"```"+`bash
-   gb decision create --no-wait \
-     --prompt="<what you did and why these options>" \
-     --options='[{"id":"opt1","short":"Option 1","label":"Full description"}]'
-   `+"```"+`
-3. Run `+"`"+`gb yield`+"`"+` — **blocks until human responds. Do NOT run in background. Do NOT return control. Just wait.**
-4. When `+"`"+`gb yield`+"`"+` returns, act on the response
-`, cfg.role, roleBlurb(cfg.role, projectLine), cfg.agent)
-
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			fmt.Printf("[gb agent start] warning: write CLAUDE.md: %v\n", err)
-			return
-		}
-	}
-
-	// Append dev-tools section if not already present.
-	if !fileContains(path, "## Development Tools") {
-		devTools := `
-## Development Tools
-
-All tools are installed directly in the agent image — use them from the command line.
-
-| Tool | Command | Notes |
-|------|---------|-------|
-| Go | ` + "`go build`, `go test`" + ` | + ` + "`gopls`" + ` LSP server |
-| Node.js | ` + "`node`, `npm`, `npx`" + ` | |
-| Python 3 | ` + "`python3`, `pip`, `python3 -m venv`" + ` | |
-| Rust | ` + "`rust-analyzer`" + ` | LSP server (no compiler — use ` + "`rustup`" + ` if needed) |
-| AWS CLI | ` + "`aws`" + ` | |
-| Docker CLI | ` + "`docker`" + ` | Client only (no daemon) |
-| kubectl | ` + "`kubectl`" + ` | |
-| git | ` + "`git`" + ` | HTTPS + SSH protocols |
-| Build tools | ` + "`make`, `gcc`, `g++`" + ` | |
-| Utilities | ` + "`curl`, `jq`, `unzip`, `ssh`" + ` | |
-`
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-		if err == nil {
-			_, _ = f.WriteString(devTools)
-			f.Close()
-		}
-	}
-}
 
 // writeOnboardingSkip writes ~/.claude.json to bypass the onboarding wizard.
 func writeOnboardingSkip() {
@@ -387,13 +294,6 @@ func isMountpoint(path string) bool {
 	return false
 }
 
-func fileContains(path, substr string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), substr)
-}
 
 func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {

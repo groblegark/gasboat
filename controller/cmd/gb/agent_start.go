@@ -152,7 +152,7 @@ func runLocal(ctx context.Context, agentName, agentBeadID, role, dir, agentComma
 	fmt.Printf("[gb agent start] Materializing hooks (gb setup claude)...\n")
 	if err := runSetupClaude(ctx, dir, role); err != nil {
 		fmt.Fprintf(os.Stderr, "[gb agent start] config beads not found, installing defaults...\n")
-		if err2 := runSetupClaudeDefaults(dir); err2 != nil {
+		if err2 := runSetupClaudeDefaults(dir, role); err2 != nil {
 			fmt.Fprintf(os.Stderr, "[gb agent start] warning: could not write .claude/settings.json: %v\n", err2)
 		}
 	}

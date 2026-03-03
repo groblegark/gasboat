@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+//go:embed claudemd_default.md
+var defaultClaudeMDTemplate string
 
 var setupCmd = &cobra.Command{
 	Use:     "setup",
@@ -80,7 +84,7 @@ Flags:
 
 		defaults, _ := cmd.Flags().GetBool("defaults")
 		if defaults {
-			return runSetupClaudeDefaults(workspace)
+			return runSetupClaudeDefaults(workspace, role)
 		}
 
 		return runSetupClaude(cmd.Context(), workspace, role)
@@ -303,7 +307,7 @@ func appendRTKHooks(settings map[string]any) {
 	fmt.Fprintf(os.Stderr, "[setup] RTK hooks enabled (PreToolUse + Stop report)\n")
 }
 
-func runSetupClaudeDefaults(workspace string) error {
+func runSetupClaudeDefaults(workspace, role string) error {
 	// Write user-level settings (permissions, plugins, thinking).
 	if err := writeUserSettings(defaultUserSettings()); err != nil {
 		return fmt.Errorf("writing user settings: %w", err)
@@ -330,7 +334,50 @@ func runSetupClaudeDefaults(workspace string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "[setup] wrote default hooks to %s\n", outPath)
+
+	// Write fallback CLAUDE.md if not already present.
+	claudeMDPath := filepath.Join(workspace, "CLAUDE.md")
+	if _, err := os.Stat(claudeMDPath); os.IsNotExist(err) {
+		content := defaultClaudeMD(role)
+		if err := os.WriteFile(claudeMDPath, []byte(content), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "[setup] warning: failed to write fallback CLAUDE.md: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[setup] wrote fallback CLAUDE.md to %s\n", claudeMDPath)
+		}
+	}
+
 	return nil
+}
+
+// defaultClaudeMD returns a fallback CLAUDE.md template with role-specific
+// context. This is used when no claude-instructions config beads are available.
+func defaultClaudeMD(role string) string {
+	if role == "" {
+		role = "crew"
+	}
+	project := os.Getenv("BOAT_PROJECT")
+	agent := os.Getenv("BOAT_AGENT")
+
+	projectSuffix := ""
+	if project != "" {
+		projectSuffix = " (project: " + project + ")"
+	}
+	agentLine := ""
+	if agent != "" {
+		agentLine = "Agent name: " + agent + "\n"
+	}
+	projectRef := "your project"
+	if project != "" {
+		projectRef = project
+	}
+
+	r := strings.NewReplacer(
+		"{{ROLE}}", role,
+		"{{PROJECT_SUFFIX}}", projectSuffix,
+		"{{AGENT_LINE}}", agentLine,
+		"{{PROJECT_REF}}", projectRef,
+	)
+	return r.Replace(defaultClaudeMDTemplate)
 }
 
 // writeUserSettings writes user-level Claude Code settings to ~/.claude/settings.json.

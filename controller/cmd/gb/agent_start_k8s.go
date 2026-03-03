@@ -91,12 +91,11 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 	// and workspace hooks to workspace/.claude/settings.json.
 	if err := runSetupClaude(context.Background(), workspace, cfg.role); err != nil {
 		fmt.Printf("[gb agent start] config beads not found, installing default hooks\n")
-		if err2 := runSetupClaudeDefaults(workspace); err2 != nil {
+		if err2 := runSetupClaudeDefaults(workspace, cfg.role); err2 != nil {
 			fmt.Printf("[gb agent start] warning: could not write workspace .claude/settings.json: %v\n", err2)
 		}
 	}
 
-	writeClaudeMD(cfg)
 	writeOnboardingSkip()
 
 	// ── Context + signal handling ────────────────────────────────────────
