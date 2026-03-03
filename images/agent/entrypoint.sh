@@ -322,14 +322,6 @@ if [ "${MATERIALIZED}" = "0" ]; then
         echo "[entrypoint] WARNING: gb setup --defaults failed"
 fi
 
-# MCP server configuration is handled by gb setup claude above — it writes
-# {workspace}/.mcp.json from claude-mcp:* config beads (or auto-detects
-# playwright-mcp as a default).
-
-# RTK context file (RTK.md) is now installed by gb setup claude.
-
-# CLAUDE.md is now written by gb setup claude (from config beads or defaults).
-
 # ── Skip Claude onboarding wizard ─────────────────────────────────────────
 
 printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark","bypassPermissionsModeAccepted":true}\n' > "${HOME}/.claude.json"
