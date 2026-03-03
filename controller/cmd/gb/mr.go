@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -35,12 +37,29 @@ var mrListCmd = &cobra.Command{
 	RunE:  runMRList,
 }
 
+var mrEnvCmd = &cobra.Command{
+	Use:   "env <bead-id-or-mr-url>",
+	Short: "Resolve deploy-mr environment URLs from CI artifacts",
+	Long: `Finds the deploy-mr job in the MR's latest pipeline and downloads its
+.urls/environment.env artifact to extract the actual deployment URLs.
+
+This is the authoritative source for MR deployment URLs — it reflects what
+the deploy job actually created, avoiding issues with local slug computation.
+
+Output variables: TENANT_ID, UNITY_URL, HARMONY_URL, BASE_URL, KEYCLOAK_URL, etc.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runMREnv,
+}
+
 func init() {
 	mrCmd.PersistentFlags().StringVar(&mrGitLabURL, "gitlab-url", os.Getenv("GITLAB_BASE_URL"), "GitLab base URL")
 	mrCmd.PersistentFlags().StringVar(&mrGitLabToken, "gitlab-token", os.Getenv("GITLAB_API_TOKEN"), "GitLab API token")
 
+	mrEnvCmd.Flags().Bool("export", false, "Output as export VAR=value (shell-eval friendly)")
+
 	mrCmd.AddCommand(mrStatusCmd)
 	mrCmd.AddCommand(mrListCmd)
+	mrCmd.AddCommand(mrEnvCmd)
 }
 
 // resolveMRURL resolves a bead ID or MR URL argument to an MR URL string.
@@ -124,6 +143,77 @@ func runMRStatus(cmd *cobra.Command, args []string) error {
 			if approvers := bead.Fields["mr_approvers"]; approvers != "" {
 				cmd.Printf("Approvers: %s\n", approvers)
 			}
+		}
+	}
+	return nil
+}
+
+func runMREnv(cmd *cobra.Command, args []string) error {
+	projectPath, pipelineID, err := resolvePipelineInfo(cmd, args[0])
+	if err != nil {
+		return err
+	}
+
+	client, err := newMRGitLabClient()
+	if err != nil {
+		return err
+	}
+
+	// Find the deploy-mr job.
+	jobs, err := client.ListPipelineJobsByPath(cmd.Context(), projectPath, pipelineID)
+	if err != nil {
+		return fmt.Errorf("listing jobs: %w", err)
+	}
+
+	var deployJob *bridge.GitLabJob
+	for i := range jobs {
+		if jobs[i].Name == "deploy-mr" {
+			deployJob = &jobs[i]
+			break
+		}
+	}
+	if deployJob == nil {
+		return fmt.Errorf("no deploy-mr job found in pipeline #%d", pipelineID)
+	}
+
+	if deployJob.Status != "success" {
+		return fmt.Errorf("deploy-mr job status is %q (expected success)", deployJob.Status)
+	}
+
+	// Download the .urls/environment.env artifact file.
+	data, err := client.DownloadJobArtifactFile(cmd.Context(), projectPath, deployJob.ID, ".urls/environment.env")
+	if err != nil {
+		return fmt.Errorf("downloading environment.env from deploy-mr job %d: %w", deployJob.ID, err)
+	}
+
+	// Parse the env file into key=value pairs.
+	type envVar struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	var vars []envVar
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			vars = append(vars, envVar{Key: k, Value: v})
+		}
+	}
+
+	if jsonOutput {
+		printJSON(vars)
+		return nil
+	}
+
+	exportMode, _ := cmd.Flags().GetBool("export")
+	for _, v := range vars {
+		if exportMode {
+			cmd.Printf("export %s=%s\n", v.Key, v.Value)
+		} else {
+			cmd.Printf("%s=%s\n", v.Key, v.Value)
 		}
 	}
 	return nil

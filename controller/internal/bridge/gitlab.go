@@ -241,6 +241,34 @@ func (c *GitLabClient) DownloadJobArtifacts(ctx context.Context, projectPath str
 	return nil
 }
 
+// DownloadJobArtifactFile downloads a single file from a job's artifacts.
+// GET /projects/:id/jobs/:job_id/artifacts/*artifact_path
+func (c *GitLabClient) DownloadJobArtifactFile(ctx context.Context, projectPath string, jobID int, artifactPath string) ([]byte, error) {
+	encoded := url.PathEscape(projectPath)
+	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/jobs/%d/artifacts/%s", c.baseURL, encoded, jobID, artifactPath)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create artifact file request: %w", err)
+	}
+	req.Header.Set("PRIVATE-TOKEN", c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch artifact file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("artifact file download returned %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read artifact file: %w", err)
+	}
+	return data, nil
+}
+
 // UpdateMergeRequestDescription updates only the description field of a merge request.
 // PUT /projects/:id/merge_requests/:merge_request_iid
 func (c *GitLabClient) UpdateMergeRequestDescription(ctx context.Context, projectPath string, mrIID int, description string) error {
