@@ -9,7 +9,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -107,44 +106,6 @@ func setupPVC(cfg k8sConfig) error {
 	}
 
 	return nil
-}
-
-// writeClaudeSettings writes ~/.claude/settings.json with tool permissions and
-// any detected LSP plugins.
-func writeClaudeSettings(claudeDir string) error {
-	type settings struct {
-		Permissions    map[string][]string `json:"permissions"`
-		EnabledPlugins map[string]bool     `json:"enabledPlugins,omitempty"`
-	}
-
-	s := settings{
-		Permissions: map[string][]string{
-			"allow": {"Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "Glob(*)", "Grep(*)", "WebFetch(*)", "WebSearch(*)"},
-			"deny":  {},
-		},
-	}
-
-	plugins := map[string]bool{}
-	if _, err := exec.LookPath("gopls"); err == nil {
-		plugins["gopls-lsp@claude-plugins-official"] = true
-		fmt.Printf("[gb agent start] enabling gopls LSP plugin\n")
-	}
-	if _, err := exec.LookPath("rust-analyzer"); err == nil {
-		plugins["rust-analyzer-lsp@claude-plugins-official"] = true
-		fmt.Printf("[gb agent start] enabling rust-analyzer LSP plugin\n")
-	}
-	if len(plugins) > 0 {
-		s.EnabledPlugins = plugins
-	}
-
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(claudeDir, "settings.json"), append(data, '\n'), 0o644)
 }
 
 // writeClaudeMD writes CLAUDE.md into the workspace if it doesn't already

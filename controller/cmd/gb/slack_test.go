@@ -212,7 +212,7 @@ func TestSlackReply_Integration(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		json.NewDecoder(r.Body).Decode(&receivedBody)
+		_ = json.NewDecoder(r.Body).Decode(&receivedBody)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(slackReplyResult{OK: true, Timestamp: "111.225"})
 	}))

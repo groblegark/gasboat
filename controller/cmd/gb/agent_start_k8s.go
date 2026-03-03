@@ -191,13 +191,6 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 	}
 }
 
-// isRateLimited checks whether the agent exited due to rate limiting by
-// looking for the marker file written by monitorAgentExit.
-func isRateLimited() bool {
-	_, err := os.Stat("/tmp/.agent_rate_limited")
-	return err == nil
-}
-
 // runCoopOnce starts coop for a single session, launches per-session
 // goroutines, waits for coop to exit, and returns its exit code.
 func runCoopOnce(ctx context.Context, cfg k8sConfig, coopStateDir, resumeLog string) (int, error) {

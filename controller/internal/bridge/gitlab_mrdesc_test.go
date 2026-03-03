@@ -142,14 +142,14 @@ func TestSyncMRDescription_UpdatesDescription(t *testing.T) {
 				IID:         42,
 				Description: "Existing MR description",
 			}
-			json.NewEncoder(w).Encode(mr)
+			_ = json.NewEncoder(w).Encode(mr)
 			return
 		}
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		json.NewDecoder(r.Body).Decode(&gotBody)
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{})
+		_ = json.NewEncoder(w).Encode(map[string]string{})
 	}))
 	defer srv.Close()
 
@@ -199,7 +199,7 @@ func TestSyncMRDescription_SkipsWhenUnchanged(t *testing.T) {
 		}
 		putCalled = true
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{})
+		_ = json.NewEncoder(w).Encode(map[string]string{})
 	}))
 	defer srv.Close()
 

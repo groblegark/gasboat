@@ -89,7 +89,7 @@ func (a *SlackThreadAPI) handleGetThreadMessages(w http.ResponseWriter, r *http.
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // replyRequest is the request body for POST /api/slack/threads/reply.
@@ -134,5 +134,5 @@ func (a *SlackThreadAPI) handlePostReply(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(replyResponse{OK: true, Timestamp: ts})
+	_ = json.NewEncoder(w).Encode(replyResponse{OK: true, Timestamp: ts})
 }

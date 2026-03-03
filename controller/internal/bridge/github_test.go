@@ -298,7 +298,7 @@ func TestGetCommitForDigest(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"id":1,"name":"sha256:olddigest000000","metadata":{"package_type":"container","container":{"tags":["v1.0.0"]}}},
 			{"id":2,"name":"sha256:abc123def456789","metadata":{"package_type":"container","container":{"tags":["latest","sha-deadbeef1234567"]}}}
 		]`))
