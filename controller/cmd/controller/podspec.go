@@ -367,6 +367,17 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		spec.Env["CLAUDE_MODEL"] = cfg.ClaudeModel
 	}
 
+	// Claude Agent Teams: enable team lead → teammate coordination.
+	if cfg.ClaudeTeamsEnabled {
+		spec.Env["CLAUDE_TEAMS_ENABLED"] = "true"
+	}
+	if cfg.ClaudeTeammateMode != "" {
+		spec.Env["CLAUDE_TEAMMATE_MODE"] = cfg.ClaudeTeammateMode
+	}
+	if cfg.ClaudeTeamsMaxTeammates > 0 {
+		spec.Env["CLAUDE_TEAMS_MAX_TEAMMATES"] = fmt.Sprintf("%d", cfg.ClaudeTeamsMaxTeammates)
+	}
+
 	// E2E beads address: isolated beads instance for e2e tests so spawn
 	// events don't hit the production agents controller.
 	if cfg.BeadsE2EHTTPAddr != "" {

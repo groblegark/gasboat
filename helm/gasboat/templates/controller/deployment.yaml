@@ -182,6 +182,18 @@ spec:
             - name: CLAUDE_MODEL
               value: {{ .Values.agents.claudeModel }}
             {{- end }}
+            {{- if .Values.agents.claudeTeams.enabled }}
+            - name: CLAUDE_TEAMS_ENABLED
+              value: "true"
+            {{- if .Values.agents.claudeTeams.teammateMode }}
+            - name: CLAUDE_TEAMMATE_MODE
+              value: {{ .Values.agents.claudeTeams.teammateMode }}
+            {{- end }}
+            {{- if gt (int .Values.agents.claudeTeams.maxTeammates) 0 }}
+            - name: CLAUDE_TEAMS_MAX_TEAMMATES
+              value: {{ .Values.agents.claudeTeams.maxTeammates | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.agents.beadsE2EHTTPAddr }}
             - name: BEADS_E2E_HTTP_ADDR
               value: {{ .Values.agents.beadsE2EHTTPAddr }}

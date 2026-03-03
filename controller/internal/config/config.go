@@ -81,6 +81,20 @@ type Config struct {
 	// Injected as CLAUDE_MODEL env var. When empty, Claude Code uses its default.
 	ClaudeModel string
 
+	// ClaudeTeamsEnabled enables Claude Code Agent Teams mode for agent pods
+	// (env: CLAUDE_TEAMS_ENABLED). When true, the team lead session can spawn
+	// and coordinate teammate sessions within the same pod.
+	ClaudeTeamsEnabled bool
+
+	// ClaudeTeammateMode is the teammate display mode (env: CLAUDE_TEAMMATE_MODE).
+	// Valid values: "tmux" (each teammate in a tmux pane) or "in-process".
+	// Default: "tmux".
+	ClaudeTeammateMode string
+
+	// ClaudeTeamsMaxTeammates is the maximum number of teammate sessions per pod
+	// (env: CLAUDE_TEAMS_MAX_TEAMMATES). 0 means use Claude Code's built-in default.
+	ClaudeTeamsMaxTeammates int
+
 	// --- Secrets & Credentials ---
 
 	// ClaudeOAuthSecret is the K8s secret containing Claude OAuth credentials (env: CLAUDE_OAUTH_SECRET).
@@ -244,7 +258,10 @@ func Parse() *Config {
 		CoopBurstLimit:     envIntOr("COOP_BURST_LIMIT", 3),
 		CoopSyncInterval:   envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
 		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
-		ClaudeModel:        os.Getenv("CLAUDE_MODEL"),
+		ClaudeModel:             os.Getenv("CLAUDE_MODEL"),
+		ClaudeTeamsEnabled:      envBoolOr("CLAUDE_TEAMS_ENABLED", false),
+		ClaudeTeammateMode:      envOr("CLAUDE_TEAMMATE_MODE", "tmux"),
+		ClaudeTeamsMaxTeammates: envIntOr("CLAUDE_TEAMS_MAX_TEAMMATES", 0),
 
 		// Secrets & Credentials
 		ClaudeOAuthSecret:      os.Getenv("CLAUDE_OAUTH_SECRET"),

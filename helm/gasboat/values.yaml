@@ -125,6 +125,21 @@ agents:
   # If empty, Claude Code uses its built-in default (Sonnet).
   claudeModel: ""
 
+  # --- Claude Agent Teams ---
+
+  # Claude Code Agent Teams: allow a team lead session to spawn and coordinate
+  # teammate sessions within the same pod using shared task lists and mailboxes.
+  claudeTeams:
+    # Enable agent teams mode (sets CLAUDE_TEAMS_ENABLED=true on agent pods)
+    enabled: false
+    # Teammate display mode: 'tmux' (each teammate gets a tmux pane) or
+    # 'in-process' (teammates run in-process). Default: tmux.
+    teammateMode: "tmux"
+    # Maximum number of teammate sessions per pod (optional resource hint).
+    # Passed as CLAUDE_TEAMS_MAX_TEAMMATES. When 0 or omitted, Claude Code
+    # uses its built-in default.
+    maxTeammates: 0
+
   # Beads HTTP address for the e2e-isolated namespace. When set, agent pods
   # get BEADS_E2E_HTTP_ADDR so e2e tests create spawn events in an isolated
   # beads instance instead of the production one.
