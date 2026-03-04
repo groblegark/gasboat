@@ -610,13 +610,15 @@ tasks:
         libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
         libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
         libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
-        libxrandr2 fonts-noto-color-emoji libfontconfig1 libfreetype6
+        libxrandr2 fonts-noto-color-emoji libfontconfig1 libfreetype6 \
+        libsqlite3-0 libavahi-client3
       # Copy dpkg-managed files (use -a to preserve symlinks)
       for pkg in libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
           libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
           libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 \
           libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 \
-          libxrandr2 libfontconfig1 libfreetype6 fonts-noto-color-emoji; do
+          libxrandr2 libfontconfig1 libfreetype6 fonts-noto-color-emoji \
+          libsqlite3-0 libavahi-client3; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -e "$f" ] || continue  # -e matches files, symlinks, and dirs
           [ -d "$f" ] && { mkdir -p "$OUT$f"; continue; }  # create dirs
@@ -628,7 +630,7 @@ tasks:
           libasound libatk-1 libatk-bridge libatspi libcairo libcups libdbus-1 \
           libdrm libgbm libglib-2 libgobject-2 libpango-1 libX11 libxcb \
           libXcomposite libXdamage libXext libXfixes libxkbcommon libXrandr \
-          libfontconfig libfreetype; do
+          libfontconfig libfreetype libsqlite3 libavahi; do
         for f in /usr/lib/x86_64-linux-gnu/${pattern}*; do
           [ -e "$f" ] || continue
           mkdir -p "$OUT$(dirname "$f")"
@@ -637,7 +639,8 @@ tasks:
       done
       # Transitive deps via ldd
       for bin in /usr/lib/x86_64-linux-gnu/libcairo.so* /usr/lib/x86_64-linux-gnu/libpango*.so* \
-          /usr/lib/x86_64-linux-gnu/libgdk*.so* /usr/lib/x86_64-linux-gnu/libgtk*.so*; do
+          /usr/lib/x86_64-linux-gnu/libgdk*.so* /usr/lib/x86_64-linux-gnu/libgtk*.so* \
+          /usr/lib/x86_64-linux-gnu/libnss3.so* /usr/lib/x86_64-linux-gnu/libcups.so*; do
         [ -f "$bin" ] || continue
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -e "$lib" ] || continue
