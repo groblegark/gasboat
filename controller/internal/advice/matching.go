@@ -53,9 +53,9 @@ func EnrichAgentSubscriptions(ctx context.Context, daemon *beadsapi.Client, agen
 		}
 	}
 
-	// Derive role: and rig: subscriptions from the agent bead's own labels.
+	// Derive role:, rig:, and project: subscriptions from the agent bead's own labels.
 	for _, label := range agentBead.Labels {
-		if strings.HasPrefix(label, "role:") || strings.HasPrefix(label, "rig:") {
+		if strings.HasPrefix(label, "role:") || strings.HasPrefix(label, "rig:") || strings.HasPrefix(label, "project:") {
 			subs = append(subs, label)
 		}
 	}

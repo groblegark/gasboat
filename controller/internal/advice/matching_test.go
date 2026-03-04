@@ -139,6 +139,31 @@ func TestCategorizeScope_GroupPrefix(t *testing.T) {
 	}
 }
 
+func TestMatchesSubscriptions_ProjectMatch(t *testing.T) {
+	labels := []string{"project:gasboat"}
+	subs := []string{"global", "role:crew", "project:gasboat"}
+	if !MatchesSubscriptions(labels, subs) {
+		t.Error("project:gasboat advice should match agent with project:gasboat subscription")
+	}
+}
+
+func TestMatchesSubscriptions_ProjectMismatch(t *testing.T) {
+	labels := []string{"project:gasboat"}
+	subs := []string{"global", "role:crew"}
+	if MatchesSubscriptions(labels, subs) {
+		t.Error("project:gasboat advice should not match agent without project:gasboat subscription")
+	}
+}
+
+func TestMatchesSubscriptions_ProjectAndRig(t *testing.T) {
+	// Advice scoped to both project and rig (AND group)
+	labels := []string{"g0:project:gasboat", "g0:rig:gasboat"}
+	subs := []string{"global", "project:gasboat", "rig:gasboat"}
+	if !MatchesSubscriptions(labels, subs) {
+		t.Error("project+rig AND group should match when both present in subscriptions")
+	}
+}
+
 func TestBuildAgentSubscriptions(t *testing.T) {
 	subs := BuildAgentSubscriptions("gasboat/crews/bot", nil)
 
