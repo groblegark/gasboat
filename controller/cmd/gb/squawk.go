@@ -9,24 +9,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var sayCmd = &cobra.Command{
-	Use:   "say <message>",
+var squawkCmd = &cobra.Command{
+	Use:   "squawk <message>",
 	Short: "Send an informational message to the operator",
 	Long: `Posts a short informational message that the operator will see in Slack.
 
 The message is stored as a bead (type=message) and relayed to the
 appropriate Slack thread by the bridge. The agent does not need to know
-about Slack — it just "says" something.
+about Slack — it just "squawks" something.
 
 Good for: progress updates, completion notices, findings worth flagging.
 Not for: questions (use gb decision), long reports (use gb decision report),
 or agent-to-agent comms (use gb mail send).`,
 	GroupID: "orchestration",
 	Args:   cobra.ExactArgs(1),
-	RunE:   runSay,
+	RunE:   runSquawk,
 }
 
-func runSay(cmd *cobra.Command, args []string) error {
+func runSquawk(cmd *cobra.Command, args []string) error {
 	text := args[0]
 	if text == "" {
 		return fmt.Errorf("message text cannot be empty")
@@ -52,7 +52,7 @@ func runSay(cmd *cobra.Command, args []string) error {
 		Title:     title,
 		Type:      "message",
 		Kind:      "data",
-		Labels:    []string{"say", fmt.Sprintf("from:%s", actor)},
+		Labels:    []string{"squawk", fmt.Sprintf("from:%s", actor)},
 		Fields:    json.RawMessage(fieldsJSON),
 		CreatedBy: actor,
 	})

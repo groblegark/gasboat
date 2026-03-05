@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestSay_HandleClosed_IgnoresNonMessageBeads(t *testing.T) {
-	s := &Say{
+func TestSquawk_HandleClosed_IgnoresNonMessageBeads(t *testing.T) {
+	s := &Squawk{
 		daemon: newMockDaemon(),
 		logger: slog.Default(),
 		seen:   make(map[string]bool),
@@ -23,14 +23,14 @@ func TestSay_HandleClosed_IgnoresNonMessageBeads(t *testing.T) {
 	// No panic, no action — just verify it doesn't crash.
 }
 
-func TestSay_HandleClosed_IgnoresMessageWithoutSayLabel(t *testing.T) {
-	s := &Say{
+func TestSquawk_HandleClosed_IgnoresMessageWithoutSquawkLabel(t *testing.T) {
+	s := &Squawk{
 		daemon: newMockDaemon(),
 		logger: slog.Default(),
 		seen:   make(map[string]bool),
 	}
 
-	// Message bead without "say" label should be ignored.
+	// Message bead without "squawk" label should be ignored.
 	data := marshalSSEBeadPayload(BeadEvent{
 		ID:     "bd-msg1",
 		Type:   "message",
@@ -40,8 +40,8 @@ func TestSay_HandleClosed_IgnoresMessageWithoutSayLabel(t *testing.T) {
 	// No crash, no action.
 }
 
-func TestSay_HandleClosed_ProcessesSayMessage(t *testing.T) {
-	s := &Say{
+func TestSquawk_HandleClosed_ProcessesSquawkMessage(t *testing.T) {
+	s := &Squawk{
 		daemon: newMockDaemon(),
 		logger: slog.Default(),
 		seen:   make(map[string]bool),
@@ -49,9 +49,9 @@ func TestSay_HandleClosed_ProcessesSayMessage(t *testing.T) {
 	}
 
 	data := marshalSSEBeadPayload(BeadEvent{
-		ID:     "bd-say1",
+		ID:     "bd-squawk1",
 		Type:   "message",
-		Labels: []string{"say", "from:test-agent"},
+		Labels: []string{"squawk", "from:test-agent"},
 		Fields: map[string]string{
 			"source_agent": "test-agent",
 			"text":         "Build complete, MR ready for review",
@@ -60,22 +60,22 @@ func TestSay_HandleClosed_ProcessesSayMessage(t *testing.T) {
 	s.handleClosed(context.Background(), data)
 
 	// Verify dedup: same bead should be skipped on replay.
-	if !s.alreadySeen("bd-say1") {
+	if !s.alreadySeen("bd-squawk1") {
 		t.Error("expected bead to be marked as seen after processing")
 	}
 }
 
-func TestSay_HandleClosed_Dedup(t *testing.T) {
-	s := &Say{
+func TestSquawk_HandleClosed_Dedup(t *testing.T) {
+	s := &Squawk{
 		daemon: newMockDaemon(),
 		logger: slog.Default(),
 		seen:   make(map[string]bool),
 	}
 
 	data := marshalSSEBeadPayload(BeadEvent{
-		ID:     "bd-say2",
+		ID:     "bd-squawk2",
 		Type:   "message",
-		Labels: []string{"say", "from:agent-1"},
+		Labels: []string{"squawk", "from:agent-1"},
 		Fields: map[string]string{
 			"source_agent": "agent-1",
 			"text":         "First message",
@@ -84,7 +84,7 @@ func TestSay_HandleClosed_Dedup(t *testing.T) {
 
 	// First call processes it.
 	s.handleClosed(context.Background(), data)
-	if !s.alreadySeen("bd-say2") {
+	if !s.alreadySeen("bd-squawk2") {
 		t.Error("expected bead to be seen after first call")
 	}
 
@@ -92,7 +92,7 @@ func TestSay_HandleClosed_Dedup(t *testing.T) {
 	s.handleClosed(context.Background(), data)
 }
 
-func TestExtractSayAgent(t *testing.T) {
+func TestExtractSquawkAgent(t *testing.T) {
 	tests := []struct {
 		name string
 		bead BeadEvent
@@ -109,7 +109,7 @@ func TestExtractSayAgent(t *testing.T) {
 		{
 			name: "from label",
 			bead: BeadEvent{
-				Labels: []string{"say", "from:label-agent"},
+				Labels: []string{"squawk", "from:label-agent"},
 			},
 			want: "label-agent",
 		},
@@ -129,9 +129,9 @@ func TestExtractSayAgent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractSayAgent(tt.bead)
+			got := extractSquawkAgent(tt.bead)
 			if got != tt.want {
-				t.Errorf("extractSayAgent() = %q, want %q", got, tt.want)
+				t.Errorf("extractSquawkAgent() = %q, want %q", got, tt.want)
 			}
 		})
 	}

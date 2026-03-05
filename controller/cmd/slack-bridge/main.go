@@ -260,14 +260,14 @@ func main() {
 		chat.RegisterHandlers(sseStream)
 	}
 
-	// Register say message handler (agent→Slack informational messages).
+	// Register squawk message handler (agent→Slack informational messages).
 	if bot != nil {
-		say := bridge.NewSay(bridge.SayConfig{
+		squawk := bridge.NewSquawk(bridge.SquawkConfig{
 			Daemon: daemon,
 			Bot:    bot,
 			Logger: logger,
 		})
-		say.RegisterHandlers(sseStream)
+		squawk.RegisterHandlers(sseStream)
 	}
 
 	// Start live agent dashboard if configured.
