@@ -115,6 +115,8 @@ func outputWorkflowContext(w io.Writer, role string) {
 	}
 
 	// Fallback: hardcoded defaults.
+	// Thread agents get a merged output: thread-specific lifecycle with
+	// global workflow context for decisions/session-resumption.
 	outputWorkflowContextHardcoded(w, role)
 }
 
@@ -134,8 +136,9 @@ func outputConfigSections(w io.Writer, config map[string]any) {
 // outputWorkflowContextHardcoded writes the hardcoded workflow context as a
 // fallback when no config beads exist.
 // The role parameter controls which sections are included:
-//   - "polecat": omits Finding Work / Starting work sections, uses single-task lifecycle
-//   - all others (crew, captain, ""): full workflow context
+//   - "thread": interactive lifecycle, simplified commands (no Finding Work)
+//   - "polecat": single-task lifecycle, minimal commands
+//   - all others (crew, captain, ""): full ephemeral workflow context
 func outputWorkflowContextHardcoded(w io.Writer, role string) {
 	header := `# Beads Workflow Context
 
@@ -165,8 +168,39 @@ func outputWorkflowContextHardcoded(w io.Writer, role string) {
 `
 	fmt.Fprint(w, header)
 
-	// Finding Work and Starting work sections — omitted for polecat.
-	if role != "polecat" {
+	// Finding Work and Starting work sections — role-dependent.
+	switch role {
+	case "thread":
+		threadCommands := `
+## Essential Commands
+
+- ` + "`kd show <id>`" + ` - View bead details
+- ` + "`kd create \"...\" --type=task|bug|feature --priority=2`" + ` - Create tracking bead for work
+- ` + "`kd claim <id>`" + ` - Claim work (sets assignee + status=in_progress)
+- ` + "`kd close <id>`" + ` - Mark bead complete
+- ` + "`gb done`" + ` - Despawn when the user dismisses you
+
+## Thread Agent Workflow
+
+You are bound to a Slack thread. Respond to messages as they arrive.
+
+- If the user asks a question, answer it directly
+- If the user requests code changes, create a tracking bead, do the work, commit, push, and close the bead
+- After responding, **wait for follow-ups** — do NOT call ` + "`gb done`" + `
+`
+		fmt.Fprint(w, threadCommands)
+
+	case "polecat":
+		polecatCommands := `
+## Essential Commands
+
+- ` + "`kd show <id>`" + ` - View your assigned task details
+- ` + "`kd close <id>`" + ` - Mark your task complete
+- ` + "`gb done`" + ` - Despawn after completing your task
+`
+		fmt.Fprint(w, polecatCommands)
+
+	default:
 		findingWork := `
 ## Essential Commands
 
@@ -218,15 +252,6 @@ kd dep add <tests-id> <feature-id>  # Tests depend on Feature
 ` + "```" + `
 `
 		fmt.Fprint(w, findingWork)
-	} else {
-		polecatCommands := `
-## Essential Commands
-
-- ` + "`kd show <id>`" + ` - View your assigned task details
-- ` + "`kd close <id>`" + ` - Mark your task complete
-- ` + "`gb done`" + ` - Despawn after completing your task
-`
-		fmt.Fprint(w, polecatCommands)
 	}
 
 	decisions := `
@@ -274,8 +299,31 @@ Two complementary mechanisms restore context after interruptions:
 `
 	fmt.Fprint(w, decisions)
 
-	// Lifecycle section — polecat gets single-task language, others get full.
-	if role == "polecat" {
+	// Lifecycle section — role-dependent.
+	switch role {
+	case "thread":
+		lifecycle := `
+## Thread Agent — Interactive Lifecycle
+
+You are bound to a **Slack thread**. You exist to help the conversation
+participants with questions, code changes, and investigations.
+
+**Lifecycle:**
+1. Respond to the current message thoroughly
+2. After responding, **stay alive** — do NOT call ` + "`gb done`" + `
+3. Wait for follow-up messages (they arrive automatically as nudges)
+4. Only call ` + "`gb done`" + ` when the user **explicitly dismisses you**
+   (e.g., "thanks, that's all", "you can stop now", "dismissed")
+
+**Important rules:**
+- **Do NOT** call ` + "`gb done`" + ` after answering a question — the user may have follow-ups
+- **Do NOT** look for work via ` + "`gb ready`" + ` — you only respond to thread messages
+- If you complete code changes, commit and push before waiting for the next message
+- If you need human input mid-task, use ` + "`gb decision create`" + ` + ` + "`gb yield`" + `
+`
+		fmt.Fprint(w, lifecycle)
+
+	case "polecat":
 		lifecycle := `
 ## Single-Task Lifecycle
 
@@ -297,7 +345,8 @@ gb done                    # despawn — do NOT look for more work
 **Do NOT** just exit without calling ` + "`gb done`" + ` — exiting alone triggers an automatic restart.
 `
 		fmt.Fprint(w, lifecycle)
-	} else {
+
+	default:
 		lifecycle := `
 ## Agents Are Ephemeral
 

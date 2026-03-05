@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -73,6 +74,89 @@ func setupTestDaemon(t *testing.T, agentBead *mockBead, projectBeads []mockBead)
 	return func() {
 		daemon = oldDaemon
 		srv.Close()
+	}
+}
+
+// --- outputWorkflowContextHardcoded tests ---
+
+func TestOutputWorkflowContextHardcoded_ThreadRole(t *testing.T) {
+	var buf bytes.Buffer
+	outputWorkflowContextHardcoded(&buf, "thread")
+	out := buf.String()
+
+	// Thread agents get interactive lifecycle — must NOT say "Agents Are Ephemeral".
+	if strings.Contains(out, "Agents Are Ephemeral") {
+		t.Error("thread role should not include 'Agents Are Ephemeral'")
+	}
+
+	// Must include thread-specific lifecycle.
+	if !strings.Contains(out, "Thread Agent — Interactive Lifecycle") {
+		t.Error("thread role should include 'Thread Agent — Interactive Lifecycle'")
+	}
+
+	// Must tell agent to stay alive.
+	if !strings.Contains(out, "stay alive") {
+		t.Error("thread role should instruct agent to stay alive")
+	}
+
+	// Must NOT include Finding Work section.
+	if strings.Contains(out, "### Finding Work") {
+		t.Error("thread role should not include 'Finding Work' section")
+	}
+
+	// Must include Thread Agent Workflow section.
+	if !strings.Contains(out, "Thread Agent Workflow") {
+		t.Error("thread role should include 'Thread Agent Workflow' section")
+	}
+
+	// Must include decisions section (thread agents can still use decisions).
+	if !strings.Contains(out, "Human Decisions") {
+		t.Error("thread role should include 'Human Decisions' section")
+	}
+
+	// Must include Stop Gate section.
+	if !strings.Contains(out, "Stop Gate Contract") {
+		t.Error("thread role should include 'Stop Gate Contract' section")
+	}
+}
+
+func TestOutputWorkflowContextHardcoded_PolecatRole(t *testing.T) {
+	var buf bytes.Buffer
+	outputWorkflowContextHardcoded(&buf, "polecat")
+	out := buf.String()
+
+	if !strings.Contains(out, "Single-Task Lifecycle") {
+		t.Error("polecat role should include 'Single-Task Lifecycle'")
+	}
+	if strings.Contains(out, "### Finding Work") {
+		t.Error("polecat role should not include 'Finding Work' section")
+	}
+}
+
+func TestOutputWorkflowContextHardcoded_DefaultRole(t *testing.T) {
+	var buf bytes.Buffer
+	outputWorkflowContextHardcoded(&buf, "crew")
+	out := buf.String()
+
+	if !strings.Contains(out, "Agents Are Ephemeral") {
+		t.Error("default role should include 'Agents Are Ephemeral'")
+	}
+	if !strings.Contains(out, "### Finding Work") {
+		t.Error("default role should include 'Finding Work' section")
+	}
+	if strings.Contains(out, "Thread Agent") {
+		t.Error("default role should not include thread-specific content")
+	}
+}
+
+func TestOutputWorkflowContextHardcoded_EmptyRole(t *testing.T) {
+	var buf bytes.Buffer
+	outputWorkflowContextHardcoded(&buf, "")
+	out := buf.String()
+
+	// Empty role should behave like default (crew).
+	if !strings.Contains(out, "Agents Are Ephemeral") {
+		t.Error("empty role should include 'Agents Are Ephemeral'")
 	}
 }
 
