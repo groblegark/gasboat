@@ -394,6 +394,41 @@ func (c *Client) UpdateBeadFields(ctx context.Context, beadID string, fields map
 	return nil
 }
 
+// UpdateBeadFieldsTyped updates typed fields on a bead via a read-modify-write
+// cycle. Unlike UpdateBeadFields, values are passed as any, allowing callers
+// to provide proper JSON types (e.g., bool for boolean-typed schema fields).
+func (c *Client) UpdateBeadFieldsTyped(ctx context.Context, beadID string, fields map[string]any) error {
+	var bead beadJSON
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/beads/"+url.PathEscape(beadID), nil, &bead); err != nil {
+		return fmt.Errorf("reading bead %s for field update: %w", beadID, err)
+	}
+
+	var existing map[string]any
+	if len(bead.Fields) > 0 {
+		_ = json.Unmarshal(bead.Fields, &existing)
+	}
+	if existing == nil {
+		existing = make(map[string]any)
+	}
+
+	for k, v := range fields {
+		existing[k] = v
+	}
+
+	merged, err := json.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("marshalling merged fields for %s: %w", beadID, err)
+	}
+
+	body := map[string]json.RawMessage{
+		"fields": merged,
+	}
+	if err := c.doJSON(ctx, http.MethodPatch, "/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
+		return fmt.Errorf("updating fields on bead %s: %w", beadID, err)
+	}
+	return nil
+}
+
 // UpdateBeadNotes updates the notes field of a bead.
 func (c *Client) UpdateBeadNotes(ctx context.Context, beadID, notes string) error {
 	body := map[string]any{

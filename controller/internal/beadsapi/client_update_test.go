@@ -168,6 +168,58 @@ func TestUpdateBeadFields_PreservesExistingTypes(t *testing.T) {
 	}
 }
 
+// --- UpdateBeadFieldsTyped tests ---
+
+func TestUpdateBeadFieldsTyped_SendsBooleanProperly(t *testing.T) {
+	var patchBody []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet:
+			bead := beadJSON{
+				ID:     "bd-typed",
+				Fields: json.RawMessage(`{"agent":"test-agent","gate_satisfied_by":"ready"}`),
+			}
+			_ = json.NewEncoder(w).Encode(bead)
+
+		case r.Method == http.MethodPatch:
+			patchBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer srv.Close()
+
+	c := &Client{baseURL: srv.URL, httpClient: srv.Client()}
+	err := c.UpdateBeadFieldsTyped(context.Background(), "bd-typed", map[string]any{
+		"stop_requested": true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(patchBody, &body); err != nil {
+		t.Fatalf("failed to unmarshal PATCH body: %v", err)
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal(body["fields"], &fields); err != nil {
+		t.Fatalf("failed to unmarshal fields: %v", err)
+	}
+
+	// stop_requested should be boolean true, not string "true".
+	if v, ok := fields["stop_requested"].(bool); !ok || !v {
+		t.Errorf("expected stop_requested=true (bool), got %v (%T)", fields["stop_requested"], fields["stop_requested"])
+	}
+	// Existing string fields should be preserved.
+	if v, ok := fields["agent"].(string); !ok || v != "test-agent" {
+		t.Errorf("expected agent=\"test-agent\", got %v (%T)", fields["agent"], fields["agent"])
+	}
+	if v, ok := fields["gate_satisfied_by"].(string); !ok || v != "ready" {
+		t.Errorf("expected gate_satisfied_by=\"ready\", got %v (%T)", fields["gate_satisfied_by"], fields["gate_satisfied_by"])
+	}
+}
+
 // --- UpdateBeadNotes tests ---
 
 func TestUpdateBeadNotes_SendsCorrectBody(t *testing.T) {

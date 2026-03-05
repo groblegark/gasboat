@@ -154,8 +154,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := daemon.UpdateBeadFields(ctx, agentID, map[string]string{
-		"stop_requested": "true",
+	if err := daemon.UpdateBeadFieldsTyped(ctx, agentID, map[string]any{
+		"stop_requested": true,
 	}); err != nil {
 		return fmt.Errorf("setting stop_requested on bead %s: %w", agentID, err)
 	}
