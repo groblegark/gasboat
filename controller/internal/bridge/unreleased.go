@@ -30,11 +30,12 @@ type UnreleasedImage struct {
 
 // UnreleasedRepo holds unreleased commit info for a single repository.
 type UnreleasedRepo struct {
-	Repo      string           `json:"repo"`
-	LatestTag string           `json:"latestTag,omitempty"`
-	AheadBy   int              `json:"aheadBy"`
+	Repo      string             `json:"repo"`
+	LatestTag string             `json:"latestTag,omitempty"`
+	AheadBy   int                `json:"aheadBy"`
 	Commits   []UnreleasedCommit `json:"commits,omitempty"`
-	Error     string           `json:"error,omitempty"`
+	Error     string             `json:"error,omitempty"`
+	External  bool               `json:"external,omitempty"` // external dep — deployed via rolling tag
 }
 
 // UnreleasedCommit is a single commit in the unreleased response.
@@ -74,6 +75,7 @@ func GetUnreleasedData(ctx context.Context, cfg UnreleasedConfig) *UnreleasedRes
 					Repo:      r.String(),
 					LatestTag: result.LatestTag,
 					AheadBy:   result.AheadBy,
+					External:  r.External,
 				}
 				if result.Error != nil {
 					entry.Error = result.Error.Error()

@@ -57,6 +57,9 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 
 		if r.AheadBy == 0 {
 			text := fmt.Sprintf(":white_check_mark: *%s* `%s` — up to date", r.Repo, r.LatestTag)
+			if r.External {
+				text += "  _(ext dep — deployed via :latest)_"
+			}
 			blocks = append(blocks,
 				slack.NewSectionBlock(
 					slack.NewTextBlockObject("mrkdwn", text, false, false),
@@ -67,6 +70,9 @@ func (b *Bot) handleUnreleasedCommand(ctx context.Context, cmd slack.SlashComman
 		header := fmt.Sprintf(":rocket: *%s* `%s` → `main` — *%d* unreleased commit", r.Repo, r.LatestTag, r.AheadBy)
 		if r.AheadBy != 1 {
 			header += "s"
+		}
+		if r.External {
+			header += "\n:link: _ext dep — deployed via :latest re-tag, not this release_"
 		}
 		blocks = append(blocks,
 			slack.NewSectionBlock(

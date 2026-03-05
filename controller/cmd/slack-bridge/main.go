@@ -379,7 +379,7 @@ func parseConfig() *config {
 		threadingMode = "agent"
 	}
 
-	repos := parseRepoList(envOrDefault("UNRELEASED_REPOS", "groblegark/gasboat,groblegark/kbeads,groblegark/coop"))
+	repos := parseRepoList(envOrDefault("UNRELEASED_REPOS", "groblegark/gasboat,groblegark/kbeads~ext,groblegark/coop~ext"))
 
 	return &config{
 		beadsHTTPAddr:      envOrDefault("BEADS_HTTP_ADDR", "http://localhost:8080"),
@@ -407,6 +407,8 @@ func parseConfig() *config {
 }
 
 // parseRepoList parses a comma-separated list of "owner/repo" strings.
+// A repo suffixed with "~ext" is marked as an external dependency
+// (deployed via rolling tag, not its own release tags).
 func parseRepoList(s string) []bridge.RepoRef {
 	var repos []bridge.RepoRef
 	for _, entry := range strings.Split(s, ",") {
@@ -414,11 +416,16 @@ func parseRepoList(s string) []bridge.RepoRef {
 		if entry == "" {
 			continue
 		}
+		external := false
+		if after, found := strings.CutSuffix(entry, "~ext"); found {
+			entry = after
+			external = true
+		}
 		parts := strings.SplitN(entry, "/", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		repos = append(repos, bridge.RepoRef{Owner: parts[0], Repo: parts[1]})
+		repos = append(repos, bridge.RepoRef{Owner: parts[0], Repo: parts[1], External: external})
 	}
 	return repos
 }

@@ -24,8 +24,9 @@ type GitHubClient struct {
 
 // RepoRef identifies a GitHub repository.
 type RepoRef struct {
-	Owner string
-	Repo  string
+	Owner    string
+	Repo     string
+	External bool // external dep — deployed via rolling tag, not its own release
 }
 
 func (r RepoRef) String() string { return r.Owner + "/" + r.Repo }

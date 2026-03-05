@@ -557,7 +557,8 @@ slackBridge:
     # K8s secret name containing the token (key specified by secretKey)
     secretName: ""
     secretKey: "token"
-    # Comma-separated repos to check (default: groblegark/gasboat,groblegark/kbeads,groblegark/coop)
+    # Comma-separated repos to check. Suffix with ~ext to mark as external dep.
+    # Default: groblegark/gasboat,groblegark/kbeads~ext,groblegark/coop~ext
     repos: ""
 
   # Live agent activity dashboard — pinned Slack message updated periodically.

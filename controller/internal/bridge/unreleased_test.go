@@ -60,7 +60,7 @@ func TestGetUnreleasedData(t *testing.T) {
 		GitHub: client,
 		Repos: []RepoRef{
 			{Owner: "org", Repo: "repo1"},
-			{Owner: "org", Repo: "repo2"},
+			{Owner: "org", Repo: "repo2", External: true},
 		},
 		Version: "test-v1",
 	})
@@ -72,7 +72,7 @@ func TestGetUnreleasedData(t *testing.T) {
 		t.Fatalf("got %d repos, want 2", len(resp.Repos))
 	}
 
-	// repo1: 2 unreleased commits.
+	// repo1: 2 unreleased commits, not external.
 	r1 := resp.Repos[0]
 	if r1.Repo != "org/repo1" {
 		t.Errorf("repo1: got repo=%q, want org/repo1", r1.Repo)
@@ -83,6 +83,9 @@ func TestGetUnreleasedData(t *testing.T) {
 	if r1.LatestTag != "2026.59.1" {
 		t.Errorf("repo1: got latestTag=%q, want 2026.59.1", r1.LatestTag)
 	}
+	if r1.External {
+		t.Errorf("repo1: expected External=false")
+	}
 	if len(r1.Commits) != 2 {
 		t.Fatalf("repo1: got %d commits, want 2", len(r1.Commits))
 	}
@@ -91,10 +94,13 @@ func TestGetUnreleasedData(t *testing.T) {
 		t.Errorf("repo1: commit[0] message=%q, want 'feat: new thing'", r1.Commits[0].Message)
 	}
 
-	// repo2: up to date.
+	// repo2: up to date, external dep.
 	r2 := resp.Repos[1]
 	if r2.AheadBy != 0 {
 		t.Errorf("repo2: got aheadBy=%d, want 0", r2.AheadBy)
+	}
+	if !r2.External {
+		t.Errorf("repo2: expected External=true")
 	}
 }
 
