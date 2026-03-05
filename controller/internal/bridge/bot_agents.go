@@ -51,12 +51,17 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 		active[extractAgentName(a.AgentName)] = true
 	}
 
-	// Collect stale cards (agents not in the active set).
+	// Collect stale cards with their current refs so we can detect if a card
+	// was replaced between collection and deletion (race with ensureAgentCard).
+	type staleEntry struct {
+		agent string
+		ref   MessageRef
+	}
 	b.mu.Lock()
-	var stale []string
-	for agent := range b.agentCards {
+	var stale []staleEntry
+	for agent, ref := range b.agentCards {
 		if !active[extractAgentName(agent)] {
-			stale = append(stale, agent)
+			stale = append(stale, staleEntry{agent: agent, ref: ref})
 		}
 	}
 	b.mu.Unlock()
@@ -69,15 +74,20 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 	b.logger.Info("prune agent cards: removing stale cards",
 		"stale", len(stale), "total", cardCount, "active", len(activeAgents))
 
-	for _, agent := range stale {
+	for _, entry := range stale {
 		b.mu.Lock()
-		ref, ok := b.agentCards[agent]
-		if ok {
-			delete(b.agentCards, agent)
-			delete(b.agentPending, agent)
-			delete(b.agentState, agent)
-			delete(b.agentPodName, agent)
-			delete(b.agentImageTag, agent)
+		ref, ok := b.agentCards[entry.agent]
+		// Only delete if the ref hasn't been replaced since we collected it.
+		// A concurrent ensureAgentCard could have posted a fresh card.
+		if ok && ref.Timestamp == entry.ref.Timestamp && ref.ChannelID == entry.ref.ChannelID {
+			delete(b.agentCards, entry.agent)
+			delete(b.agentPending, entry.agent)
+			delete(b.agentState, entry.agent)
+			delete(b.agentPodName, entry.agent)
+			delete(b.agentImageTag, entry.agent)
+			delete(b.agentSeen, entry.agent)
+		} else {
+			ok = false // ref was replaced; skip Slack delete.
 		}
 		b.mu.Unlock()
 
@@ -85,13 +95,13 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 			// Delete the Slack message.
 			if _, _, err := b.api.DeleteMessageContext(ctx, ref.ChannelID, ref.Timestamp); err != nil {
 				b.logger.Warn("prune agent cards: failed to delete Slack message",
-					"agent", agent, "error", err)
+					"agent", entry.agent, "error", err)
 			}
 			// Remove from persisted state.
 			if b.state != nil {
-				_ = b.state.RemoveAgentCard(agent)
+				_ = b.state.RemoveAgentCard(entry.agent)
 			}
-			b.logger.Info("pruned stale agent card", "agent", agent)
+			b.logger.Info("pruned stale agent card", "agent", entry.agent)
 		}
 	}
 }
@@ -376,6 +386,11 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 		// No card under this identity — create one if threading is enabled.
 		// This handles identity drift (e.g., spawn used short name, updates use
 		// full assignee path) by posting a card under the canonical identity.
+		// Don't recreate cards for terminal-state or pruned agents to avoid
+		// resurrecting cards that were intentionally cleared.
+		if state == "done" || state == "failed" || state == "" {
+			return
+		}
 		if b.agentThreadingEnabled() {
 			channel := b.resolveChannel(agent)
 			if _, err := b.ensureAgentCard(ctx, agent, channel); err != nil {
@@ -571,6 +586,7 @@ func (b *Bot) killAgent(ctx context.Context, agentName string, force bool) error
 		delete(b.agentState, agentName)
 		delete(b.agentPodName, agentName)
 		delete(b.agentImageTag, agentName)
+		delete(b.agentSeen, agentName)
 	}
 	b.mu.Unlock()
 
