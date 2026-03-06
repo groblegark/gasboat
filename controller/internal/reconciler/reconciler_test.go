@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,9 +79,11 @@ func testLogger() *slog.Logger {
 
 func testConfig(namespace string) *config.Config {
 	return &config.Config{
-		Namespace:      namespace,
-		CoopBurstLimit: 3,
-		CoopMaxPods:    0, // unlimited by default
+		Namespace:           namespace,
+		CoopBurstLimit:      3,
+		CoopMaxPods:         0, // unlimited for tests unless overridden
+		CoopRateLimitMax:    0, // disabled for tests unless overridden
+		CoopRateLimitWindow: 5 * time.Minute,
 	}
 }
 
@@ -506,5 +509,69 @@ func TestIsDestructed_DefaultFalse(t *testing.T) {
 
 	if r.IsDestructed() {
 		t.Error("expected IsDestructed() = false by default")
+	}
+}
+
+// ── Rate limiter integration ────────────────────────────────────────────────
+
+func TestReconcile_RateLimiter_StopsCreationWhenExceeded(t *testing.T) {
+	// 10 beads want pods, rate limit is 2 per window, burst limit is high.
+	beads := make([]beadsapi.AgentBead, 10)
+	for i := range beads {
+		beads[i] = beadsapi.AgentBead{
+			ID:        fmt.Sprintf("bd-%d", i),
+			Project:   "proj",
+			Mode:      "crew",
+			Role:      "dev",
+			AgentName: fmt.Sprintf("agent%d", i),
+		}
+	}
+	lister := &mockLister{beads: beads}
+	mgr := &mockManager{pods: nil}
+
+	cfg := testConfig("ns")
+	cfg.CoopBurstLimit = 10      // high burst limit
+	cfg.CoopRateLimitMax = 2     // only 2 per window
+	cfg.CoopRateLimitWindow = 5 * time.Minute
+
+	r := New(lister, mgr, cfg, testLogger(), simpleSpecBuilder("img:v1"))
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should create exactly 2 pods (rate limit), then stop.
+	if len(mgr.created) != 2 {
+		t.Errorf("expected 2 pods created (rate limited), got %d", len(mgr.created))
+	}
+}
+
+func TestReconcile_RateLimiter_Disabled(t *testing.T) {
+	// With rate limit max=0 (disabled), burst limit controls creation.
+	beads := make([]beadsapi.AgentBead, 5)
+	for i := range beads {
+		beads[i] = beadsapi.AgentBead{
+			ID:        fmt.Sprintf("bd-%d", i),
+			Project:   "proj",
+			Mode:      "crew",
+			Role:      "dev",
+			AgentName: fmt.Sprintf("agent%d", i),
+		}
+	}
+	lister := &mockLister{beads: beads}
+	mgr := &mockManager{pods: nil}
+
+	cfg := testConfig("ns")
+	cfg.CoopBurstLimit = 10
+	cfg.CoopRateLimitMax = 0 // disabled
+
+	r := New(lister, mgr, cfg, testLogger(), simpleSpecBuilder("img:v1"))
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mgr.created) != 5 {
+		t.Errorf("expected 5 pods created (no rate limit), got %d", len(mgr.created))
 	}
 }

@@ -59,9 +59,18 @@ type Config struct {
 	CoopServiceAccount string
 
 	// CoopMaxPods is the maximum number of agent pods that can exist
-	// simultaneously (env: COOP_MAX_PODS). 0 means unlimited.
+	// simultaneously (env: COOP_MAX_PODS). 0 means unlimited. Default: 30.
 	// When the limit is reached, new pods are queued until existing ones finish.
 	CoopMaxPods int
+
+	// CoopRateLimitWindow is the sliding window for pod creation rate limiting
+	// (env: COOP_RATE_LIMIT_WINDOW). Default: 5m.
+	CoopRateLimitWindow time.Duration
+
+	// CoopRateLimitMax is the max pods that can be created within the rate limit
+	// window before the reconciler pauses creation (env: COOP_RATE_LIMIT_MAX).
+	// 0 means no rate limiting. Default: 20.
+	CoopRateLimitMax int
 
 	// CoopBurstLimit is the maximum number of pods to create in a single
 	// reconciliation pass (env: COOP_BURST_LIMIT). Default: 3.
@@ -253,8 +262,10 @@ func Parse() *Config {
 		// Agent Pods
 		CoopImage:          os.Getenv("COOP_IMAGE"),
 		CoopServiceAccount: os.Getenv("COOP_SERVICE_ACCOUNT"),
-		CoopMaxPods:        envIntOr("COOP_MAX_PODS", 4),
-		CoopBurstLimit:     envIntOr("COOP_BURST_LIMIT", 3),
+		CoopMaxPods:         envIntOr("COOP_MAX_PODS", 30),
+		CoopBurstLimit:      envIntOr("COOP_BURST_LIMIT", 3),
+		CoopRateLimitWindow: envDurationOr("COOP_RATE_LIMIT_WINDOW", 5*time.Minute),
+		CoopRateLimitMax:    envIntOr("COOP_RATE_LIMIT_MAX", 20),
 		CoopSyncInterval:   envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
 		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
 		ClaudeModel:             os.Getenv("CLAUDE_MODEL"),
