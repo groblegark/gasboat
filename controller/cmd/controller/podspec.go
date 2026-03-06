@@ -88,10 +88,11 @@ func BuildSpecFromBeadInfo(cfg *config.Config, project, mode, role, agentName st
 		spec.Env["SLACK_THREAD_TS"] = ts
 	}
 
-	// Prewarmed agents: set BOAT_STANDBY so the entrypoint blocks before
-	// launching Claude, waiting for assignment via nudge.
+	// Prewarmed agents: Claude starts normally (no BOAT_STANDBY). The gb prime
+	// hook detects agent_state=prewarmed and outputs a standby message. When
+	// assigned, the pool manager nudges the coop API to inject work.
 	if metadata["agent_state"] == "prewarmed" {
-		spec.Env["BOAT_STANDBY"] = "true"
+		spec.Env["BOAT_AGENT_STATE"] = "prewarmed"
 		spec.Prewarmed = true
 	}
 
@@ -171,10 +172,11 @@ func buildAgentPodSpec(cfg *config.Config, event subscriber.Event) podmanager.Ag
 		spec.Env["SLACK_THREAD_TS"] = ts
 	}
 
-	// Prewarmed agents: set BOAT_STANDBY so the entrypoint blocks before
-	// launching Claude, waiting for assignment via nudge.
+	// Prewarmed agents: Claude starts normally (no BOAT_STANDBY). The gb prime
+	// hook detects agent_state=prewarmed and outputs a standby message. When
+	// assigned, the pool manager nudges the coop API to inject work.
 	if event.Metadata["agent_state"] == "prewarmed" {
-		spec.Env["BOAT_STANDBY"] = "true"
+		spec.Env["BOAT_AGENT_STATE"] = "prewarmed"
 		spec.Prewarmed = true
 	}
 

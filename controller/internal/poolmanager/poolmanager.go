@@ -5,10 +5,13 @@
 package poolmanager
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -257,6 +260,10 @@ func (m *Manager) AssignPrewarmed(ctx context.Context, req AssignRequest) (*Assi
 		"bead", pick.ID, "agent", pick.AgentName,
 		"channel", req.Channel, "thread_ts", req.ThreadTS)
 
+	// Nudge the agent's Claude session with the work description.
+	// The coop_url is stored in the bead notes by the status reporter.
+	go m.nudgeAssignedAgent(pick.ID, req.Description)
+
 	return &AssignResult{
 		BeadID:    pick.ID,
 		AgentName: pick.AgentName,
@@ -303,6 +310,91 @@ func (m *Manager) RunLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// nudgeAssignedAgent sends the work description to the agent's Claude session
+// via the coop nudge API. This runs in a goroutine with retries because the
+// coop_url may not be in the bead notes immediately after pod creation.
+func (m *Manager) nudgeAssignedAgent(beadID, description string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	msg := "You have been assigned work from the prewarmed pool."
+	if description != "" {
+		msg += "\n\n" + description
+	}
+
+	// Retry loop: the coop_url is written to bead notes by the status reporter
+	// once the pod is running. It may take a few seconds after pod start.
+	for attempt := 0; attempt < 12; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
+		}
+
+		coopURL, err := m.getCoopURL(ctx, beadID)
+		if err != nil || coopURL == "" {
+			m.logger.Debug("coop_url not yet available for nudge",
+				"bead", beadID, "attempt", attempt+1)
+			continue
+		}
+
+		if err := m.sendNudge(ctx, coopURL, msg); err != nil {
+			m.logger.Warn("nudge failed, will retry",
+				"bead", beadID, "error", err, "attempt", attempt+1)
+			continue
+		}
+
+		m.logger.Info("nudged assigned agent with work description", "bead", beadID)
+		return
+	}
+
+	m.logger.Warn("exhausted nudge retries for assigned agent", "bead", beadID)
+}
+
+// getCoopURL extracts the coop_url from a bead's notes field.
+// Notes format: "coop_url: http://10.0.0.5:8080" (one per line).
+func (m *Manager) getCoopURL(ctx context.Context, beadID string) (string, error) {
+	bead, err := m.daemon.GetBead(ctx, beadID)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(bead.Notes, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "coop_url: ") {
+			return strings.TrimPrefix(line, "coop_url: "), nil
+		}
+	}
+	return "", nil
+}
+
+// sendNudge posts a nudge message to a coop agent's API.
+func (m *Manager) sendNudge(ctx context.Context, coopURL, message string) error {
+	body, err := json.Marshal(map[string]string{"message": message})
+	if err != nil {
+		return fmt.Errorf("marshal nudge: %w", err)
+	}
+
+	url := strings.TrimRight(coopURL, "/") + "/api/v1/agent/nudge"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("nudge returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func parseTime(s string) time.Time {

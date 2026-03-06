@@ -52,6 +52,14 @@ func runPrime(cmd *cobra.Command, args []string) error {
 
 	agentID := resolvePrimeAgentIdentity(cmd)
 
+	// Prewarmed agent standby: if BOAT_AGENT_STATE=prewarmed, output a
+	// lightweight standby message instead of full workflow context. The agent
+	// waits for a nudge from the pool manager when assigned work.
+	if os.Getenv("BOAT_AGENT_STATE") == "prewarmed" {
+		outputPrewarmedStandby(w, agentID)
+		return nil
+	}
+
 	// 1. Workflow context.
 	role := os.Getenv("BOAT_ROLE")
 	outputWorkflowContext(w, role)
@@ -78,6 +86,29 @@ func runPrime(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// outputPrewarmedStandby outputs a standby message for prewarmed agents.
+// These agents have Claude running but are waiting for work assignment via nudge.
+func outputPrewarmedStandby(w io.Writer, agentID string) {
+	fmt.Fprint(w, `# Prewarmed Agent — Standby Mode
+
+You are a **prewarmed agent** waiting in the idle pool for work assignment.
+
+**Do NOT** seek work, run `+"`gb ready`"+`, or create beads. Your session is warm and
+ready — when a Slack thread mention or operator assigns you, the pool manager
+will inject a nudge with your task description.
+
+**What to do:** Wait for a nudge message. It will contain:
+- Thread context (Slack channel, thread, description)
+- Your assigned task details
+
+When you receive the nudge, treat it as your starting prompt and begin work immediately.
+Follow the standard workflow: claim the task, do the work, commit, push, close the bead, `+"`gb done`"+`.
+`)
+	if agentID != "" {
+		fmt.Fprintf(w, "\nAgent: **%s**\n", agentID)
+	}
 }
 
 // resolvePrimeAgentIdentity resolves the agent identity for prime output.
