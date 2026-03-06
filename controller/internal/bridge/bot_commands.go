@@ -255,7 +255,7 @@ func (b *Bot) spawnAndRespond(ctx context.Context, cmd slack.SlashCommand, agent
 
 	b.logger.Info("spawned agent via Slack", "agent", agentName, "project", project, "task", taskID, "role", role, "prompt", customPrompt, "bead", beadID, "user", cmd.UserID)
 
-	text := fmt.Sprintf(":rocket: Spawning agent *%s*", agentName)
+	text := fmt.Sprintf(":rocket: Spawning agent *%s*", b.agentDisplayName(agentName))
 	if project != "" {
 		text += fmt.Sprintf(" in project *%s*", project)
 	}
@@ -634,11 +634,11 @@ func (b *Bot) handleKillCommand(ctx context.Context, cmd slack.SlashCommand) {
 		}
 		b.logger.Info("killed agent via Slack slash command", "agent", agentName, "force", force, "user", cmd.UserID)
 		_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-			slack.MsgOptionText(fmt.Sprintf(":skull: Agent *%s* terminated.", agentName), false))
+			slack.MsgOptionText(fmt.Sprintf(":skull: Agent *%s* terminated.", b.agentDisplayName(agentName)), false))
 	}()
 
 	_, _ = b.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-		slack.MsgOptionText(fmt.Sprintf(":hourglass_flowing_sand: Killing agent *%s*…", agentName), false))
+		slack.MsgOptionText(fmt.Sprintf(":hourglass_flowing_sand: Killing agent *%s*…", b.agentDisplayName(agentName)), false))
 }
 
 // handleClearThreadsCommand removes all thread→agent mappings from state.
