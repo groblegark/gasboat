@@ -219,17 +219,21 @@ func (b *Bot) openOtherModal(ctx context.Context, beadID string, callback slack.
 					Placeholder: slack.NewTextBlockObject("plain_text", "Type your response...", false, false),
 				},
 			),
-			slack.NewInputBlock(
-				"artifact_type",
-				slack.NewTextBlockObject("plain_text", "Required Artifact Type", false, false),
-				slack.NewTextBlockObject("plain_text", "What artifact will you produce?", false, false),
-				slack.NewOptionsSelectBlockElement(
+			func() slack.Block {
+				sel := slack.NewOptionsSelectBlockElement(
 					slack.OptTypeStatic,
 					slack.NewTextBlockObject("plain_text", "Choose artifact type...", false, false),
 					"artifact_type_input",
 					artifactTypeOpts...,
-				),
-			),
+				)
+				sel.InitialOption = artifactTypeOpts[0]
+				return slack.NewInputBlock(
+					"artifact_type",
+					slack.NewTextBlockObject("plain_text", "Required Artifact Type", false, false),
+					slack.NewTextBlockObject("plain_text", "What artifact will you produce?", false, false),
+					sel,
+				)
+			}(),
 		},
 	}
 
