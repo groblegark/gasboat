@@ -352,7 +352,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 			Namespace: spec.Namespace,
 			Phase:     string("Pending"),
 			Ready:     false,
-		})
+		}, false)
 		return nil
 
 	case subscriber.AgentDone, subscriber.AgentKill, subscriber.AgentStop:
@@ -374,7 +374,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 			Namespace: ns,
 			Phase:     phase,
 			Ready:     false,
-		})
+		}, false)
 		return err
 
 	case subscriber.AgentStuck:
@@ -395,7 +395,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 			Phase:     string("Pending"),
 			Ready:     false,
 			Message:   "restarted due to stuck detection",
-		})
+		}, false)
 		return nil
 
 	case subscriber.AgentUpdate:
