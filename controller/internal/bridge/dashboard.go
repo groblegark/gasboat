@@ -269,7 +269,7 @@ func (d *Dashboard) renderBlocks(agents []beadsapi.AgentBead, decisions []*beads
 			shown = shown[:cfg.MaxIdleShown]
 		}
 		for _, a := range shown {
-			blocks = append(blocks, dashboardAgentStartingBlock(a))
+			blocks = append(blocks, dashboardAgentStartingBlock(a, cfg.CoopmuxPublicURL))
 		}
 		if overflow := len(starting) - cfg.MaxIdleShown; overflow > 0 {
 			blocks = append(blocks, slack.NewContextBlock("",
@@ -380,8 +380,9 @@ func dashboardAgentWorkingBlock(a beadsapi.AgentBead, coopmuxURL string) slack.B
 		slack.NewTextBlockObject("mrkdwn", line, false, false), nil, nil)
 }
 
-func dashboardAgentStartingBlock(a beadsapi.AgentBead) slack.Block {
-	line := fmt.Sprintf(":hourglass_flowing_sand: *%s*", a.AgentName)
+func dashboardAgentStartingBlock(a beadsapi.AgentBead, coopmuxURL string) slack.Block {
+	displayName := coopmuxAgentLink(coopmuxURL, a.Metadata["pod_name"], a.AgentName)
+	line := fmt.Sprintf(":hourglass_flowing_sand: *%s*", displayName)
 	if a.Project != "" {
 		line += fmt.Sprintf(" · %s", a.Project)
 	}
