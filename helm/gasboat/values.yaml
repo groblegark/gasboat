@@ -156,8 +156,8 @@ agents:
   # beads instance instead of the production one.
   beadsE2EHTTPAddr: ""
 
-  # Max agent pods that can exist simultaneously (0 = unlimited)
-  coopMaxPods: 0
+  # Max agent pods that can exist simultaneously (0 = unlimited). Default: 30.
+  coopMaxPods: 30
 
   # Max pods to create in a single reconciliation pass (prevents memory pressure)
   coopBurstLimit: 3

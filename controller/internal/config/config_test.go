@@ -110,6 +110,7 @@ func TestParse_Defaults(t *testing.T) {
 	t.Setenv("NAMESPACE", "")
 	t.Setenv("BEADS_GRPC_ADDR", "")
 	t.Setenv("BEADS_HTTP_ADDR", "")
+	t.Setenv("COOP_MAX_PODS", "")
 	t.Setenv("COOP_BURST_LIMIT", "")
 	t.Setenv("COOP_SYNC_INTERVAL", "")
 	t.Setenv("ENABLE_LEADER_ELECTION", "")
@@ -127,6 +128,9 @@ func TestParse_Defaults(t *testing.T) {
 	}
 	if cfg.BeadsHTTPAddr != "localhost:8080" {
 		t.Errorf("BeadsHTTPAddr = %q, want localhost:8080", cfg.BeadsHTTPAddr)
+	}
+	if cfg.CoopMaxPods != 30 {
+		t.Errorf("CoopMaxPods = %d, want 30", cfg.CoopMaxPods)
 	}
 	if cfg.CoopBurstLimit != 3 {
 		t.Errorf("CoopBurstLimit = %d, want 3", cfg.CoopBurstLimit)

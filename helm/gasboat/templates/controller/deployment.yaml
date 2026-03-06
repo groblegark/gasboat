@@ -141,10 +141,8 @@ spec:
             - name: AGENT_STORAGE_CLASS
               value: {{ .Values.agents.agentStorageClass }}
             {{- end }}
-            {{- if .Values.agents.coopMaxPods }}
             - name: COOP_MAX_PODS
               value: {{ .Values.agents.coopMaxPods | quote }}
-            {{- end }}
             {{- if .Values.agents.coopBurstLimit }}
             - name: COOP_BURST_LIMIT
               value: {{ .Values.agents.coopBurstLimit | quote }}

@@ -80,7 +80,7 @@ func testConfig(namespace string) *config.Config {
 	return &config.Config{
 		Namespace:      namespace,
 		CoopBurstLimit: 3,
-		CoopMaxPods:    0, // unlimited by default
+		CoopMaxPods:    30, // matches new safe default
 	}
 }
 
