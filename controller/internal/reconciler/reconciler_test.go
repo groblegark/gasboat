@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -436,6 +437,80 @@ func TestReconcile_MaxPods_CapsActiveCount(t *testing.T) {
 	// 2 active + 1 new = 3 (the max). Should only create 1.
 	if len(mgr.created) != 1 {
 		t.Errorf("expected 1 pod created (max pods cap), got %d", len(mgr.created))
+	}
+}
+
+// ── Rate limiting tests ─────────────────────────────────────────────────────
+
+func TestReconcile_RateLimit_BlocksCreationsAcrossPasses(t *testing.T) {
+	// Rate limit of 2 creations per 5 minutes.
+	cfg := testConfig("ns")
+	cfg.CoopBurstLimit = 10 // high burst so it doesn't interfere
+	cfg.CoopRateLimitCount = 2
+	cfg.CoopRateLimitWindow = 5 * time.Minute
+
+	beads := []beadsapi.AgentBead{
+		{ID: "bd-0", Project: "proj", Mode: "crew", Role: "dev", AgentName: "agent0"},
+		{ID: "bd-1", Project: "proj", Mode: "crew", Role: "dev", AgentName: "agent1"},
+		{ID: "bd-2", Project: "proj", Mode: "crew", Role: "dev", AgentName: "agent2"},
+		{ID: "bd-3", Project: "proj", Mode: "crew", Role: "dev", AgentName: "agent3"},
+	}
+	lister := &mockLister{beads: beads}
+	mgr := &mockManager{pods: nil}
+
+	r := New(lister, mgr, cfg, testLogger(), simpleSpecBuilder("img:v1"))
+
+	// First pass: should create 2 then hit rate limit.
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	if len(mgr.created) != 2 {
+		t.Fatalf("expected 2 pods created in first pass, got %d", len(mgr.created))
+	}
+
+	// Second pass: rate limiter still active, no new pods should be created.
+	// Add the already-created pods as existing.
+	mgr.pods = []corev1.Pod{
+		makePod("crew-proj-dev-agent0", "ns", "crew", "proj", "dev", "agent0", corev1.PodRunning),
+		makePod("crew-proj-dev-agent1", "ns", "crew", "proj", "dev", "agent1", corev1.PodRunning),
+	}
+	mgr.created = nil
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if len(mgr.created) != 0 {
+		t.Errorf("expected 0 pods created in second pass (rate limited), got %d", len(mgr.created))
+	}
+
+	if !r.RateLimiter().IsLimited() {
+		t.Error("expected rate limiter to report limited state")
+	}
+}
+
+func TestReconcile_RateLimit_DisabledWhenZero(t *testing.T) {
+	cfg := testConfig("ns")
+	cfg.CoopBurstLimit = 10
+	cfg.CoopRateLimitCount = 0 // disabled
+
+	beads := make([]beadsapi.AgentBead, 5)
+	for i := range beads {
+		beads[i] = beadsapi.AgentBead{
+			ID:        fmt.Sprintf("bd-%d", i),
+			Project:   "proj",
+			Mode:      "crew",
+			Role:      "dev",
+			AgentName: fmt.Sprintf("agent%d", i),
+		}
+	}
+	lister := &mockLister{beads: beads}
+	mgr := &mockManager{pods: nil}
+
+	r := New(lister, mgr, cfg, testLogger(), simpleSpecBuilder("img:v1"))
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(mgr.created) != 5 {
+		t.Errorf("expected 5 pods created (rate limit disabled), got %d", len(mgr.created))
 	}
 }
 

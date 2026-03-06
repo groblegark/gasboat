@@ -68,6 +68,14 @@ type Config struct {
 	// This prevents memory pressure from simultaneous pod initialization.
 	CoopBurstLimit int
 
+	// CoopRateLimitCount is the maximum number of pod creations allowed within
+	// the sliding window (env: COOP_RATE_LIMIT_COUNT). Default: 10. 0 disables.
+	CoopRateLimitCount int
+
+	// CoopRateLimitWindow is the sliding window duration for the rate limiter
+	// (env: COOP_RATE_LIMIT_WINDOW). Default: 5m.
+	CoopRateLimitWindow time.Duration
+
 	// CoopSyncInterval is how often to reconcile pod statuses with beads (env: COOP_SYNC_INTERVAL).
 	// Default: 60s.
 	CoopSyncInterval time.Duration
@@ -254,8 +262,10 @@ func Parse() *Config {
 		CoopImage:          os.Getenv("COOP_IMAGE"),
 		CoopServiceAccount: os.Getenv("COOP_SERVICE_ACCOUNT"),
 		CoopMaxPods:        envIntOr("COOP_MAX_PODS", 0),
-		CoopBurstLimit:     envIntOr("COOP_BURST_LIMIT", 3),
-		CoopSyncInterval:   envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
+		CoopBurstLimit:      envIntOr("COOP_BURST_LIMIT", 3),
+		CoopRateLimitCount:  envIntOr("COOP_RATE_LIMIT_COUNT", 10),
+		CoopRateLimitWindow: envDurationOr("COOP_RATE_LIMIT_WINDOW", 5*time.Minute),
+		CoopSyncInterval:    envDurationOr("COOP_SYNC_INTERVAL", 60*time.Second),
 		AgentStorageClass:  os.Getenv("AGENT_STORAGE_CLASS"),
 		ClaudeModel:             os.Getenv("CLAUDE_MODEL"),
 		ClaudeTeamsEnabled:      envBoolOr("CLAUDE_TEAMS_ENABLED", false),

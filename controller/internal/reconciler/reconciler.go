@@ -32,6 +32,7 @@ type Reconciler struct {
 	mu             sync.Mutex // prevent concurrent reconciles
 	digestTracker  *ImageDigestTracker
 	upgradeTracker *UpgradeTracker
+	rateLimiter    *SpawnRateLimiter
 	destructed     atomic.Bool
 }
 
@@ -51,7 +52,13 @@ func New(
 		specBuilder:    specBuilder,
 		digestTracker:  NewImageDigestTracker(logger),
 		upgradeTracker: NewUpgradeTracker(logger),
+		rateLimiter:    NewSpawnRateLimiter(cfg.CoopRateLimitCount, cfg.CoopRateLimitWindow, logger),
 	}
+}
+
+// RateLimiter returns the spawn rate limiter for external status checks.
+func (r *Reconciler) RateLimiter() *SpawnRateLimiter {
+	return r.rateLimiter
 }
 
 // DigestTracker returns the image digest tracker for external callers
@@ -255,6 +262,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			continue
 		}
 
+		// Check sliding-window rate limit.
+		if !r.rateLimiter.Allow() {
+			r.logger.Info("spawn rate limit active, deferring pod", "deferred", name)
+			continue
+		}
+
 		// Create the pod.
 		spec := r.specBuilder(r.cfg, bead.Project, bead.Mode, bead.Role, bead.AgentName, bead.Metadata)
 		spec.BeadID = bead.ID
@@ -267,6 +280,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				"pod", name, "error", err)
 			continue
 		}
+		r.rateLimiter.Record()
 		// Mark the image as deployed so digest drift is cleared.
 		if r.digestTracker != nil && spec.Image != "" {
 			r.digestTracker.MarkDeployed(spec.Image)

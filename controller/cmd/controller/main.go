@@ -132,7 +132,8 @@ func main() {
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","version":"%s"}`, version)
+		rateLimited := rec.RateLimiter().IsLimited()
+		fmt.Fprintf(w, `{"status":"ok","version":"%s","rate_limited":%t}`, version, rateLimited)
 	})
 	healthMux.HandleFunc("/version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
