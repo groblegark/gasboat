@@ -465,7 +465,7 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 		contextText += fmt.Sprintf(" \u00b7 _%s_", formatAge(seen))
 	}
 	if taskTitle != "" {
-		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 80))
+		contextText += fmt.Sprintf("\n:wrench: %s", truncateText(taskTitle, 200))
 	}
 
 	blocks := []slack.Block{

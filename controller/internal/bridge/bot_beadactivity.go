@@ -17,7 +17,7 @@ func (b *Bot) NotifyBeadCreated(ctx context.Context, bead BeadEvent) {
 
 	b.recordActivity(agent)
 
-	title := truncateText(bead.Title, 60)
+	title := truncateText(bead.Title, 200)
 	text := fmt.Sprintf(":pencil2: Created %s: *%s*", bead.Type, title)
 	b.postAgentThreadMessage(ctx, agent, text)
 }
@@ -31,7 +31,7 @@ func (b *Bot) NotifyBeadClaimed(ctx context.Context, bead BeadEvent) {
 
 	b.recordActivity(agent)
 
-	title := truncateText(bead.Title, 60)
+	title := truncateText(bead.Title, 200)
 	text := fmt.Sprintf(":arrow_right: Claimed %s: *%s*", bead.Type, title)
 	b.postAgentThreadMessage(ctx, agent, text)
 }
@@ -45,7 +45,7 @@ func (b *Bot) NotifyBeadClosed(ctx context.Context, bead BeadEvent) {
 
 	b.recordActivity(agent)
 
-	title := truncateText(bead.Title, 60)
+	title := truncateText(bead.Title, 200)
 	text := fmt.Sprintf(":white_check_mark: Closed %s: *%s*", bead.Type, title)
 	b.postAgentThreadMessage(ctx, agent, text)
 }
