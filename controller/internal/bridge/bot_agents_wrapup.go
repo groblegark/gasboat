@@ -25,7 +25,7 @@ func (b *Bot) postCardWrapUpReply(ctx context.Context, agent string, bead BeadEv
 		return
 	}
 
-	text := fmt.Sprintf(":memo: *Wrap-up from %s*", agent)
+	text := fmt.Sprintf(":memo: *Wrap-up from %s*", b.agentDisplayName(agent))
 	text += formatWrapUpSlack(wrapupJSON)
 
 	_, _, err := b.api.PostMessageContext(ctx, ref.ChannelID,

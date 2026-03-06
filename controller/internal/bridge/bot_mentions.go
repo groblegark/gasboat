@@ -50,7 +50,7 @@ func (b *Bot) handleAppMention(ctx context.Context, ev *slackevents.AppMentionEv
 			if b.api != nil {
 				_, _ = b.api.PostEphemeral(ev.Channel, ev.User,
 					slack.MsgOptionText(
-						fmt.Sprintf(":x: No active agent named *%s*", extractAgentName(resolved)),
+						fmt.Sprintf(":x: No active agent named *%s*", b.agentDisplayName(resolved)),
 						false))
 			}
 			return
@@ -317,7 +317,7 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 			if b.api != nil {
 				_, _, _ = b.api.PostMessage(channel,
 					slack.MsgOptionText(
-						fmt.Sprintf(":information_source: An agent (*%s*) is already working in this thread.", extractAgentName(agent)),
+						fmt.Sprintf(":information_source: An agent (%s) is already working in this thread.", b.agentDisplayName(agent)),
 						false),
 					slack.MsgOptionTS(threadTS),
 				)

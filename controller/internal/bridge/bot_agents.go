@@ -88,7 +88,7 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 			}
 			blocks := buildCompactAgentCardBlocks(agent, state)
 			_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
-				slack.MsgOptionText(fmt.Sprintf("Agent: %s (%s)", extractAgentName(agent), state), false),
+				slack.MsgOptionText(fmt.Sprintf("Agent: %s (%s)", b.agentDisplayName(agent), state), false),
 				slack.MsgOptionBlocks(blocks...),
 			)
 			if err != nil {
@@ -154,7 +154,7 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	taskTitle := b.agentTaskTitle(ctx, agent)
 	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
-		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", b.agentDisplayName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
 	)
 	if err != nil {
@@ -422,7 +422,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	taskTitle := b.agentTaskTitle(ctx, agent)
 	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
-		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
+		slack.MsgOptionText(fmt.Sprintf("Agent: %s", b.agentDisplayName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
 	)
 	if err != nil {
@@ -645,7 +645,7 @@ func (b *Bot) killAgent(ctx context.Context, agentName string, force bool) error
 	if hasCard {
 		blocks := buildCompactAgentCardBlocks(agentName, "done")
 		_, _, _, err := b.api.UpdateMessageContext(killCtx, ref.ChannelID, ref.Timestamp,
-			slack.MsgOptionText(fmt.Sprintf("Agent: %s (done)", extractAgentName(agentName)), false),
+			slack.MsgOptionText(fmt.Sprintf("Agent: %s (done)", b.agentDisplayName(agentName)), false),
 			slack.MsgOptionBlocks(blocks...),
 		)
 		if err != nil {

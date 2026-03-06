@@ -87,7 +87,11 @@ func (c *Chat) handleClosed(ctx context.Context, data []byte) {
 	}
 
 	// Build response text from close reason or notes.
-	response := buildChatResponse(detail, bead.Assignee)
+	agentDisplay := ""
+	if c.bot != nil {
+		agentDisplay = c.bot.agentDisplayName(bead.Assignee)
+	}
+	response := buildChatResponse(detail, agentDisplay)
 
 	// Post as thread reply.
 	if c.bot != nil && c.bot.api != nil {
@@ -156,8 +160,9 @@ func parseSlackMeta(text string) (channelID, messageTS string) {
 }
 
 // buildChatResponse constructs the Slack reply text from a closed bead.
-func buildChatResponse(detail *beadsapi.BeadDetail, assignee string) string {
-	agentName := extractAgentName(assignee)
+// agentDisplay should be a pre-formatted display name (e.g. coopmux link).
+func buildChatResponse(detail *beadsapi.BeadDetail, agentDisplay string) string {
+	agentName := agentDisplay
 	if agentName == "" {
 		agentName = "Agent"
 	}
