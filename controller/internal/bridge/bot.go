@@ -558,6 +558,16 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	}
 }
 
+// agentDisplayName returns the agent's short name as a clickable coopmux link
+// (if the pod name is known), otherwise the plain short name. Thread-safe.
+func (b *Bot) agentDisplayName(agent string) string {
+	name := extractAgentName(agent)
+	b.mu.Lock()
+	podName := b.agentPodName[agent]
+	b.mu.Unlock()
+	return coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
+}
+
 // coopmuxAgentLink returns a Slack mrkdwn link to the agent's coopmux terminal
 // session if both coopmuxPublicURL and podName are available. Otherwise it
 // returns the plain agent name in bold.

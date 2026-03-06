@@ -229,13 +229,9 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 				"agent", agent, "error", err)
 		}
 	} else {
-		name := extractAgentName(agent)
-		b.mu.Lock()
-		podName := b.agentPodName[agent]
-		b.mu.Unlock()
-		displayName := coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
+		displayName := b.agentDisplayName(agent)
 		_, _, err := b.api.PostMessageContext(ctx, channel,
-			slack.MsgOptionText(fmt.Sprintf("Agent spawned: %s", name), false),
+			slack.MsgOptionText(fmt.Sprintf("Agent spawned: %s", extractAgentName(agent)), false),
 			slack.MsgOptionBlocks(
 				slack.NewSectionBlock(
 					slack.NewTextBlockObject("mrkdwn",
