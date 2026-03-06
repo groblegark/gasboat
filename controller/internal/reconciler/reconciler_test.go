@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -436,6 +437,40 @@ func TestReconcile_MaxPods_CapsActiveCount(t *testing.T) {
 	// 2 active + 1 new = 3 (the max). Should only create 1.
 	if len(mgr.created) != 1 {
 		t.Errorf("expected 1 pod created (max pods cap), got %d", len(mgr.created))
+	}
+}
+
+// ── Rate limiting tests ──────────────────────────────────────────────────────
+
+func TestReconcile_RateLimit_StopsCreationWhenTripped(t *testing.T) {
+	beads := make([]beadsapi.AgentBead, 5)
+	for i := range beads {
+		beads[i] = beadsapi.AgentBead{
+			ID:        fmt.Sprintf("bd-%d", i),
+			Project:   "proj",
+			Mode:      "crew",
+			Role:      "dev",
+			AgentName: fmt.Sprintf("agent%d", i),
+		}
+	}
+	lister := &mockLister{beads: beads}
+	mgr := &mockManager{pods: nil}
+
+	cfg := testConfig("ns")
+	cfg.CoopBurstLimit = 10         // high burst — not the bottleneck
+	cfg.CoopMaxPods = 0             // unlimited max
+	cfg.CoopRateLimitCount = 2      // only 2 creations per window
+	cfg.CoopRateLimitWindow = 5 * time.Minute
+
+	r := New(lister, mgr, cfg, testLogger(), simpleSpecBuilder("img:v1"))
+	err := r.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Rate limiter should cap at 2 creations.
+	if len(mgr.created) != 2 {
+		t.Errorf("expected 2 pods created (rate limit), got %d", len(mgr.created))
 	}
 }
 

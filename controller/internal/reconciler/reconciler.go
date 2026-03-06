@@ -32,6 +32,7 @@ type Reconciler struct {
 	mu             sync.Mutex // prevent concurrent reconciles
 	digestTracker  *ImageDigestTracker
 	upgradeTracker *UpgradeTracker
+	rateLimiter    *CreationRateLimiter
 	destructed     atomic.Bool
 }
 
@@ -51,6 +52,7 @@ func New(
 		specBuilder:    specBuilder,
 		digestTracker:  NewImageDigestTracker(logger),
 		upgradeTracker: NewUpgradeTracker(logger),
+		rateLimiter:    NewCreationRateLimiter(cfg.CoopRateLimitCount, cfg.CoopRateLimitWindow, logger),
 	}
 }
 
@@ -255,6 +257,16 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			continue
 		}
 
+		// Check creation rate limit.
+		if !r.rateLimiter.Allow() {
+			r.logger.Warn("creation rate limit exceeded, pausing pod creation",
+				"limit", r.cfg.CoopRateLimitCount,
+				"window", r.cfg.CoopRateLimitWindow,
+				"recent_creations", r.rateLimiter.Count(),
+				"deferred", name)
+			break // stop creating entirely this pass — don't just skip one
+		}
+
 		// Create the pod.
 		spec := r.specBuilder(r.cfg, bead.Project, bead.Mode, bead.Role, bead.AgentName, bead.Metadata)
 		spec.BeadID = bead.ID
@@ -271,6 +283,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		if r.digestTracker != nil && spec.Image != "" {
 			r.digestTracker.MarkDeployed(spec.Image)
 		}
+		r.rateLimiter.Record()
 		created++
 		activePods++
 	}
