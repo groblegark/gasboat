@@ -49,6 +49,10 @@ func (m *mockManager) DeleteAgentPod(_ context.Context, name, _ string) error {
 	return m.deleteErr
 }
 
+func (m *mockManager) DeleteAllAgentPods(_ context.Context, _ string, _ bool) (int, error) {
+	return 0, nil
+}
+
 func (m *mockManager) ListAgentPods(_ context.Context, _ string, _ map[string]string) ([]corev1.Pod, error) {
 	return m.pods, m.listErr
 }
