@@ -169,10 +169,10 @@ func (r *HTTPReporter) ReportPodStatus(ctx context.Context, agentName string, st
 	}
 
 	// Prewarmed agents stay prewarmed until explicitly assigned.
-	// Don't overwrite "prewarmed" with "working" when the pod is Running.
-	if prewarmed && state == "working" {
+	// Only allow terminal states (failed, done) through; skip spawning and working.
+	if prewarmed && state != "failed" && state != "done" {
 		r.logger.Debug("skipping status update for prewarmed agent",
-			"agent", agentName, "phase", status.Phase)
+			"agent", agentName, "phase", status.Phase, "suppressed_state", state)
 		return nil
 	}
 

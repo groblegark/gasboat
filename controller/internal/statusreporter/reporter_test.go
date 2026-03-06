@@ -343,20 +343,30 @@ func TestReportPodStatus_AllPhases(t *testing.T) {
 	}
 }
 
-func TestReportPodStatus_PrewarmedSkipsWorking(t *testing.T) {
-	daemon := &mockBeadUpdater{}
-	client := fake.NewSimpleClientset()
-	r := NewHTTPReporter(daemon, client, "ns", testLogger())
-
-	// Prewarmed agent with Running pod should NOT update to "working".
-	err := r.ReportPodStatus(context.Background(), "agent-1", PodStatus{
-		PodName: "pod-1", Namespace: "ns", Phase: "Running", Ready: true,
-	}, true)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestReportPodStatus_PrewarmedSkipsNonTerminal(t *testing.T) {
+	// Prewarmed agents should not have their state overwritten by spawning or working.
+	phases := []struct {
+		phase string
+	}{
+		{"Running"},
+		{"Pending"},
 	}
-	if len(daemon.stateCalls) != 0 {
-		t.Errorf("expected 0 state updates for prewarmed+Running, got %d", len(daemon.stateCalls))
+	for _, tt := range phases {
+		t.Run(tt.phase, func(t *testing.T) {
+			daemon := &mockBeadUpdater{}
+			client := fake.NewSimpleClientset()
+			r := NewHTTPReporter(daemon, client, "ns", testLogger())
+
+			err := r.ReportPodStatus(context.Background(), "agent-1", PodStatus{
+				PodName: "pod-1", Namespace: "ns", Phase: tt.phase, Ready: true,
+			}, true)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(daemon.stateCalls) != 0 {
+				t.Errorf("expected 0 state updates for prewarmed+%s, got %d", tt.phase, len(daemon.stateCalls))
+			}
+		})
 	}
 }
 
