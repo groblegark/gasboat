@@ -565,7 +565,7 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 func (b *Bot) agentDisplayName(agent string) string {
 	name := extractAgentName(agent)
 	b.mu.Lock()
-	podName := b.agentPodName[agent]
+	podName := b.agentPodName[name]
 	b.mu.Unlock()
 	return coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
 }
