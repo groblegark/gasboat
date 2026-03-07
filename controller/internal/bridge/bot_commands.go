@@ -454,6 +454,24 @@ func generateSpawnName(project string) string {
 	return prefix + "-" + randomSuffix(4)
 }
 
+// roleFromChannel resolves a Slack channel ID to a role name by checking the
+// channel_roles JSON field on project beads. Returns empty string if no mapping exists.
+func (b *Bot) roleFromChannel(ctx context.Context, channelID string) string {
+	projects, err := b.daemon.ListProjectBeads(ctx)
+	if err != nil {
+		b.logger.Error("failed to list projects for channel role lookup", "error", err)
+		return ""
+	}
+	for _, info := range projects {
+		if role := info.RoleForChannel(channelID); role != "" {
+			b.logger.Debug("roleFromChannel: matched",
+				"channel", channelID, "role", role)
+			return role
+		}
+	}
+	return ""
+}
+
 // projectFromChannel resolves a Slack channel ID to a project name by checking
 // the slack_channel field on project beads. Supports multiple comma-separated
 // channels per project.

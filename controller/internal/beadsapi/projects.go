@@ -52,6 +52,12 @@ type ProjectInfo struct {
 	// Populated from the comma-separated "slack_channel" field on project beads.
 	SlackChannels []string
 
+	// ChannelRoles maps Slack channel IDs to agent roles.
+	// When an agent is spawned from a thread in a mapped channel, it receives
+	// the specified role instead of the default "thread" role.
+	// Populated from the "channel_roles" JSON field on project beads.
+	ChannelRoles map[string]string
+
 	// EnvOverrides holds extra env vars parsed from the env_json bead field.
 	// Keys absent or empty in the JSON are silently skipped.
 	EnvOverrides map[string]string
@@ -100,6 +106,13 @@ func (c *Client) ListProjectBeads(ctx context.Context) (map[string]ProjectInfo, 
 			MemoryRequest:  fields["memory_request"],
 			MemoryLimit:    fields["memory_limit"],
 			SlackChannels:  parseSlackChannels(fields["slack_channel"]),
+		}
+		// Parse channel-to-role mapping from JSON field.
+		if raw := fields["channel_roles"]; raw != "" {
+			var channelRoles map[string]string
+			if json.Unmarshal([]byte(raw), &channelRoles) == nil {
+				info.ChannelRoles = channelRoles
+			}
 		}
 		// Parse per-project secrets from JSON field.
 		if raw := fields["secrets"]; raw != "" {
@@ -178,6 +191,15 @@ func parseSlackChannels(raw string) []string {
 		return nil
 	}
 	return channels
+}
+
+// RoleForChannel returns the role mapped to a specific Slack channel, or empty string
+// if no mapping exists. Used during thread-spawn to assign channel-specific roles.
+func (p ProjectInfo) RoleForChannel(channelID string) string {
+	if role, ok := p.ChannelRoles[channelID]; ok {
+		return role
+	}
+	return ""
 }
 
 // HasChannel reports whether the project is associated with the given Slack channel.

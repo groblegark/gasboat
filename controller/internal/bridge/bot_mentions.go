@@ -399,11 +399,17 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 	}
 
 	// Fallback: cold-start a new agent pod.
+	// Resolve role from channel_roles mapping, defaulting to "thread".
+	role := b.roleFromChannel(ctx, channel)
+	if role == "" {
+		role = "thread"
+	}
+
 	// Build fields including thread metadata.
 	fields := map[string]string{
 		"agent":                agentName,
 		"mode":                 "job",
-		"role":                 "thread",
+		"role":                 role,
 		"project":              project,
 		"slack_thread_channel": channel,
 		"slack_thread_ts":      threadTS,
@@ -418,6 +424,9 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 	labels := []string{"slack-thread"}
 	if project != "" {
 		labels = append(labels, "project:"+project)
+	}
+	if role != "thread" {
+		labels = append(labels, "role:"+role)
 	}
 
 	beadID, err := b.daemon.CreateBead(ctx, beadsapi.CreateBeadRequest{

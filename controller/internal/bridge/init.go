@@ -162,6 +162,11 @@ func configs() map[string]any {
 				// Auto-assignment control: "true" (default) or "false".
 				// Inherited by agents unless overridden on the agent bead.
 				{Name: "auto_assign", Type: "string"},
+				// Channel-to-role mapping (JSON): maps Slack channel IDs to agent roles.
+				// When an agent is spawned from a thread in a mapped channel, it receives
+				// the specified role instead of the default "thread" role.
+				// Example: {"C0AK4997PFG": "k6-perf", "C02RKL14WBB": "crew"}
+				{Name: "channel_roles", Type: "json"},
 				// Prewarmed pool configuration (JSON):
 				// {"enabled":bool, "mode":"job"|"crew", "role":"thread", "min_size":int, "max_size":int}
 				{Name: "prewarmed_pool", Type: "json"},
