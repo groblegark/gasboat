@@ -29,6 +29,11 @@ func (b *Bot) handleBlockActions(ctx context.Context, callback slack.Interaction
 			b.handleClearAgent(ctx, action.Value, callback)
 			return
 
+		// Kill thread agent button: action_id = "kill_thread_agent", value = agent identity.
+		case actionID == "kill_thread_agent":
+			b.handleKillThreadAgent(ctx, action.Value, callback)
+			return
+
 		// Dismiss button: action_id = "dismiss_decision", value = beadID.
 		case actionID == "dismiss_decision":
 			b.handleDismiss(ctx, action.Value, callback)

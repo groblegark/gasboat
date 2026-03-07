@@ -769,6 +769,31 @@ func (b *Bot) handleClearAgent(ctx context.Context, agentIdentity string, callba
 	b.logger.Info("cleared agent via Slack", "agent", agentIdentity, "user", callback.User.ID)
 }
 
+// handleKillThreadAgent handles the "Kill Agent" button posted in thread spawn messages.
+// The button's value carries the agent identity. The interaction callback provides
+// the channel and thread context that slash commands cannot access.
+func (b *Bot) handleKillThreadAgent(ctx context.Context, agentName string, callback slack.InteractionCallback) {
+	agentName = extractAgentName(agentName)
+	channelID := callback.Channel.ID
+	userID := callback.User.ID
+
+	// Acknowledge immediately — kill can take 30s+.
+	_, _ = b.api.PostEphemeral(channelID, userID,
+		slack.MsgOptionText(fmt.Sprintf(":hourglass_flowing_sand: Killing thread agent *%s*…", agentName), false))
+
+	go func() {
+		if err := b.killAgent(context.Background(), agentName, false); err != nil {
+			b.logger.Error("kill-thread-agent button: failed", "agent", agentName, "error", err)
+			_, _ = b.api.PostEphemeral(channelID, userID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Failed to kill thread agent %q: %s", agentName, err.Error()), false))
+			return
+		}
+		b.logger.Info("killed thread agent via button", "agent", agentName, "user", userID)
+		_, _ = b.api.PostEphemeral(channelID, userID,
+			slack.MsgOptionText(fmt.Sprintf(":skull: Thread agent *%s* terminated.", agentName), false))
+	}()
+}
+
 // gracefulShutdownCoop sends ESC to the coop agent endpoint in a loop until the
 // agent transitions to state=exited. Returns true if the agent exited cleanly,
 // false if coop became unreachable (pod already dead).
