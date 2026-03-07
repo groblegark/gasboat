@@ -237,6 +237,22 @@ func configs() map[string]any {
 			},
 		},
 
+		// Schedule beads define recurring agent spawns. The controller's
+		// scheduler watches these and spawns agents on the configured cron.
+		"type:schedule": TypeConfig{
+			Kind: "config",
+			Fields: []FieldDef{
+				{Name: "cron", Type: "string", Required: true},
+				{Name: "project", Type: "string", Required: true},
+				{Name: "role", Type: "string"},
+				{Name: "prompt", Type: "string"},
+				{Name: "enabled", Type: "boolean"},
+				{Name: "timezone", Type: "string"},
+				{Name: "last_run", Type: "string"},
+				{Name: "last_agent_id", Type: "string"},
+			},
+		},
+
 		// --- views -----------------------------------------------------------
 		//
 		// Core views used by the controller and by context templates.

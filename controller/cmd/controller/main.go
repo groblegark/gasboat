@@ -38,6 +38,7 @@ import (
 	"gasboat/controller/internal/podmanager"
 	"gasboat/controller/internal/poolmanager"
 	"gasboat/controller/internal/reconciler"
+	"gasboat/controller/internal/scheduler"
 	"gasboat/controller/internal/secretreconciler"
 	"gasboat/controller/internal/statusreporter"
 	"gasboat/controller/internal/subscriber"
@@ -125,6 +126,9 @@ func main() {
 	// reconciles projects that have a pool enabled.
 	pool := poolmanager.New(daemon, cfg, logger.With("component", "poolmanager"))
 
+	// Create scheduler for cron-based agent spawning from schedule beads.
+	sched := scheduler.New(daemon, daemon, logger.With("component", "scheduler"))
+
 	// Start lightweight health/version HTTP server.
 	healthAddr := os.Getenv("HEALTH_LISTEN_ADDR")
 	if healthAddr == "" {
@@ -162,7 +166,7 @@ func main() {
 	defer cancel()
 
 	runFn := func(ctx context.Context) {
-		if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon, secretRec, pool); err != nil {
+		if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon, secretRec, pool, sched); err != nil {
 			logger.Error("controller stopped", "error", err)
 			os.Exit(1)
 		}
@@ -223,7 +227,7 @@ func runLeaderElection(ctx context.Context, logger *slog.Logger, cfg *config.Con
 
 // run is the main controller loop. It reads beads events and dispatches
 // pod operations. Separated from main() for testability.
-func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, secretRec *secretreconciler.Reconciler, pool *poolmanager.Manager) error {
+func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, watcher subscriber.Watcher, pods podmanager.Manager, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, secretRec *secretreconciler.Reconciler, pool *poolmanager.Manager, sched *scheduler.Scheduler) error {
 	// Run reconciler once at startup to catch beads created during downtime.
 	if rec != nil {
 		logger.Info("running startup reconciliation")
@@ -260,11 +264,21 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 			logger.Info("seeded image digest tracker", "image", cfg.CoopImage, "digest", truncForLog(digest))
 		}()
 	}
-	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval, secretRec)
+	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval, secretRec, sched)
 
 	// Start prewarmed agent pool reconcile loop if enabled.
 	if pool != nil {
 		go pool.RunLoop(ctx)
+	}
+
+	// Start cron scheduler for schedule beads.
+	if sched != nil {
+		sched.Start()
+		defer sched.Stop()
+		// Initial sync to load schedule beads at startup.
+		if err := sched.Sync(ctx); err != nil {
+			logger.Warn("initial scheduler sync failed", "error", err)
+		}
 	}
 
 	logger.Info("controller ready, waiting for beads events",
@@ -291,7 +305,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 }
 
 // runPeriodicSync runs SyncAll, project cache refresh, and reconciliation at a regular interval.
-func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, cfg *config.Config, interval time.Duration, secretRec *secretreconciler.Reconciler) {
+func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *beadsapi.Client, cfg *config.Config, interval time.Duration, secretRec *secretreconciler.Reconciler, sched *scheduler.Scheduler) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -326,6 +340,12 @@ func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusrepo
 			if rec != nil {
 				if err := rec.Reconcile(ctx); err != nil {
 					logger.Warn("periodic reconciliation failed", "error", err)
+				}
+			}
+			// Sync schedule beads with cron scheduler.
+			if sched != nil {
+				if err := sched.Sync(ctx); err != nil {
+					logger.Warn("scheduler sync failed", "error", err)
 				}
 			}
 			// Log metrics snapshot after each sync.
