@@ -389,6 +389,8 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 				slack.MsgOptionBlocks(
 					slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", msg, false, false), nil, nil),
 					slack.NewActionBlock("thread_agent_actions",
+						slack.NewButtonBlockElement("restart_thread_agent", assignedAgent,
+							slack.NewTextBlockObject("plain_text", "Restart Agent", false, false)),
 						slack.NewButtonBlockElement("kill_thread_agent", assignedAgent,
 							slack.NewTextBlockObject("plain_text", "Kill Agent", false, false)).
 							WithStyle(slack.StyleDanger),
@@ -452,6 +454,8 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 			slack.MsgOptionBlocks(
 				slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", msg, false, false), nil, nil),
 				slack.NewActionBlock("thread_agent_actions",
+					slack.NewButtonBlockElement("restart_thread_agent", agentName,
+						slack.NewTextBlockObject("plain_text", "Restart Agent", false, false)),
 					slack.NewButtonBlockElement("kill_thread_agent", agentName,
 						slack.NewTextBlockObject("plain_text", "Kill Agent", false, false)).
 						WithStyle(slack.StyleDanger),
