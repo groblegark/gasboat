@@ -165,6 +165,22 @@ agents:
   # Periodic reconciliation interval (e.g. "60s", "5m")
   coopSyncInterval: ""
 
+  # --- Rate limiter & circuit breaker (pod creation safety) ---
+
+  # Sliding-window rate limiter: max pods created within the window.
+  # COOP_RATE_LIMIT_WINDOW (e.g. "5m"); COOP_RATE_LIMIT_MAX (e.g. 20)
+  coopRateLimitWindow: ""
+  coopRateLimitMax: ""
+
+  # Circuit breaker: trips when threshold pods are created within the window,
+  # then blocks all creation for the cooldown duration.
+  # COOP_CIRCUIT_BREAKER_THRESHOLD (e.g. 20)
+  # COOP_CIRCUIT_BREAKER_WINDOW (e.g. "2m")
+  # COOP_CIRCUIT_BREAKER_COOLDOWN (e.g. "5m")
+  coopCircuitBreakerThreshold: ""
+  coopCircuitBreakerWindow: ""
+  coopCircuitBreakerCooldown: ""
+
   # --- Autodestruct ---
   #
   # Emergency kill-switch: force-deletes all agent pods and pauses reconciliation.
