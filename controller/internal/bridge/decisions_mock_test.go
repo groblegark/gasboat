@@ -191,6 +191,35 @@ func (m *mockDaemon) ListAgentBeads(_ context.Context) ([]beadsapi.AgentBead, er
 	return result, nil
 }
 
+func (m *mockDaemon) ListBeadsFiltered(_ context.Context, q beadsapi.ListBeadsQuery) (*beadsapi.ListBeadsResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*beadsapi.BeadDetail
+	for _, b := range m.beads {
+		match := true
+		if len(q.Types) > 0 {
+			typeMatch := false
+			for _, t := range q.Types {
+				if b.Type == t {
+					typeMatch = true
+					break
+				}
+			}
+			if !typeMatch {
+				match = false
+			}
+		}
+		if match {
+			result = append(result, b)
+		}
+	}
+	return &beadsapi.ListBeadsResult{Beads: result, Total: len(result)}, nil
+}
+
+func (m *mockDaemon) AddDependency(_ context.Context, _, _, _, _ string) error {
+	return nil
+}
+
 func (m *mockDaemon) ResolveTicket(_ context.Context, ticketKey string) (*beadsapi.BeadDetail, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

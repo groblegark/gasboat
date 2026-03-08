@@ -29,6 +29,8 @@ type BeadClient interface {
 	ListAgentBeads(ctx context.Context) ([]beadsapi.AgentBead, error)
 	ListProjectBeads(ctx context.Context) (map[string]beadsapi.ProjectInfo, error)
 	ListAssignedTask(ctx context.Context, agentName string) (*beadsapi.BeadDetail, error)
+	ListBeadsFiltered(ctx context.Context, q beadsapi.ListBeadsQuery) (*beadsapi.ListBeadsResult, error)
+	AddDependency(ctx context.Context, beadID, dependsOnID, depType, createdBy string) error
 	ResolveTicket(ctx context.Context, ticketKey string) (*beadsapi.BeadDetail, error)
 }
 
