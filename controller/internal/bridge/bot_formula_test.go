@@ -208,6 +208,94 @@ func TestPlural(t *testing.T) {
 	}
 }
 
+// --- formulaBuildStepLabels tests (from main) ---
+
+func TestFormulaBuildStepLabels_SameProject(t *testing.T) {
+	molLabels := []string{"project:gasboat"}
+	stepLabels := []string{"team:alpha"}
+	got := formulaBuildStepLabels(molLabels, stepLabels, "gasboat", "gasboat")
+
+	want := map[string]bool{"project:gasboat": true, "team:alpha": true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d labels, got %d: %v", len(want), len(got), got)
+	}
+	for _, l := range got {
+		if !want[l] {
+			t.Errorf("unexpected label %q", l)
+		}
+	}
+}
+
+func TestFormulaBuildStepLabels_DifferentProject(t *testing.T) {
+	molLabels := []string{"project:gasboat"}
+	stepLabels := []string{"team:alpha"}
+	got := formulaBuildStepLabels(molLabels, stepLabels, "infra", "gasboat")
+
+	want := map[string]bool{"project:infra": true, "team:alpha": true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d labels, got %d: %v", len(want), len(got), got)
+	}
+	for _, l := range got {
+		if !want[l] {
+			t.Errorf("unexpected label %q", l)
+		}
+	}
+	// Ensure gasboat project label was removed.
+	for _, l := range got {
+		if l == "project:gasboat" {
+			t.Error("molecule project label should have been replaced")
+		}
+	}
+}
+
+func TestFormulaBuildStepLabels_NoStepLabels(t *testing.T) {
+	molLabels := []string{"project:gasboat", "priority:high"}
+	got := formulaBuildStepLabels(molLabels, nil, "gasboat", "gasboat")
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 labels, got %d: %v", len(got), got)
+	}
+}
+
+func TestFormulaBuildStepLabels_NoDuplicates(t *testing.T) {
+	molLabels := []string{"project:gasboat"}
+	stepLabels := []string{"project:gasboat", "extra:tag"}
+	got := formulaBuildStepLabels(molLabels, stepLabels, "gasboat", "gasboat")
+
+	count := 0
+	for _, l := range got {
+		if l == "project:gasboat" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 project:gasboat label, got %d", count)
+	}
+}
+
+// --- formulaStep role/project field tests (from main) ---
+
+func TestFormulaStepRoleProjectFields(t *testing.T) {
+	// Verify the new fields parse correctly from JSON-like struct.
+	step := formulaStep{
+		ID:              "deploy",
+		Title:           "Deploy",
+		Role:            "crew",
+		Project:         "infra",
+		SuggestNewAgent: true,
+	}
+
+	if step.Role != "crew" {
+		t.Errorf("expected role=crew, got %s", step.Role)
+	}
+	if step.Project != "infra" {
+		t.Errorf("expected project=infra, got %s", step.Project)
+	}
+	if !step.SuggestNewAgent {
+		t.Error("expected suggest_new_agent=true")
+	}
+}
+
 // --- instantiateFormulaSteps tests ---
 
 // depCall records an AddDependency call for assertions.
@@ -644,6 +732,100 @@ func TestInstantiateFormulaSteps_MissingDependency(t *testing.T) {
 	}
 }
 
+// --- Cross-project step label tests ---
+
+func TestInstantiateFormulaSteps_CrossProjectLabels(t *testing.T) {
+	daemon := newFormulaMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.daemon = daemon
+
+	formula := &beadsapi.BeadDetail{
+		ID:    "kd-formula-cross",
+		Title: "Cross-project formula",
+	}
+
+	// Step has a different project label than the molecule's project.
+	steps := []formulaStep{
+		{
+			ID:     "step1",
+			Title:  "Step in other project",
+			Labels: []string{"project:other-project", "role:devops"},
+		},
+	}
+
+	_, _, err := bot.instantiateFormulaSteps(
+		context.Background(), formula, steps, nil, false, "gasboat")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	taskBeads := filterTaskBeads(daemon.beads)
+	if len(taskBeads) != 1 {
+		t.Fatalf("expected 1 task bead, got %d", len(taskBeads))
+	}
+
+	step := taskBeads[0]
+	// Step should have both project labels (gasboat from formula + other-project from step).
+	if !containsLabel(step.Labels, "project:gasboat") {
+		t.Errorf("expected project:gasboat label from molecule project, got %v", step.Labels)
+	}
+	if !containsLabel(step.Labels, "project:other-project") {
+		t.Errorf("expected project:other-project label from step, got %v", step.Labels)
+	}
+	if !containsLabel(step.Labels, "role:devops") {
+		t.Errorf("expected role:devops label from step, got %v", step.Labels)
+	}
+}
+
+func TestInstantiateFormulaSteps_StepAssignee(t *testing.T) {
+	daemon := newFormulaMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.daemon = daemon
+
+	formula := &beadsapi.BeadDetail{
+		ID:    "kd-formula-assign",
+		Title: "Assignee test",
+	}
+
+	steps := []formulaStep{
+		{ID: "step1", Title: "Assigned step", Assignee: "bot-123"},
+		{ID: "step2", Title: "Unassigned step"},
+	}
+
+	_, _, err := bot.instantiateFormulaSteps(
+		context.Background(), formula, steps, nil, false, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	taskBeads := filterTaskBeads(daemon.beads)
+	if len(taskBeads) != 2 {
+		t.Fatalf("expected 2 task beads, got %d", len(taskBeads))
+	}
+
+	var foundAssigned, foundUnassigned bool
+	for _, b := range taskBeads {
+		if b.Assignee == "bot-123" {
+			foundAssigned = true
+		}
+		if b.Assignee == "" && b.Title == "Unassigned step" {
+			foundUnassigned = true
+		}
+	}
+	if !foundAssigned {
+		t.Error("expected one step with assignee 'bot-123'")
+	}
+	if !foundUnassigned {
+		t.Error("expected one step with no assignee")
+	}
+}
+
 // --- handleFormulaPour integration tests ---
 
 func seedFormula(daemon *mockDaemon, id, title string, vars []formulaVarDef, steps []formulaStep) {
@@ -999,100 +1181,6 @@ func TestHandleFormulaCommand_Routing(t *testing.T) {
 				UserID:    "U1",
 			})
 		})
-	}
-}
-
-// --- Cross-project step label tests ---
-
-func TestInstantiateFormulaSteps_CrossProjectLabels(t *testing.T) {
-	daemon := newFormulaMockDaemon()
-	slackSrv := newFakeSlackServer(t)
-	defer slackSrv.Close()
-
-	bot := newTestBot(daemon, slackSrv)
-	bot.daemon = daemon
-
-	formula := &beadsapi.BeadDetail{
-		ID:    "kd-formula-cross",
-		Title: "Cross-project formula",
-	}
-
-	// Step has a different project label than the molecule's project.
-	steps := []formulaStep{
-		{
-			ID:     "step1",
-			Title:  "Step in other project",
-			Labels: []string{"project:other-project", "role:devops"},
-		},
-	}
-
-	_, _, err := bot.instantiateFormulaSteps(
-		context.Background(), formula, steps, nil, false, "gasboat")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	taskBeads := filterTaskBeads(daemon.beads)
-	if len(taskBeads) != 1 {
-		t.Fatalf("expected 1 task bead, got %d", len(taskBeads))
-	}
-
-	step := taskBeads[0]
-	// Step should have both project labels (gasboat from formula + other-project from step).
-	if !containsLabel(step.Labels, "project:gasboat") {
-		t.Errorf("expected project:gasboat label from molecule project, got %v", step.Labels)
-	}
-	if !containsLabel(step.Labels, "project:other-project") {
-		t.Errorf("expected project:other-project label from step, got %v", step.Labels)
-	}
-	if !containsLabel(step.Labels, "role:devops") {
-		t.Errorf("expected role:devops label from step, got %v", step.Labels)
-	}
-}
-
-func TestInstantiateFormulaSteps_StepAssignee(t *testing.T) {
-	daemon := newFormulaMockDaemon()
-	slackSrv := newFakeSlackServer(t)
-	defer slackSrv.Close()
-
-	bot := newTestBot(daemon, slackSrv)
-	bot.daemon = daemon
-
-	formula := &beadsapi.BeadDetail{
-		ID:    "kd-formula-assign",
-		Title: "Assignee test",
-	}
-
-	steps := []formulaStep{
-		{ID: "step1", Title: "Assigned step", Assignee: "bot-123"},
-		{ID: "step2", Title: "Unassigned step"},
-	}
-
-	_, _, err := bot.instantiateFormulaSteps(
-		context.Background(), formula, steps, nil, false, "")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	taskBeads := filterTaskBeads(daemon.beads)
-	if len(taskBeads) != 2 {
-		t.Fatalf("expected 2 task beads, got %d", len(taskBeads))
-	}
-
-	var foundAssigned, foundUnassigned bool
-	for _, b := range taskBeads {
-		if b.Assignee == "bot-123" {
-			foundAssigned = true
-		}
-		if b.Assignee == "" && b.Title == "Unassigned step" {
-			foundUnassigned = true
-		}
-	}
-	if !foundAssigned {
-		t.Error("expected one step with assignee 'bot-123'")
-	}
-	if !foundUnassigned {
-		t.Error("expected one step with no assignee")
 	}
 }
 
