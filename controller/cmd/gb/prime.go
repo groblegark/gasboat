@@ -67,6 +67,7 @@ func runPrime(cmd *cobra.Command, args []string) error {
 	// 2. Advice.
 	if !primeNoAdvice && agentID != "" {
 		outputAdvice(w, agentID)
+		outputAdviceRoleDiff(w, agentID)
 	}
 
 	// 2b. Wrap-up expectations.

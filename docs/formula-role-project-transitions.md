@@ -291,34 +291,57 @@ Store cross-project step references on the molecule bead's fields so the full mo
 
 ## Phase 4: Implementation Plan — Role Transition Advice Injection
 
+**Status:** Implemented (gb prime integration)
+
 ### 4.1 Detection Point
 
-When an agent claims a step bead that has a `role:X` label not matching the agent's own `BOAT_ROLE`, a role mismatch is detected.
+When `gb prime` runs (SessionStart or PreCompact hook), it checks the agent's
+currently claimed bead for `role:X` labels that don't match `BOAT_ROLE`. This
+catches the case where the same agent continues with a formula step targeting a
+different role.
 
-**Detection location:** `outputClaimReminder()` in `hook.go` or the claimed bead watcher in `claimed.go`.
+**Detection location:** `outputAdviceRoleDiff()` in `prime_advice_diff.go`.
 
-### 4.2 Advice Injection
+### 4.2 Advice Diff Delivery
 
-On role mismatch:
-1. Load advice beads matching `role:TARGET_ROLE` subscription
-2. Inject them into the agent's session via nudge or mail
-3. Include a header: "This step targets role TARGET_ROLE — relevant context follows"
+On role mismatch, the system:
+1. Loads the agent's current advice (matching `BOAT_ROLE` subscriptions)
+2. Computes a hypothetical advice set with the target role added to subscriptions
+3. Diffs the two sets to find added and removed advice items
+4. Outputs a "Role Transition" section showing the diff inline in the prime output
 
-### 4.3 Config Bead Context
+This is delivered during every `gb prime` invocation (SessionStart, PreCompact),
+so the agent always has up-to-date role-specific context even without spawning a
+new agent.
+
+### 4.3 Implementation Details
+
+**Files:**
+- `controller/internal/advice/diff.go` — `DiffAdviceForRole()` computes added/removed advice
+- `controller/cmd/gb/prime_advice_diff.go` — `outputAdviceRoleDiff()` detects role mismatch on claimed bead and renders the diff
+- Integration in `prime.go` and `prime_shared.go` — called after `outputAdvice()`
+
+**Output format:**
+```
+## Role Transition: crew → lead
+
+Your claimed task has `role:lead` — the following advice changes apply:
+
+### New advice for role:lead (2 items)
+
+**[Role: lead]** Review all PRs before merge
+  Lead agents must review PRs from crew agents before allowing merge.
+
+### No longer applicable (1 item)
+
+- ~~**[Role: crew]** Always request PR review from a lead~~
+```
+
+### 4.4 Config Bead Context
 
 For deeper role transitions, the agent could temporarily extend its subscriptions to include the target role. This would be a runtime config re-resolution triggered by step claim.
 
 **Limitation:** This does not change the agent's pod spec (mode, resources, secrets). For steps requiring a different mode or project-specific secrets, a new agent is still required.
-
-### 4.4 Implementation Approach
-
-The simplest approach is to use the existing mail/nudge mechanism:
-1. Claimed watcher detects role mismatch on step claim
-2. Queries advice beads for the target role
-3. Composes a nudge with the role-specific context
-4. Delivers via the existing nudge pipeline
-
-This avoids modifying the config resolution pipeline while still providing role-appropriate context to the agent.
 
 ---
 

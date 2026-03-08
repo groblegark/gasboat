@@ -25,6 +25,7 @@ func outputPrimeForHook(w io.Writer, agentID string) {
 	outputWorkflowContext(w, primeRole())
 	if agentID != "" {
 		outputAdvice(w, agentID)
+		outputAdviceRoleDiff(w, agentID)
 	}
 	outputJackSection(w)
 	outputRosterSection(w, agentID)
