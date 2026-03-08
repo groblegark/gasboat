@@ -577,6 +577,8 @@ func (b *Bot) resolveAgentThread(ctx context.Context, agent string) (channel, th
 	agentName := extractAgentName(agent)
 	detail, err := b.daemon.FindAgentBead(ctx, agentName)
 	if err != nil {
+		b.logger.Debug("resolveAgentThread: agent bead not found",
+			"agent", agentName, "error", err)
 		return "", ""
 	}
 	ch := detail.Fields["slack_thread_channel"]

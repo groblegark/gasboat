@@ -74,28 +74,40 @@ func (b *Bot) NotifyBeadClosed(ctx context.Context, bead BeadEvent) {
 func (b *Bot) postAgentThreadMessage(ctx context.Context, agent, text string) {
 	// Check for thread-bound agent first.
 	if slackChannel, slackTS := b.resolveAgentThread(ctx, agent); slackChannel != "" && slackTS != "" {
-		_, _, _ = b.api.PostMessageContext(ctx, slackChannel,
+		_, _, err := b.api.PostMessageContext(ctx, slackChannel,
 			slack.MsgOptionText(text, false),
 			slack.MsgOptionTS(slackTS),
 		)
+		if err != nil {
+			b.logger.Warn("bead-activity: failed to post to thread-bound agent",
+				"agent", agent, "channel", slackChannel, "thread_ts", slackTS, "error", err)
+		}
 		return
 	}
 
 	// Fall back to agent card thread (regular threading mode).
 	if !b.agentThreadingEnabled() {
+		b.logger.Debug("bead-activity: agent threading disabled, dropping notification",
+			"agent", agent)
 		return
 	}
 
 	threadTS := b.getAgentThreadTS(agent)
 	if threadTS == "" {
+		b.logger.Debug("bead-activity: no agent card found, dropping notification",
+			"agent", agent)
 		return
 	}
 
 	channel := b.resolveChannel(agent)
-	_, _, _ = b.api.PostMessageContext(ctx, channel,
+	_, _, err := b.api.PostMessageContext(ctx, channel,
 		slack.MsgOptionText(text, false),
 		slack.MsgOptionTS(threadTS),
 	)
+	if err != nil {
+		b.logger.Warn("bead-activity: failed to post to agent card thread",
+			"agent", agent, "channel", channel, "thread_ts", threadTS, "error", err)
+	}
 }
 
 // getAgentThreadTS returns the thread timestamp for an agent's card,
