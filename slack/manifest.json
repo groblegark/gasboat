@@ -72,6 +72,12 @@
         "description": "Kill all agent pods (with confirmation) or check status",
         "usage_hint": "[clear | status]",
         "should_escape": false
+      },
+      {
+        "command": "/formula",
+        "description": "List, inspect, and instantiate formulas",
+        "usage_hint": "list | show <id> | pour <id> [--var key=value] | wisp <id> [--var key=value]",
+        "should_escape": false
       }
     ]
   },
