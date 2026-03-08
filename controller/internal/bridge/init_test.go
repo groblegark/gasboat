@@ -6,14 +6,44 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"gasboat/controller/internal/beadsapi"
 )
 
 type mockConfigSetter struct {
 	configs map[string][]byte
+	beads   []*beadsapi.BeadDetail
 }
 
 func (m *mockConfigSetter) SetConfig(_ context.Context, key string, value []byte) error {
 	m.configs[key] = value
+	return nil
+}
+
+func (m *mockConfigSetter) CreateBead(_ context.Context, req beadsapi.CreateBeadRequest) (string, error) {
+	id := "kd-mock-" + req.Title
+	m.beads = append(m.beads, &beadsapi.BeadDetail{
+		ID:          id,
+		Title:       req.Title,
+		Type:        req.Type,
+		Description: req.Description,
+		Labels:      req.Labels,
+		Status:      "open",
+	})
+	return id, nil
+}
+
+func (m *mockConfigSetter) ListBeadsFiltered(_ context.Context, _ beadsapi.ListBeadsQuery) (*beadsapi.ListBeadsResult, error) {
+	return &beadsapi.ListBeadsResult{Beads: m.beads, Total: len(m.beads)}, nil
+}
+
+func (m *mockConfigSetter) UpdateBeadDescription(_ context.Context, beadID, description string) error {
+	for _, b := range m.beads {
+		if b.ID == beadID {
+			b.Description = description
+			break
+		}
+	}
 	return nil
 }
 
@@ -145,5 +175,119 @@ func TestEnsureConfigs_SeedsAllExpectedTypes(t *testing.T) {
 		if _, ok := setter.configs[key]; !ok {
 			t.Errorf("expected config %q to be seeded", key)
 		}
+	}
+}
+
+func TestEnsureConfigs_CreatesConfigBeads(t *testing.T) {
+	setter := &mockConfigSetter{configs: make(map[string][]byte)}
+	if err := EnsureConfigs(context.Background(), setter, slog.Default()); err != nil {
+		t.Fatalf("EnsureConfigs: %v", err)
+	}
+
+	// Should have created config beads for all config:* keys.
+	expectedBeads := map[string][]string{
+		"nudge-prompts":       {"global"},
+		"claude-instructions": {"global"},
+	}
+	roleBeads := map[string]string{
+		"role:thread": "claude-instructions",
+		"role:polecat": "claude-instructions",
+	}
+
+	for title, wantLabels := range expectedBeads {
+		found := false
+		for _, b := range setter.beads {
+			if b.Title == title && labelsMatch(b.Labels, wantLabels) {
+				found = true
+				var m map[string]any
+				if err := json.Unmarshal([]byte(b.Description), &m); err != nil {
+					t.Errorf("config bead %s has invalid JSON description: %v", title, err)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected config bead with title=%q labels=%v", title, wantLabels)
+		}
+	}
+
+	for label, title := range roleBeads {
+		found := false
+		for _, b := range setter.beads {
+			if b.Title == title && labelsMatch(b.Labels, []string{label}) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected config bead with title=%q label=%q", title, label)
+		}
+	}
+}
+
+func TestEnsureConfigs_UpdatesExistingConfigBead(t *testing.T) {
+	setter := &mockConfigSetter{configs: make(map[string][]byte)}
+
+	// Pre-seed a config bead that EnsureConfigs should update.
+	setter.beads = append(setter.beads, &beadsapi.BeadDetail{
+		ID:          "kd-existing",
+		Title:       "nudge-prompts",
+		Type:        "config",
+		Description: `{"old":"value"}`,
+		Labels:      []string{"global"},
+		Status:      "open",
+	})
+
+	if err := EnsureConfigs(context.Background(), setter, slog.Default()); err != nil {
+		t.Fatalf("EnsureConfigs: %v", err)
+	}
+
+	// Should have updated the existing bead, not created a new one.
+	nudgeCount := 0
+	for _, b := range setter.beads {
+		if b.Title == "nudge-prompts" && labelsMatch(b.Labels, []string{"global"}) {
+			nudgeCount++
+		}
+	}
+	if nudgeCount != 1 {
+		t.Errorf("expected 1 nudge-prompts bead (upsert), got %d", nudgeCount)
+	}
+
+	// The description should be updated to the current value.
+	for _, b := range setter.beads {
+		if b.ID == "kd-existing" {
+			var prompts map[string]string
+			if err := json.Unmarshal([]byte(b.Description), &prompts); err != nil {
+				t.Fatalf("unmarshal updated description: %v", err)
+			}
+			if prompts["thread"] == "" {
+				t.Error("expected thread prompt in updated description")
+			}
+			break
+		}
+	}
+}
+
+func TestParseConfigKey(t *testing.T) {
+	tests := []struct {
+		key        string
+		wantCat    string
+		wantLabels []string
+	}{
+		{"config:nudge-prompts:global", "nudge-prompts", []string{"global"}},
+		{"config:claude-instructions:global", "claude-instructions", []string{"global"}},
+		{"config:claude-instructions:role:thread", "claude-instructions", []string{"role:thread"}},
+		{"config:claude-instructions:role:polecat", "claude-instructions", []string{"role:polecat"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			cat, labels := parseConfigKey(tt.key)
+			if cat != tt.wantCat {
+				t.Errorf("category: got %q, want %q", cat, tt.wantCat)
+			}
+			if !labelsMatch(labels, tt.wantLabels) {
+				t.Errorf("labels: got %v, want %v", labels, tt.wantLabels)
+			}
+		})
 	}
 }

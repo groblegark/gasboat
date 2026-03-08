@@ -450,6 +450,17 @@ func (c *Client) UpdateBeadNotes(ctx context.Context, beadID, notes string) erro
 	return nil
 }
 
+// UpdateBeadDescription updates the description field of a bead.
+func (c *Client) UpdateBeadDescription(ctx context.Context, beadID, description string) error {
+	body := map[string]any{
+		"description": description,
+	}
+	if err := c.doJSON(ctx, http.MethodPatch, "/v1/beads/"+url.PathEscape(beadID), body, nil); err != nil {
+		return fmt.Errorf("updating description on bead %s: %w", beadID, err)
+	}
+	return nil
+}
+
 // UpdateAgentState updates the agent_state field of a bead.
 func (c *Client) UpdateAgentState(ctx context.Context, beadID, state string) error {
 	return c.UpdateBeadFields(ctx, beadID, map[string]string{"agent_state": state})
