@@ -151,11 +151,22 @@ mkdir -p "${REPOS_DIR}"
 
 # Clone reference repos declared on the project bead.
 # Init container clones them first; this is a fallback for job mode (EmptyDir).
+# Format: "name=https://host/path.git:branch,name2=https://host2/path2.git:branch2"
+# The branch suffix is always present (controller defaults empty to "main").
 if [ -n "${BOAT_REFERENCE_REPOS:-}" ]; then
     IFS=',' read -ra REPO_ENTRIES <<< "${BOAT_REFERENCE_REPOS}"
     for entry in "${REPO_ENTRIES[@]}"; do
         repo_name="${entry%%=*}"
-        repo_url="${entry#*=}"; repo_url="${repo_url%%:*}"
+        repo_rest="${entry#*=}"
+        # Strip the trailing :branch suffix. Use %:* (shortest suffix) to
+        # preserve the scheme colon in https:// and any port colons.
+        # The controller always appends :branch (defaults to "main"), so
+        # there is always at least one colon after the URL path.
+        repo_url="${repo_rest%:*}"
+        # Guard: if stripping produced a bare scheme, use the full value.
+        if [ "${repo_url}" = "https" ] || [ "${repo_url}" = "http" ]; then
+            repo_url="${repo_rest}"
+        fi
         _clone_repo "${repo_url}" "${REPOS_DIR}/${repo_name}"
     done
 fi
@@ -346,13 +357,29 @@ printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferr
 
 fi  # end of MOCK_MODE != 1 (Claude settings block)
 
+# ── Resolve coop working directory ────────────────────────────────────────
+#
+# If the init container cloned the primary project repo (at
+# /home/agent/bot/{project}/work), use that as the cwd so agents start
+# inside the actual codebase. Falls back to the scaffold workspace.
+# This mirrors resolveCoopWorkdir() in gb agent start --k8s.
+
+COOP_WORKDIR="${WORKSPACE}"
+if [ -n "${PROJECT}" ] && [ -d "/home/agent/bot/${PROJECT}/work/.git" ]; then
+    COOP_WORKDIR="/home/agent/bot/${PROJECT}/work"
+    export KD_WORKSPACE="${COOP_WORKDIR}"
+    echo "[entrypoint] Using project repo as cwd: ${COOP_WORKDIR}"
+else
+    echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
+fi
+
 # ── Start coop + Claude ──────────────────────────────────────────────────
 #
 # We keep bash as PID 1 (no exec) so the pod survives if Claude/coop exit.
 # On child exit we clean up FIFO pipes and restart with --resume.
 # SIGTERM from K8s is forwarded to coop for graceful shutdown.
 
-cd "${WORKSPACE}"
+cd "${COOP_WORKDIR}"
 
 COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 50"
 
