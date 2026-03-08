@@ -214,8 +214,10 @@ func configs() map[string]any {
 			Fields: []FieldDef{
 				// Variable definitions: [{name, description, required, default, type, enum}]
 				{Name: "vars", Type: "json"},
-				// Step definitions: [{id, title, type, description, depends_on, labels, priority, condition, assignee}]
+				// Step definitions: [{id, title, type, description, depends_on, labels, priority, condition, assignee, roles}]
 				{Name: "steps", Type: "json"},
+				// Default roles for molecule steps (used when a step doesn't specify its own roles).
+				{Name: "default_roles", Type: "json"},
 			},
 		},
 		"type:molecule": TypeConfig{

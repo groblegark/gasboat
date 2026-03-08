@@ -33,12 +33,14 @@ type formulaStep struct {
 	DependsOn   []string `json:"depends_on,omitempty"`
 	Assignee    string   `json:"assignee,omitempty"`
 	Condition   string   `json:"condition,omitempty"`
+	Roles       []string `json:"roles,omitempty"` // role requirements for this step (overrides formula default_roles)
 }
 
 // formulaFields holds the parsed vars and steps from a formula bead's fields.
 type formulaFields struct {
-	Vars  []formulaVarDef `json:"vars"`
-	Steps []formulaStep   `json:"steps"`
+	Vars         []formulaVarDef `json:"vars"`
+	Steps        []formulaStep   `json:"steps"`
+	DefaultRoles []string        `json:"default_roles,omitempty"`
 }
 
 // handleFormulaCommand processes the /formula slash command.
@@ -192,6 +194,10 @@ func (b *Bot) handleFormulaShow(ctx context.Context, cmd slack.SlashCommand, idO
 		}
 	}
 
+	if len(ff.DefaultRoles) > 0 {
+		sb.WriteString(fmt.Sprintf("\n*Default Roles:* %s\n", strings.Join(ff.DefaultRoles, ", ")))
+	}
+
 	if len(ff.Steps) > 0 {
 		sb.WriteString("\n*Steps:*\n")
 		for _, s := range ff.Steps {
@@ -203,7 +209,11 @@ func (b *Bot) handleFormulaShow(ctx context.Context, cmd slack.SlashCommand, idO
 			if len(s.DependsOn) > 0 {
 				deps = fmt.Sprintf(" (after: %s)", strings.Join(s.DependsOn, ", "))
 			}
-			sb.WriteString(fmt.Sprintf("  `%s` %s [%s]%s\n", s.ID, s.Title, typ, deps))
+			roles := ""
+			if len(s.Roles) > 0 {
+				roles = fmt.Sprintf(" roles:[%s]", strings.Join(s.Roles, ", "))
+			}
+			sb.WriteString(fmt.Sprintf("  `%s` %s [%s]%s%s\n", s.ID, s.Title, typ, deps, roles))
 		}
 	}
 
@@ -342,7 +352,7 @@ func (b *Bot) handleFormulaPour(ctx context.Context, cmd slack.SlashCommand, arg
 	// Run instantiation asynchronously — creating many beads can be slow.
 	go func() {
 		molID, stepCount, err := b.instantiateFormulaSteps(
-			context.Background(), formula, activeSteps, varPairs, ephemeral, project)
+			context.Background(), formula, activeSteps, varPairs, ephemeral, project, ff.DefaultRoles)
 		if err != nil {
 			b.logger.Error("formula pour: instantiation failed", "formula", formula.ID, "error", err)
 			b.postEphemeral(cmd, fmt.Sprintf(":x: Failed to create %s: %s", phase, err.Error()))
@@ -367,6 +377,7 @@ func (b *Bot) instantiateFormulaSteps(
 	vars map[string]string,
 	ephemeral bool,
 	project string,
+	defaultRoles []string,
 ) (string, int, error) {
 	// Create root molecule bead.
 	molTitle := formulaSubstituteVars(formula.Title, vars)
@@ -423,6 +434,26 @@ func (b *Bot) instantiateFormulaSteps(
 				}
 			}
 			stepLabels = merged
+		}
+
+		// Resolve roles: step-level roles override formula default_roles.
+		stepRoles := s.Roles
+		if len(stepRoles) == 0 {
+			stepRoles = defaultRoles
+		}
+		// Convert roles to role:X labels.
+		for _, r := range stepRoles {
+			lbl := "role:" + r
+			found := false
+			for _, l := range stepLabels {
+				if l == lbl {
+					found = true
+					break
+				}
+			}
+			if !found {
+				stepLabels = append(stepLabels, lbl)
+			}
 		}
 
 		stepID, err := b.daemon.CreateBead(ctx, beadsapi.CreateBeadRequest{
@@ -512,6 +543,9 @@ func parseFormulaFields(bead *beadsapi.BeadDetail) formulaFields {
 	}
 	if raw, ok := bead.Fields["steps"]; ok {
 		_ = json.Unmarshal([]byte(raw), &ff.Steps)
+	}
+	if raw, ok := bead.Fields["default_roles"]; ok {
+		_ = json.Unmarshal([]byte(raw), &ff.DefaultRoles)
 	}
 	return ff
 }
