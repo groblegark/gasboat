@@ -130,7 +130,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	// Build desired pod name set.
 	desired := make(map[string]beadsapi.AgentBead)
 	for _, b := range beads {
-		podName := fmt.Sprintf("%s-%s-%s-%s", b.Mode, b.Project, b.Role, b.AgentName)
+		podName := fmt.Sprintf("%s-%s-%s-%s", b.Mode, b.Project, podmanager.SanitizeRole(b.Role), b.AgentName)
 		desired[podName] = b
 	}
 

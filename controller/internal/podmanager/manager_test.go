@@ -63,6 +63,44 @@ func TestLabels(t *testing.T) {
 	}
 }
 
+// ── SanitizeRole ───────────────────────────────────────────────────────────
+
+func TestSanitizeRole(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"crew", "crew"},
+		{"crew,thread", "crew-thread"},
+		{"crew,thread,admin", "crew-thread-admin"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := SanitizeRole(tt.input); got != tt.want {
+			t.Errorf("SanitizeRole(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestPodName_MultiRole(t *testing.T) {
+	spec := AgentPodSpec{
+		Mode: "crew", Project: "gasboat", Role: "crew,thread", AgentName: "test-1",
+	}
+	want := "crew-gasboat-crew-thread-test-1"
+	if got := spec.PodName(); got != want {
+		t.Errorf("PodName() = %q, want %q", got, want)
+	}
+}
+
+func TestLabels_MultiRole(t *testing.T) {
+	spec := AgentPodSpec{
+		Mode: "crew", Project: "gasboat", Role: "crew,thread", AgentName: "test-1",
+	}
+	labels := spec.Labels()
+	if got := labels[LabelRole]; got != "crew-thread" {
+		t.Errorf("Labels()[%q] = %q, want %q", LabelRole, got, "crew-thread")
+	}
+}
+
 // ── restartPolicyForMode ───────────────────────────────────────────────────
 
 func TestRestartPolicyForMode(t *testing.T) {

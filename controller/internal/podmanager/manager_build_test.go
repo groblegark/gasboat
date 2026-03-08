@@ -301,6 +301,23 @@ func TestBuildEnvVars_StandardVars(t *testing.T) {
 	}
 }
 
+func TestBuildEnvVars_MultiRolePreservesComma(t *testing.T) {
+	m := newTestManager()
+	spec := minimalSpec()
+	spec.Role = "crew,thread"
+	envVars := m.buildEnvVars(spec)
+
+	for _, ev := range envVars {
+		if ev.Name == "BOAT_ROLE" {
+			if ev.Value != "crew,thread" {
+				t.Errorf("BOAT_ROLE = %q, want %q (original comma-separated value)", ev.Value, "crew,thread")
+			}
+			return
+		}
+	}
+	t.Error("BOAT_ROLE env var not found")
+}
+
 func TestBuildEnvVars_SessionResume(t *testing.T) {
 	m := newTestManager()
 

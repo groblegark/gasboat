@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -177,18 +178,27 @@ type WorkspaceStorageSpec struct {
 	StorageClassName string
 }
 
+// SanitizeRole replaces commas in a role string with dashes so the value
+// is safe for use in Kubernetes resource names and label values, which do
+// not allow commas.  e.g. "crew,thread" → "crew-thread".
+func SanitizeRole(role string) string {
+	return strings.ReplaceAll(role, ",", "-")
+}
+
 // PodName returns the canonical pod name: {mode}-{project}-{role}-{name}.
+// Commas in multi-role values are replaced with dashes for K8s compatibility.
 func (s *AgentPodSpec) PodName() string {
-	return fmt.Sprintf("%s-%s-%s-%s", s.Mode, s.Project, s.Role, s.AgentName)
+	return fmt.Sprintf("%s-%s-%s-%s", s.Mode, s.Project, SanitizeRole(s.Role), s.AgentName)
 }
 
 // Labels returns the standard label set for this agent pod.
+// Commas in multi-role values are replaced with dashes for K8s compatibility.
 func (s *AgentPodSpec) Labels() map[string]string {
 	return map[string]string{
 		LabelApp:     LabelAppValue,
 		LabelProject: s.Project,
 		LabelMode:    s.Mode,
-		LabelRole:    s.Role,
+		LabelRole:    SanitizeRole(s.Role),
 		LabelAgent:   s.AgentName,
 	}
 }
