@@ -214,8 +214,10 @@ func configs() map[string]any {
 			Fields: []FieldDef{
 				// Variable definitions: [{name, description, required, default, type, enum}]
 				{Name: "vars", Type: "json"},
-				// Step definitions: [{id, title, type, description, depends_on, labels, priority, condition, assignee}]
+				// Step definitions: [{id, title, type, description, depends_on, labels, priority, condition, assignee, role, project}]
 				{Name: "steps", Type: "json"},
+				// Default agent role for molecule steps that don't specify their own.
+				{Name: "default_role", Type: "string"},
 			},
 		},
 		"type:molecule": TypeConfig{
