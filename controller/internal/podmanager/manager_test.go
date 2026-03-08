@@ -38,7 +38,7 @@ func TestPodName(t *testing.T) {
 	spec := AgentPodSpec{
 		Mode: "crew", Project: "gasboat", Role: "dev", AgentName: "matt-1",
 	}
-	want := "crew-gasboat-dev-matt-1"
+	want := "crew-gasboat-matt-1"
 	if got := spec.PodName(); got != want {
 		t.Errorf("PodName() = %q, want %q", got, want)
 	}

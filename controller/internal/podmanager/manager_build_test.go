@@ -15,8 +15,8 @@ func TestBuildPod_BasicFields(t *testing.T) {
 	spec := minimalSpec()
 	pod := m.buildPod(spec)
 
-	if pod.Name != "crew-gasboat-dev-test-1" {
-		t.Errorf("pod.Name = %q, want %q", pod.Name, "crew-gasboat-dev-test-1")
+	if pod.Name != "crew-gasboat-test-1" {
+		t.Errorf("pod.Name = %q, want %q", pod.Name, "crew-gasboat-test-1")
 	}
 	if pod.Namespace != "default" {
 		t.Errorf("pod.Namespace = %q, want %q", pod.Namespace, "default")

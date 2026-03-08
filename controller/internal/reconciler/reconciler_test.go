@@ -171,8 +171,8 @@ func TestReconcile_DeletesOrphanPods(t *testing.T) {
 	// Two pods exist, but only one is desired.
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
-			makePod("crew-proj-dev-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
 		},
 	}
 
@@ -186,7 +186,7 @@ func TestReconcile_DeletesOrphanPods(t *testing.T) {
 	if len(mgr.deleted) != 1 {
 		t.Fatalf("expected 1 pod deleted, got %d", len(mgr.deleted))
 	}
-	if mgr.deleted[0] != "crew-proj-dev-orphan" {
+	if mgr.deleted[0] != "crew-proj-orphan" {
 		t.Errorf("expected orphan pod deleted, got %s", mgr.deleted[0])
 	}
 	if len(mgr.created) != 0 {
@@ -202,7 +202,7 @@ func TestReconcile_RecreatesFailedPods(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodFailed),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodFailed),
 		},
 	}
 
@@ -216,7 +216,7 @@ func TestReconcile_RecreatesFailedPods(t *testing.T) {
 	if len(mgr.deleted) != 1 {
 		t.Fatalf("expected 1 pod deleted, got %d", len(mgr.deleted))
 	}
-	if mgr.deleted[0] != "crew-proj-dev-alpha" {
+	if mgr.deleted[0] != "crew-proj-alpha" {
 		t.Errorf("expected failed pod deleted, got %s", mgr.deleted[0])
 	}
 	if len(mgr.created) != 1 {
@@ -232,7 +232,7 @@ func TestReconcile_RecreatesSucceededPods(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodSucceeded),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodSucceeded),
 		},
 	}
 
@@ -258,7 +258,7 @@ func TestReconcile_NoOpWhenConverged(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
 		},
 	}
 
@@ -283,9 +283,9 @@ func TestReconcile_OrphanProtection_RefusesMassDelete(t *testing.T) {
 	lister := &mockLister{beads: nil}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
-			makePod("crew-proj-dev-beta", "ns", "crew", "proj", "dev", "beta", corev1.PodRunning),
-			makePod("crew-proj-dev-gamma", "ns", "crew", "proj", "dev", "gamma", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-beta", "ns", "crew", "proj", "dev", "beta", corev1.PodRunning),
+			makePod("crew-proj-gamma", "ns", "crew", "proj", "dev", "gamma", corev1.PodRunning),
 		},
 	}
 
@@ -309,8 +309,8 @@ func TestReconcile_OrphanProtection_AllowsDeleteWhenSomeBeadsExist(t *testing.T)
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
-			makePod("crew-proj-dev-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
 		},
 	}
 
@@ -323,8 +323,8 @@ func TestReconcile_OrphanProtection_AllowsDeleteWhenSomeBeadsExist(t *testing.T)
 	if len(mgr.deleted) != 1 {
 		t.Fatalf("expected 1 orphan deletion, got %d", len(mgr.deleted))
 	}
-	if mgr.deleted[0] != "crew-proj-dev-orphan" {
-		t.Errorf("expected crew-proj-dev-orphan deleted, got %s", mgr.deleted[0])
+	if mgr.deleted[0] != "crew-proj-orphan" {
+		t.Errorf("expected crew-proj-orphan deleted, got %s", mgr.deleted[0])
 	}
 }
 
@@ -421,8 +421,8 @@ func TestReconcile_MaxPods_CapsActiveCount(t *testing.T) {
 	// 2 pods already exist and are running.
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-agent0", "ns", "crew", "proj", "dev", "agent0", corev1.PodRunning),
-			makePod("crew-proj-dev-agent1", "ns", "crew", "proj", "dev", "agent1", corev1.PodRunning),
+			makePod("crew-proj-agent0", "ns", "crew", "proj", "dev", "agent0", corev1.PodRunning),
+			makePod("crew-proj-agent1", "ns", "crew", "proj", "dev", "agent1", corev1.PodRunning),
 		},
 	}
 

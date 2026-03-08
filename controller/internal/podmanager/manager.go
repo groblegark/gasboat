@@ -177,9 +177,9 @@ type WorkspaceStorageSpec struct {
 	StorageClassName string
 }
 
-// PodName returns the canonical pod name: {mode}-{project}-{role}-{name}.
+// PodName returns the canonical pod name: {mode}-{project}-{name}.
 func (s *AgentPodSpec) PodName() string {
-	return fmt.Sprintf("%s-%s-%s-%s", s.Mode, s.Project, s.Role, s.AgentName)
+	return fmt.Sprintf("%s-%s-%s", s.Mode, s.Project, s.AgentName)
 }
 
 // Labels returns the standard label set for this agent pod.

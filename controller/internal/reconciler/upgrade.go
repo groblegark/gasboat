@@ -348,9 +348,9 @@ func (t *UpgradeTracker) getAgentState(ctx context.Context, coopURL string) (str
 }
 
 // extractModeFromPodName extracts the mode segment from a pod name.
-// Pod names follow the pattern: {mode}-{project}-{role}-{agentName}
-// e.g., "job-gasboat-devops-furiosa" -> "job"
-//       "crew-gasboat-devops-toolbox" -> "crew"
+// Pod names follow the pattern: {mode}-{project}-{agentName}
+// e.g., "job-gasboat-furiosa" -> "job"
+//       "crew-gasboat-toolbox" -> "crew"
 func extractModeFromPodName(podName string) string {
 	parts := strings.SplitN(podName, "-", 2)
 	if len(parts) < 2 {
