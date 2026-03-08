@@ -203,13 +203,13 @@ func configs() map[string]any {
 			},
 		},
 
-		// --- templates & bundles -----------------------------------------
+		// --- formulas & molecules ----------------------------------------
 		//
-		// Templates are reusable work definitions (ported from beads formulas).
-		// A template defines variables and steps; applying a template creates
-		// a bundle (an epic with child issues, variable-substituted).
+		// Formulas are reusable work definitions with variables and steps.
+		// Applying a formula creates a molecule (an epic with child issues,
+		// variable-substituted).
 
-		"type:template": TypeConfig{
+		"type:formula": TypeConfig{
 			Kind: "data",
 			Fields: []FieldDef{
 				// Variable definitions: [{name, description, required, default, type, enum}]
@@ -218,11 +218,11 @@ func configs() map[string]any {
 				{Name: "steps", Type: "json"},
 			},
 		},
-		"type:bundle": TypeConfig{
+		"type:molecule": TypeConfig{
 			Kind: "issue",
 			Fields: []FieldDef{
-				// ID of the template bead this bundle was created from.
-				{Name: "template_id", Type: "string"},
+				// ID of the formula bead this molecule was created from.
+				{Name: "formula_id", Type: "string"},
 				// Variable values applied during instantiation.
 				{Name: "applied_vars", Type: "json"},
 			},
@@ -239,7 +239,7 @@ func configs() map[string]any {
 
 		// --- views -----------------------------------------------------------
 		//
-		// Core views used by the controller and by context templates.
+		// Core views used by the controller and by context formulas.
 
 		"view:agents:active": ViewConfig{
 			Filter: ViewFilter{
