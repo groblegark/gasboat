@@ -27,7 +27,8 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	falsePositives := 0
 
-	for i := 0; i < 30; i++ {
+	// Increased from 30 to 60 iterations (120s) to handle large session replays.
+	for i := 0; i < 60; i++ {
 		select {
 		case <-ctx.Done():
 			return
@@ -47,7 +48,8 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 		if agentState == "starting" {
 			screen, _ := getScreenText(client, base)
 
-			if strings.Contains(screen, "Resume Session") {
+			// Case-insensitive match to handle potential text changes across Claude versions.
+			if strings.Contains(screen, "Resume Session") || strings.Contains(strings.ToLower(screen), "resume session") {
 				fmt.Printf("[gb agent start] detected resume session picker, selecting resume\n")
 				postKeys(client, base, "Return")
 				time.Sleep(3 * time.Second)
@@ -85,7 +87,7 @@ func autoBypassStartup(ctx context.Context, coopPort int) {
 			}
 		}
 	}
-	fmt.Printf("[gb agent start] WARNING: auto-bypass timed out after 60s\n")
+	fmt.Printf("[gb agent start] WARNING: auto-bypass timed out after 120s\n")
 }
 
 // injectInitialPrompt waits for the agent to reach idle state, then sends a
@@ -239,10 +241,15 @@ func findResumeSession(claudeStateDir string, sessionResume bool) string {
 	_ = filepath.Walk(projectsDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil && strings.HasSuffix(path, ".jsonl.stale") && !info.IsDir() {
 			staleCount++
+			// Clean up stale files older than 24h to prevent permanent resume lockout.
+			if time.Since(info.ModTime()) > 24*time.Hour {
+				os.Remove(path)
+				staleCount--
+			}
 		}
 		return nil
 	})
-	const maxStaleRetries = 2
+	const maxStaleRetries = 3
 	if staleCount >= maxStaleRetries {
 		fmt.Printf("[gb agent start] skipping resume: %d stale session(s) found (max %d)\n", staleCount, maxStaleRetries)
 		return ""
@@ -274,6 +281,7 @@ func findResumeSession(claudeStateDir string, sessionResume bool) string {
 		return candidates[i].modTime.After(candidates[j].modTime)
 	})
 	best := candidates[0].path
+	fmt.Printf("[gb agent start] found session log for resume: %s\n", best)
 	// Validate the last line is complete JSON. A partial write from an
 	// abrupt kill leaves an incomplete line that breaks --resume.
 	truncateIncompleteLastLine(best)

@@ -151,11 +151,20 @@ mkdir -p "${REPOS_DIR}"
 
 # Clone reference repos declared on the project bead.
 # Init container clones them first; this is a fallback for job mode (EmptyDir).
+# Format: "name=https://host/path.git:branch,name2=https://host2/path2.git:branch2"
+# The branch suffix is always present (controller defaults empty to "main").
 if [ -n "${BOAT_REFERENCE_REPOS:-}" ]; then
     IFS=',' read -ra REPO_ENTRIES <<< "${BOAT_REFERENCE_REPOS}"
     for entry in "${REPO_ENTRIES[@]}"; do
         repo_name="${entry%%=*}"
-        repo_url="${entry#*=}"; repo_url="${repo_url%%:*}"
+        repo_rest="${entry#*=}"
+        # Strip the trailing :branch suffix. Use %:* (shortest suffix) to
+        # preserve the scheme colon in https:// and any port colons.
+        repo_url="${repo_rest%:*}"
+        # Guard: if stripping produced a bare scheme, use the full value.
+        if [ "${repo_url}" = "https" ] || [ "${repo_url}" = "http" ]; then
+            repo_url="${repo_rest}"
+        fi
         _clone_repo "${repo_url}" "${REPOS_DIR}/${repo_name}"
     done
 fi
@@ -346,13 +355,29 @@ printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferr
 
 fi  # end of MOCK_MODE != 1 (Claude settings block)
 
+# ── Resolve coop working directory ────────────────────────────────────────
+#
+# If the init container cloned the primary project repo (at
+# /home/agent/bot/{project}/work), use that as the cwd so agents start
+# inside the actual codebase. Falls back to the scaffold workspace.
+# This mirrors resolveCoopWorkdir() in gb agent start --k8s.
+
+COOP_WORKDIR="${WORKSPACE}"
+if [ -n "${PROJECT}" ] && [ -d "/home/agent/bot/${PROJECT}/work/.git" ]; then
+    COOP_WORKDIR="/home/agent/bot/${PROJECT}/work"
+    export KD_WORKSPACE="${COOP_WORKDIR}"
+    echo "[entrypoint] Using project repo as cwd: ${COOP_WORKDIR}"
+else
+    echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
+fi
+
 # ── Start coop + Claude ──────────────────────────────────────────────────
 #
 # We keep bash as PID 1 (no exec) so the pod survives if Claude/coop exit.
 # On child exit we clean up FIFO pipes and restart with --resume.
 # SIGTERM from K8s is forwarded to coop for graceful shutdown.
 
-cd "${WORKSPACE}"
+cd "${COOP_WORKDIR}"
 
 COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 50"
 
@@ -375,7 +400,8 @@ export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 # ── Auto-bypass startup prompts ────────────────────────────────────────
 auto_bypass_startup() {
     false_positive_count=0
-    for i in $(seq 1 30); do
+    # Increased from 30 to 60 iterations (120s) to handle large session replays.
+    for i in $(seq 1 60); do
         sleep 2
         state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || continue
         agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
@@ -388,7 +414,8 @@ auto_bypass_startup() {
 
             # Handle "Resume Session" picker — press Enter to resume the most recent session.
             # Previously pressed Escape which caused a new .jsonl to accumulate on the PVC.
-            if echo "${screen}" | grep -q "Resume Session"; then
+            # Case-insensitive match to handle potential text changes across Claude versions.
+            if echo "${screen}" | grep -qi "resume.*session\|Resume Session"; then
                 echo "[entrypoint] Detected resume session picker, selecting resume"
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
@@ -448,7 +475,7 @@ auto_bypass_startup() {
             return 0
         fi
     done
-    echo "[entrypoint] WARNING: auto-bypass timed out after 60s"
+    echo "[entrypoint] WARNING: auto-bypass timed out after 120s"
 }
 
 # ── Inject initial work prompt ────────────────────────────────────────
@@ -774,10 +801,11 @@ while true; do
 
     # Find latest session log for resume.
     RESUME_FLAG=""
-    MAX_STALE_RETRIES=2
-    STALE_COUNT=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null || true) | wc -l | tr -d ' ')
+    LATEST_LOG=""
+    MAX_STALE_RETRIES=3
+    STALE_COUNT=$( (find "${CLAUDE_STATE}/projects" -maxdepth 3 -name '*.jsonl.stale' -type f 2>/dev/null || true) | wc -l | tr -d ' ')
     if [ "${MOCK_MODE}" != "1" ] && [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
-        LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
+        LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 3 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
             | sort -rn | head -1 | cut -d' ' -f2-)
         if [ -n "${LATEST_LOG}" ] && [ -f "${LATEST_LOG}" ]; then
             # Validate last line is complete JSON. A partial write from an
@@ -788,10 +816,13 @@ while true; do
                 # Remove the last (incomplete) line, keeping all complete lines.
                 head -n -1 "${LATEST_LOG}" > "${LATEST_LOG}.tmp" && mv "${LATEST_LOG}.tmp" "${LATEST_LOG}"
             fi
+            echo "[entrypoint] Found session log for resume: ${LATEST_LOG}"
             RESUME_FLAG="--resume ${LATEST_LOG}"
         fi
     elif [ "${STALE_COUNT:-0}" -ge "${MAX_STALE_RETRIES}" ]; then
         echo "[entrypoint] Skipping resume: ${STALE_COUNT} stale session(s) found (max ${MAX_STALE_RETRIES}), starting fresh"
+        # Clean up stale files older than 24h to prevent permanent resume lockout.
+        find "${CLAUDE_STATE}/projects" -maxdepth 3 -name '*.jsonl.stale' -type f -mmin +1440 -delete 2>/dev/null || true
     fi
 
     start_time=$(date +%s)
