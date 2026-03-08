@@ -111,7 +111,7 @@ func TestAgents_HandleClosed_CrashNotification(t *testing.T) {
 		Assignee: "gasboat/crew/test-bot",
 		Fields: map[string]string{
 			"agent_state": "failed",
-			"pod_name":    "crew-gasboat-crew-test-bot-xyz",
+			"pod_name":    "crew-gasboat-test-bot-xyz",
 		},
 	})
 	a.handleClosed(context.Background(), crashedAgent)
@@ -143,7 +143,7 @@ func TestAgents_HandleUpdated_PodPhaseFailed(t *testing.T) {
 		Fields: map[string]string{
 			"agent_state": "working",
 			"pod_phase":   "failed",
-			"pod_name":    "crew-gasboat-crew-worker-1-abc",
+			"pod_name":    "crew-gasboat-worker-1-abc",
 		},
 	})
 	a.handleUpdated(context.Background(), failedPod)

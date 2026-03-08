@@ -1,0 +1,16 @@
+{
+  "decision_messages": {
+    "dec-1": {
+      "channel_id": "C123",
+      "timestamp": "2222.2222",
+      "agent": "gasboat/crew/old-agent"
+    }
+  },
+  "agent_cards": {
+    "gasboat/crew/old-agent": {
+      "channel_id": "C123",
+      "timestamp": "1111.1111",
+      "agent": "gasboat/crew/old-agent"
+    }
+  }
+}

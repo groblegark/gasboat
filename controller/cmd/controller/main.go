@@ -404,7 +404,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		return nil
 
 	case subscriber.AgentDone, subscriber.AgentKill, subscriber.AgentStop:
-		podName := fmt.Sprintf("%s-%s-%s-%s", event.Mode, event.Project, event.Role, event.AgentName)
+		podName := fmt.Sprintf("%s-%s-%s", event.Mode, event.Project, event.AgentName)
 		ns := namespaceFromEvent(event, cfg.Namespace)
 		err := pods.DeleteAgentPod(ctx, podName, ns)
 		// Clear backend metadata so stale Coop URLs don't linger.
@@ -427,7 +427,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 
 	case subscriber.AgentStuck:
 		// Delete and recreate the pod to restart the agent.
-		podName := fmt.Sprintf("%s-%s-%s-%s", event.Mode, event.Project, event.Role, event.AgentName)
+		podName := fmt.Sprintf("%s-%s-%s", event.Mode, event.Project, event.AgentName)
 		ns := namespaceFromEvent(event, cfg.Namespace)
 		if err := pods.DeleteAgentPod(ctx, podName, ns); err != nil {
 			logger.Warn("failed to delete stuck pod (may not exist)", "pod", podName, "error", err)

@@ -47,7 +47,7 @@ func agentLabels(project, role, agent string) map[string]string {
 // --- SyncAll tests ---
 
 func TestSyncAll_ReportsStatusForAgentPods(t *testing.T) {
-	pod := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	pod := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
 	client := fake.NewSimpleClientset(pod)
 	daemon := &mockBeadUpdater{}
@@ -90,7 +90,7 @@ func TestSyncAll_ReportsBackendMetadataForCoopPods(t *testing.T) {
 	labels := agentLabels("proj", "dev", "alpha")
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "crew-proj-dev-alpha",
+			Name:      "crew-proj-alpha",
 			Namespace: "ns",
 			Labels:    labels,
 		},
@@ -128,7 +128,7 @@ func TestSyncAll_ReportsBackendMetadataForCoopPods(t *testing.T) {
 }
 
 func TestSyncAll_NoMetadataForNonCoopPods(t *testing.T) {
-	pod := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	pod := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
 	client := fake.NewSimpleClientset(pod)
 	daemon := &mockBeadUpdater{}
@@ -148,7 +148,7 @@ func TestSyncAll_NoMetadataForCoopPodWithoutIP(t *testing.T) {
 	labels := agentLabels("proj", "dev", "alpha")
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "crew-proj-dev-alpha",
+			Name:      "crew-proj-alpha",
 			Namespace: "ns",
 			Labels:    labels,
 		},
@@ -182,9 +182,9 @@ func TestSyncAll_NoMetadataForCoopPodWithoutIP(t *testing.T) {
 }
 
 func TestSyncAll_MultiplePods(t *testing.T) {
-	pod1 := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	pod1 := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
-	pod2 := makePod("crew-proj-dev-beta", "ns", corev1.PodPending,
+	pod2 := makePod("crew-proj-beta", "ns", corev1.PodPending,
 		agentLabels("proj", "dev", "beta"), "")
 	client := fake.NewSimpleClientset(pod1, pod2)
 	daemon := &mockBeadUpdater{}
@@ -226,9 +226,9 @@ func TestSyncAll_NoPods(t *testing.T) {
 
 func TestSyncAll_StatusReportError_ContinuesProcessing(t *testing.T) {
 	// Even if one pod's status report fails, SyncAll should continue with others.
-	pod1 := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	pod1 := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
-	pod2 := makePod("crew-proj-dev-beta", "ns", corev1.PodRunning,
+	pod2 := makePod("crew-proj-beta", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "beta"), "10.0.0.2")
 
 	callCount := 0
@@ -254,7 +254,7 @@ func TestSyncAll_StatusReportError_ContinuesProcessing(t *testing.T) {
 }
 
 func TestSyncAll_MetricsTracking(t *testing.T) {
-	pod := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	pod := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
 	client := fake.NewSimpleClientset(pod)
 	daemon := &mockBeadUpdater{}
@@ -278,7 +278,7 @@ func TestSyncAll_UsesBeadIDFromAnnotation(t *testing.T) {
 	labels := agentLabels("proj", "dev", "alpha")
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "crew-proj-dev-alpha",
+			Name:      "crew-proj-alpha",
 			Namespace: "ns",
 			Labels:    labels,
 			Annotations: map[string]string{
@@ -313,7 +313,7 @@ func TestSyncAll_UsesBeadIDFromAnnotation(t *testing.T) {
 
 func TestSyncAll_OnlyMatchesGasboatPods(t *testing.T) {
 	// A pod in the same namespace but without the gasboat app label should not be listed.
-	gasboatPod := makePod("crew-proj-dev-alpha", "ns", corev1.PodRunning,
+	gasboatPod := makePod("crew-proj-alpha", "ns", corev1.PodRunning,
 		agentLabels("proj", "dev", "alpha"), "10.0.0.1")
 	otherPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -346,7 +346,7 @@ func TestSyncAll_CoopMetadataUsesCorrectURL(t *testing.T) {
 	labels := agentLabels("gasboat", "crew", "furiosa")
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "crew-gasboat-crew-furiosa",
+			Name:      "crew-gasboat-furiosa",
 			Namespace: "ns",
 			Labels:    labels,
 		},
@@ -381,7 +381,7 @@ func TestSyncAll_CoopMetadataUsesCorrectURL(t *testing.T) {
 		t.Errorf("expected notes to contain %s, got: %s", expectedURL, daemon.notesCalls[0].notes)
 	}
 
-	// beadID should be constructed from labels since no annotation.
+	// beadID should be constructed from labels since no annotation (includes role).
 	if daemon.notesCalls[0].beadID != "crew-gasboat-crew-furiosa" {
 		t.Errorf("expected beadID crew-gasboat-crew-furiosa, got %s", daemon.notesCalls[0].beadID)
 	}

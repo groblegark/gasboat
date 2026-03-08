@@ -24,7 +24,7 @@ func TestReconcile_DriftDetection_RecreatesOnImageChange(t *testing.T) {
 	// Pod is running with old image; desired spec has new image.
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
 		},
 	}
 
@@ -39,8 +39,8 @@ func TestReconcile_DriftDetection_RecreatesOnImageChange(t *testing.T) {
 	if len(mgr.deleted) != 1 {
 		t.Fatalf("expected 1 deletion for drift, got %d", len(mgr.deleted))
 	}
-	if mgr.deleted[0] != "crew-proj-dev-alpha" {
-		t.Errorf("expected crew-proj-dev-alpha deleted for drift, got %s", mgr.deleted[0])
+	if mgr.deleted[0] != "crew-proj-alpha" {
+		t.Errorf("expected crew-proj-alpha deleted for drift, got %s", mgr.deleted[0])
 	}
 	if len(mgr.created) != 1 {
 		t.Fatalf("expected 1 creation after drift delete, got %d", len(mgr.created))
@@ -59,7 +59,7 @@ func TestReconcile_DriftDetection_SkipsDriftForJobMode(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("job-proj-ops-task1", "ns", "job", "proj", "ops", "task1", corev1.PodRunning),
+			makePod("job-proj-task1", "ns", "job", "proj", "ops", "task1", corev1.PodRunning),
 		},
 	}
 
@@ -87,7 +87,7 @@ func TestReconcile_NoDrift_WhenImageMatches(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
 		},
 	}
 
@@ -115,7 +115,7 @@ func TestReconcile_DigestDrift_TriggersRecreate(t *testing.T) {
 		},
 	}
 
-	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod := makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
 	pod.Spec.Containers[0].Image = image // same tag — no tag drift
 
 	mgr := &mockManager{pods: []corev1.Pod{pod}}
@@ -149,7 +149,7 @@ func TestReconcile_DigestDrift_NoFalsePositiveOnFirstSeen(t *testing.T) {
 		},
 	}
 
-	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod := makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
 	pod.Spec.Containers[0].Image = image
 
 	mgr := &mockManager{pods: []corev1.Pod{pod}}
@@ -177,7 +177,7 @@ func TestReconcile_DigestDrift_ClearedAfterUpgrade(t *testing.T) {
 		},
 	}
 
-	pod := makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
+	pod := makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning)
 	pod.Spec.Containers[0].Image = image
 
 	mgr := &mockManager{pods: []corev1.Pod{pod}}
@@ -214,8 +214,8 @@ func TestReconcile_RollingUpgrade_OnlyOnePerMode(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
-			makePod("crew-proj-dev-beta", "ns", "crew", "proj", "dev", "beta", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-beta", "ns", "crew", "proj", "dev", "beta", corev1.PodRunning),
 		},
 	}
 
@@ -295,8 +295,8 @@ func TestReconcile_PodDeleteError_ReturnsError(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
-			makePod("crew-proj-dev-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
+			makePod("crew-proj-alpha", "ns", "crew", "proj", "dev", "alpha", corev1.PodRunning),
+			makePod("crew-proj-orphan", "ns", "crew", "proj", "dev", "orphan", corev1.PodRunning),
 		},
 		deleteErr: errors.New("forbidden"),
 	}
@@ -332,7 +332,7 @@ func TestReconcile_SingleBeadSinglePod(t *testing.T) {
 	}
 	mgr := &mockManager{
 		pods: []corev1.Pod{
-			makePod("crew-proj-dev-solo", "ns", "crew", "proj", "dev", "solo", corev1.PodRunning),
+			makePod("crew-proj-solo", "ns", "crew", "proj", "dev", "solo", corev1.PodRunning),
 		},
 	}
 

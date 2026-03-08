@@ -205,7 +205,7 @@ func resolveAgentName() string {
 	}
 	// Fall back to HOSTNAME, stripping the pod prefix.
 	hostname, _ := os.Hostname()
-	// Pod names are like "crew-gasboat-crew-worker-1" — extract "worker-1".
+	// Pod names are like "crew-gasboat-worker-1" — extract "worker-1".
 	parts := strings.Split(hostname, "-")
 	if len(parts) >= 2 {
 		return strings.Join(parts[len(parts)-2:], "-")

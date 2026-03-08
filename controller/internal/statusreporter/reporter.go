@@ -32,7 +32,7 @@ type BackendMetadata struct {
 	PodName   string // K8s pod name
 	Namespace string // K8s namespace
 	Backend   string // "coop" or "k8s"
-	CoopURL   string // e.g., "http://crew-gasboat-crew-furiosa.gasboat.svc.cluster.local:8080"
+	CoopURL   string // e.g., "http://crew-gasboat-furiosa.gasboat.svc.cluster.local:8080"
 	CoopToken string // auth token (optional)
 }
 
