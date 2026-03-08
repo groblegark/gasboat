@@ -74,6 +74,7 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 		b.mu.Lock()
 		ref, ok := b.agentCards[agent]
 		state := b.agentState[agent]
+		role := b.agentRole[agent]
 		if ok {
 			delete(b.agentPending, agent)
 			delete(b.agentPodName, agent)
@@ -86,7 +87,7 @@ func (b *Bot) pruneStaleAgentCards(ctx context.Context) {
 			if state == "" {
 				state = "done"
 			}
-			blocks := buildCompactAgentCardBlocks(agent, state)
+			blocks := buildCompactAgentCardBlocks(agent, state, role)
 			_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 				slack.MsgOptionText(fmt.Sprintf("Agent: %s (%s)", extractAgentName(agent), state), false),
 				slack.MsgOptionBlocks(blocks...),
@@ -149,10 +150,11 @@ func (b *Bot) ensureAgentCard(ctx context.Context, agent, channelID string) (str
 	seen := b.agentSeen[agent]
 	podName := b.agentPodName[agent]
 	imageTag := b.agentImageTag[agent]
+	role := b.agentRole[agent]
 	b.mu.Unlock()
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag, role)
 	cardChannel, ts, err := b.api.PostMessageContext(ctx, channelID,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -211,6 +213,9 @@ func (b *Bot) NotifyAgentSpawn(ctx context.Context, bead BeadEvent) {
 	b.mu.Lock()
 	b.agentState[agent] = "spawning"
 	b.agentSeen[agent] = time.Now()
+	if role := bead.Fields["role"]; role != "" {
+		b.agentRole[agent] = role
+	}
 	b.mu.Unlock()
 
 	// Fetch pod_name from the agent bead notes for coopmux terminal linking.
@@ -396,6 +401,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	seen := b.agentSeen[agent]
 	podName := b.agentPodName[agent]
 	imageTag := b.agentImageTag[agent]
+	role := b.agentRole[agent]
 	b.mu.Unlock()
 
 	if !ok {
@@ -413,7 +419,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 	}
 
 	taskTitle := b.agentTaskTitle(ctx, agent)
-	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag)
+	blocks := buildAgentCardBlocks(agent, pending, state, taskTitle, seen, b.coopmuxPublicURL, podName, imageTag, role)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s", extractAgentName(agent)), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -429,6 +435,7 @@ func (b *Bot) updateAgentCard(ctx context.Context, agent string) {
 func (b *Bot) replaceAgentCardWithWrapUp(ctx context.Context, agent, state, wrapupJSON string) {
 	b.mu.Lock()
 	ref, ok := b.agentCards[agent]
+	role := b.agentRole[agent]
 	b.mu.Unlock()
 
 	if !ok {
@@ -437,7 +444,7 @@ func (b *Bot) replaceAgentCardWithWrapUp(ctx context.Context, agent, state, wrap
 		return
 	}
 
-	blocks := buildWrapUpAgentCardBlocks(agent, state, wrapupJSON)
+	blocks := buildWrapUpAgentCardBlocks(agent, state, wrapupJSON, role)
 	_, _, _, err := b.api.UpdateMessageContext(ctx, ref.ChannelID, ref.Timestamp,
 		slack.MsgOptionText(fmt.Sprintf("Agent: %s (%s)", extractAgentName(agent), state), false),
 		slack.MsgOptionBlocks(blocks...),
@@ -452,8 +459,9 @@ func (b *Bot) replaceAgentCardWithWrapUp(ctx context.Context, agent, state, wrap
 // card with a wrap-up summary. The header shows the agent name and terminal
 // state, followed by the wrapup content in a section block that Slack can
 // truncate, and a Clear button for dismissal.
-func buildWrapUpAgentCardBlocks(agent, agentState, wrapupJSON string) []slack.Block {
+func buildWrapUpAgentCardBlocks(agent, agentState, wrapupJSON, role string) []slack.Block {
 	name := extractAgentName(agent)
+	displayName := appendRoleSuffix(name, role)
 
 	var indicator string
 	switch agentState {
@@ -465,7 +473,7 @@ func buildWrapUpAgentCardBlocks(agent, agentState, wrapupJSON string) []slack.Bl
 		indicator = ":white_circle:"
 	}
 
-	headerText := fmt.Sprintf("%s *%s* · %s", indicator, name, agentState)
+	headerText := fmt.Sprintf("%s *%s* · %s", indicator, displayName, agentState)
 	wrapupText := formatWrapUpSlack(wrapupJSON)
 
 	blocks := []slack.Block{
@@ -498,7 +506,7 @@ func buildWrapUpAgentCardBlocks(agent, agentState, wrapupJSON string) []slack.Bl
 // seen is the last time activity was recorded for this agent (zero = unknown).
 // coopmuxURL and podName are used to render the agent name as a clickable terminal link.
 // imageTag is the deployed image tag (e.g., "v2026.58.3") shown in the context line.
-func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time, coopmuxURL, podName, imageTag string) []slack.Block {
+func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle string, seen time.Time, coopmuxURL, podName, imageTag, role string) []slack.Block {
 	name := extractAgentName(agent)
 	project := extractAgentProject(agent)
 
@@ -528,6 +536,7 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 	}
 
 	displayName := coopmuxAgentLink(coopmuxURL, podName, name)
+	displayName = appendRoleSuffix(displayName, role)
 	headerText := fmt.Sprintf("%s *%s*", indicator, displayName)
 	if project != "" {
 		headerText += fmt.Sprintf(" \u00b7 _%s_", project)
@@ -570,8 +579,9 @@ func buildAgentCardBlocks(agent string, pendingCount int, agentState, taskTitle 
 // dead/finished agent. This replaces the full multi-block card when the agent
 // is no longer active, keeping the card visible (since thread replies persist)
 // but taking minimal space. A "Clear" button allows manual removal.
-func buildCompactAgentCardBlocks(agent, agentState string) []slack.Block {
+func buildCompactAgentCardBlocks(agent, agentState, role string) []slack.Block {
 	name := extractAgentName(agent)
+	displayName := appendRoleSuffix(name, role)
 
 	var indicator string
 	switch agentState {
@@ -583,7 +593,7 @@ func buildCompactAgentCardBlocks(agent, agentState string) []slack.Block {
 		indicator = ":white_circle:"
 	}
 
-	text := fmt.Sprintf("%s ~%s~ · %s", indicator, name, agentState)
+	text := fmt.Sprintf("%s ~%s~ · %s", indicator, displayName, agentState)
 
 	clearBtn := slack.NewButtonBlockElement(
 		"clear_agent",
@@ -601,8 +611,8 @@ func buildCompactAgentCardBlocks(agent, agentState string) []slack.Block {
 }
 
 // fetchAndCachePodName fetches the agent bead from the daemon, extracts
-// pod_name and image_tag from Notes, and caches them for coopmux terminal
-// linking and agent card display respectively.
+// pod_name, image_tag, and role, and caches them for coopmux terminal
+// linking, agent card display, and role display respectively.
 func (b *Bot) fetchAndCachePodName(ctx context.Context, agent string) {
 	detail, err := b.daemon.FindAgentBead(ctx, agent)
 	if err != nil {
@@ -612,6 +622,7 @@ func (b *Bot) fetchAndCachePodName(ctx context.Context, agent string) {
 	notes := beadsapi.ParseNotes(detail.Notes)
 	podName := notes["pod_name"]
 	imageTag := extractImageTag(notes["image_tag"])
+	role := detail.Fields["role"]
 
 	b.mu.Lock()
 	if podName != "" {
@@ -619,6 +630,9 @@ func (b *Bot) fetchAndCachePodName(ctx context.Context, agent string) {
 	}
 	if imageTag != "" {
 		b.agentImageTag[agent] = imageTag
+	}
+	if role != "" {
+		b.agentRole[agent] = role
 	}
 	b.mu.Unlock()
 }
@@ -697,6 +711,7 @@ func (b *Bot) killAgent(ctx context.Context, agentName string, force bool) error
 	// Compress the agent card to a compact single-line format.
 	b.mu.Lock()
 	ref, hasCard := b.agentCards[agentName]
+	role := b.agentRole[agentName]
 	if hasCard {
 		delete(b.agentPending, agentName)
 		delete(b.agentPodName, agentName)
@@ -705,7 +720,7 @@ func (b *Bot) killAgent(ctx context.Context, agentName string, force bool) error
 	b.mu.Unlock()
 
 	if hasCard {
-		blocks := buildCompactAgentCardBlocks(agentName, "done")
+		blocks := buildCompactAgentCardBlocks(agentName, "done", role)
 		_, _, _, err := b.api.UpdateMessageContext(killCtx, ref.ChannelID, ref.Timestamp,
 			slack.MsgOptionText(fmt.Sprintf("Agent: %s (done)", extractAgentName(agentName)), false),
 			slack.MsgOptionBlocks(blocks...),
@@ -814,6 +829,7 @@ func (b *Bot) handleClearAgent(ctx context.Context, agentIdentity string, callba
 		delete(b.agentPending, agentIdentity)
 		delete(b.agentState, agentIdentity)
 		delete(b.agentPodName, agentIdentity)
+		delete(b.agentRole, agentIdentity)
 		delete(b.agentImageTag, agentIdentity)
 	}
 	b.mu.Unlock()

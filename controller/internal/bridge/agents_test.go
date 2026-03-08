@@ -672,6 +672,7 @@ func TestBuildAgentCardBlocks_ImageTagInContext(t *testing.T) {
 		"",       // coopmuxURL
 		"",       // podName
 		"v2026.58.3", // imageTag
+		"crew",   // role
 	)
 
 	// The context block (index 1) should contain the image tag.
@@ -713,6 +714,7 @@ func TestBuildAgentCardBlocks_NoImageTag(t *testing.T) {
 		"",
 		"",
 		"", // no imageTag
+		"crew", // role
 	)
 
 	if len(blocks) < 2 {
@@ -734,7 +736,7 @@ func TestBuildAgentCardBlocks_NoImageTag(t *testing.T) {
 
 func TestBuildWrapUpAgentCardBlocks_Done(t *testing.T) {
 	wrapupJSON := `{"accomplishments":"Closed 3 bugs","blockers":"API key pending"}`
-	blocks := buildWrapUpAgentCardBlocks("gasboat/crew/test-bot", "done", wrapupJSON)
+	blocks := buildWrapUpAgentCardBlocks("gasboat/crew/test-bot", "done", wrapupJSON, "crew")
 
 	// Should have 3 blocks: header, wrapup section, action (Clear button).
 	if len(blocks) != 3 {
@@ -770,7 +772,7 @@ func TestBuildWrapUpAgentCardBlocks_Done(t *testing.T) {
 
 func TestBuildWrapUpAgentCardBlocks_Failed(t *testing.T) {
 	wrapupJSON := `{"accomplishments":"Partial work done"}`
-	blocks := buildWrapUpAgentCardBlocks("test-bot", "failed", wrapupJSON)
+	blocks := buildWrapUpAgentCardBlocks("test-bot", "failed", wrapupJSON, "")
 
 	header := blocks[0].(*slack.SectionBlock)
 	if !strings.Contains(header.Text.Text, ":x:") {
@@ -779,7 +781,7 @@ func TestBuildWrapUpAgentCardBlocks_Failed(t *testing.T) {
 }
 
 func TestBuildWrapUpAgentCardBlocks_EmptyWrapUp(t *testing.T) {
-	blocks := buildWrapUpAgentCardBlocks("test-bot", "done", `{}`)
+	blocks := buildWrapUpAgentCardBlocks("test-bot", "done", `{}`, "")
 
 	// Empty wrapup: header + action only (no wrapup section block).
 	if len(blocks) != 2 {
@@ -831,5 +833,65 @@ func TestFormatWrapUpSlack_EmptyWrapUp(t *testing.T) {
 	result := formatWrapUpSlack(`{}`)
 	if result != "" {
 		t.Errorf("expected empty string for empty wrapup, got: %q", result)
+	}
+}
+
+func TestAppendRoleSuffix(t *testing.T) {
+	tests := []struct {
+		name string
+		role string
+		want string
+	}{
+		{"empty role", "", "my-agent"},
+		{"crew role hidden", "crew", "my-agent"},
+		{"captain shown", "captain", "my-agent (captain)"},
+		{"thread shown", "thread", "my-agent (thread)"},
+		{"ops shown", "ops", "my-agent (ops)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appendRoleSuffix("my-agent", tt.role)
+			if got != tt.want {
+				t.Errorf("appendRoleSuffix(%q, %q) = %q, want %q", "my-agent", tt.role, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildAgentCardBlocks_RoleInHeader(t *testing.T) {
+	blocks := buildAgentCardBlocks(
+		"gasboat/captain/hq",
+		0,
+		"working",
+		"",
+		time.Time{},
+		"",
+		"",
+		"",
+		"captain",
+	)
+
+	header := blocks[0].(*slack.SectionBlock)
+	if !strings.Contains(header.Text.Text, "(captain)") {
+		t.Errorf("expected role in header, got: %s", header.Text.Text)
+	}
+}
+
+func TestBuildAgentCardBlocks_CrewRoleHidden(t *testing.T) {
+	blocks := buildAgentCardBlocks(
+		"gasboat/crew/worker",
+		0,
+		"working",
+		"",
+		time.Time{},
+		"",
+		"",
+		"",
+		"crew",
+	)
+
+	header := blocks[0].(*slack.SectionBlock)
+	if strings.Contains(header.Text.Text, "(crew)") {
+		t.Errorf("crew role should not appear in header, got: %s", header.Text.Text)
 	}
 }

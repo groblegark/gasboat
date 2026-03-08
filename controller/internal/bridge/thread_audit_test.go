@@ -508,7 +508,7 @@ func TestBuildAgentCardBlocks_AllStates(t *testing.T) {
 
 	for _, tt := range states {
 		t.Run(tt.state, func(t *testing.T) {
-			blocks := buildAgentCardBlocks("test-agent", tt.pending, tt.state, "", time.Now(), "", "", "")
+			blocks := buildAgentCardBlocks("test-agent", tt.pending, tt.state, "", time.Now(), "", "", "", "")
 			if len(blocks) == 0 {
 				t.Fatal("expected blocks")
 			}

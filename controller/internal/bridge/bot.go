@@ -67,8 +67,9 @@ type Bot struct {
 	agentPending map[string]int        // agent identity → pending decision count
 	agentState   map[string]string     // agent identity → last known agent_state
 	agentSeen    map[string]time.Time  // agent identity → last activity timestamp
-	agentPodName map[string]string     // agent identity → pod hostname (coopmux session ID)
-	agentImageTag    map[string]string     // agent identity → deployed image tag
+	agentPodName  map[string]string     // agent identity → pod hostname (coopmux session ID)
+	agentRole     map[string]string     // agent identity → role (e.g., "crew", "captain", "thread")
+	agentImageTag map[string]string     // agent identity → deployed image tag
 	threadSpawnMsgs  map[string]MessageRef // agent identity → spawn confirmation message ref (for in-place update)
 
 	// Nudge throttling for thread reply forwarding.
@@ -138,6 +139,7 @@ func NewBot(cfg BotConfig) *Bot {
 		agentState:       make(map[string]string),
 		agentSeen:        make(map[string]time.Time),
 		agentPodName:     make(map[string]string),
+		agentRole:        make(map[string]string),
 		agentImageTag:    make(map[string]string),
 		threadSpawnMsgs:  make(map[string]MessageRef),
 		lastThreadNudge: make(map[string]time.Time),
@@ -560,14 +562,17 @@ func (b *Bot) updateMessageResolved(ctx context.Context, beadID, chosen, rationa
 	}
 }
 
-// agentDisplayName returns the agent's short name as a clickable coopmux link
-// (if the pod name is known), otherwise the plain short name. Thread-safe.
+// agentDisplayName returns the agent's short name (with role suffix) as a
+// clickable coopmux link (if the pod name is known), otherwise the plain short
+// name. Thread-safe.
 func (b *Bot) agentDisplayName(agent string) string {
 	name := extractAgentName(agent)
 	b.mu.Lock()
 	podName := b.agentPodName[agent]
+	role := b.agentRole[agent]
 	b.mu.Unlock()
-	return coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
+	link := coopmuxAgentLink(b.coopmuxPublicURL, podName, name)
+	return appendRoleSuffix(link, role)
 }
 
 // agentThreadLink returns "agent" as a clickable coopmux link for use in
@@ -577,6 +582,15 @@ func (b *Bot) agentThreadLink(agent string) string {
 	podName := b.agentPodName[extractAgentName(agent)]
 	b.mu.Unlock()
 	return coopmuxAgentLink(b.coopmuxPublicURL, podName, "agent")
+}
+
+// appendRoleSuffix appends the agent role as a parenthetical suffix if it is
+// non-empty and not the default "crew" role (which is too common to display).
+func appendRoleSuffix(displayName, role string) string {
+	if role == "" || role == "crew" {
+		return displayName
+	}
+	return fmt.Sprintf("%s (%s)", displayName, role)
 }
 
 // coopmuxAgentLink returns a Slack mrkdwn link to the agent's coopmux terminal
