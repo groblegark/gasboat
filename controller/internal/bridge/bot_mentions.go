@@ -310,9 +310,10 @@ func parseListenFlag(text string) (bool, string) {
 }
 
 // parseProjectOverride extracts a project override from mention text.
-// Supports two syntaxes:
+// Supports three syntaxes:
 //   - "project:gasboat fix the helm chart" → ("gasboat", "fix the helm chart")
 //   - "--project gasboat fix the helm chart" → ("gasboat", "fix the helm chart")
+//   - "--project=gasboat fix the helm chart" → ("gasboat", "fix the helm chart")
 //
 // Returns ("", text) if no override is found.
 func parseProjectOverride(text string) (string, string) {
@@ -327,7 +328,13 @@ func parseProjectOverride(text string) (string, string) {
 		return project, remaining
 	}
 
-	// Syntax 2: --project <name>
+	// Syntax 2: --project=<name>
+	if project, ok := strings.CutPrefix(words[0], "--project="); ok && project != "" {
+		remaining := strings.TrimSpace(strings.Join(words[1:], " "))
+		return project, remaining
+	}
+
+	// Syntax 3: --project <name>
 	if words[0] == "--project" && len(words) >= 2 {
 		project := words[1]
 		remaining := strings.TrimSpace(strings.Join(words[2:], " "))
@@ -385,6 +392,31 @@ func (b *Bot) handleThreadSpawn(ctx context.Context, ev *slackevents.AppMentionE
 	if project == "" && b.router != nil {
 		if mapped := b.router.GetAgentByChannel(channel); mapped != "" {
 			project = projectFromAgentIdentity(mapped)
+		}
+	}
+
+	// Validate explicit project override exists as a project bead.
+	// If the user explicitly typed --project=X and X doesn't exist,
+	// warn them rather than silently spawning with no project config.
+	if projectOverride != "" {
+		projects, err := b.daemon.ListProjectBeads(ctx)
+		if err == nil {
+			if _, ok := projects[projectOverride]; !ok {
+				names := make([]string, 0, len(projects))
+				for name := range projects {
+					names = append(names, name)
+				}
+				b.logger.Warn("thread-spawn: explicit project override not found in project beads",
+					"project", projectOverride, "available", names)
+				if b.api != nil {
+					msg := fmt.Sprintf(":warning: Project %q not found — spawning agent without project-specific config. Available projects: %s",
+						projectOverride, strings.Join(names, ", "))
+					_, _, _ = b.api.PostMessage(channel,
+						slack.MsgOptionText(msg, false),
+						slack.MsgOptionTS(threadTS),
+					)
+				}
+			}
 		}
 	}
 

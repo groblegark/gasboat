@@ -644,6 +644,24 @@ func TestParseProjectOverride(t *testing.T) {
 			wantProject:   "",
 			wantRemaining: "--project",
 		},
+		{
+			name:          "--project= syntax",
+			text:          "--project=gasboat fix the helm chart",
+			wantProject:   "gasboat",
+			wantRemaining: "fix the helm chart",
+		},
+		{
+			name:          "--project= no remaining text",
+			text:          "--project=monorepo",
+			wantProject:   "monorepo",
+			wantRemaining: "",
+		},
+		{
+			name:          "--project= with empty value",
+			text:          "--project= something",
+			wantProject:   "",
+			wantRemaining: "--project= something",
+		},
 	}
 
 	for _, tt := range tests {
