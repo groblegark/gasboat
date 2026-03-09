@@ -243,12 +243,21 @@ tasks:
           path: gitlab-bridge
 
   # ── Download coop from releases → artifact (parallel, cached) ──────
+  # Reads pinned version from Dockerfile ARG when init is "latest",
+  # ensuring CI builds match local docker builds (Dockerfile is source of truth).
   - key: download-coop
+    use: [code]
     run: |
       set -ex
       COOP_VER="${COOP_VERSION:-latest}"
       if [ "$COOP_VER" = "latest" ] || [ -z "$COOP_VER" ]; then
+        # Read pinned version from Dockerfile (source of truth).
+        COOP_VER=$(grep '^ARG COOP_VERSION=' images/agent/Dockerfile | cut -d= -f2)
+        echo "Resolved coop version from Dockerfile: ${COOP_VER}"
+      fi
+      if [ -z "$COOP_VER" ]; then
         COOP_VER=$(curl -fsSL https://api.github.com/repos/groblegark/coop/releases/latest | jq -r .tag_name)
+        echo "Resolved coop version from GitHub latest: ${COOP_VER}"
       fi
       echo "Downloading coop ${COOP_VER} for linux-amd64"
       curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VER}/coop-linux-amd64.tar.gz" \
@@ -260,18 +269,28 @@ tasks:
       COOP_VERSION: ${{ init.coop-version }}
     filter:
       - .rwx/cache-config.lock
+      - images/agent/Dockerfile
     outputs:
       artifacts:
         - key: coop-binaries
           path: coop-bin
 
   # ── Download kd from releases → artifact (parallel, cached) ────────
+  # Reads pinned version from Dockerfile ARG when init is "latest",
+  # ensuring CI builds match local docker builds (Dockerfile is source of truth).
   - key: download-kd
+    use: [code]
     run: |
       set -ex
       KD_VER="${KD_VERSION:-latest}"
       if [ "$KD_VER" = "latest" ] || [ -z "$KD_VER" ]; then
+        # Read pinned version from Dockerfile (source of truth).
+        KD_VER=$(grep '^ARG BEADS_VERSION=' images/agent/Dockerfile | cut -d= -f2)
+        echo "Resolved kd version from Dockerfile: ${KD_VER}"
+      fi
+      if [ -z "$KD_VER" ]; then
         KD_VER=$(curl -fsSL https://api.github.com/repos/groblegark/kbeads/releases/latest | jq -r .tag_name)
+        echo "Resolved kd version from GitHub latest: ${KD_VER}"
       fi
       VERSION_NUM=${KD_VER#v}
       echo "Downloading kd ${KD_VER} for linux_amd64"
@@ -284,6 +303,7 @@ tasks:
       KD_VERSION: ${{ init.kd-version }}
     filter:
       - .rwx/cache-config.lock
+      - images/agent/Dockerfile
     outputs:
       artifacts:
         - key: kd-binaries
