@@ -19,7 +19,7 @@ Gasboat is a **67K-line Go codebase** (37K source, 30K test) across 12 internal 
 
 The codebase has a clean 5-layer architecture with no circular dependencies:
 
-```
+```diagram
 Layer 5: Entry Points
   cmd/controller/     cmd/slack-bridge/     cmd/gb/
   cmd/gitlab-bridge/  cmd/jira-bridge/      cmd/wl-bridge/
