@@ -270,3 +270,131 @@ func postCoopKeys(ctx context.Context, client *http.Client, base string, keys ..
 		resp.Body.Close()
 	}
 }
+
+// handleKillThreadAgent handles the "Kill Agent" button posted in thread spawn messages.
+// The button's value carries the agent identity. The interaction callback provides
+// the channel and thread context that slash commands cannot access.
+func (b *Bot) handleKillThreadAgent(ctx context.Context, agentName string, callback slack.InteractionCallback) {
+	agentName = extractAgentName(agentName)
+	channelID := callback.Channel.ID
+	userID := callback.User.ID
+
+	// Acknowledge immediately — kill can take 30s+.
+	_, _ = b.api.PostEphemeral(channelID, userID,
+		slack.MsgOptionText(fmt.Sprintf(":hourglass_flowing_sand: Killing thread agent *%s*…", agentName), false))
+
+	go func() {
+		if err := b.killAgent(context.Background(), agentName, false); err != nil {
+			b.logger.Error("kill-thread-agent button: failed", "agent", agentName, "error", err)
+			_, _ = b.api.PostEphemeral(channelID, userID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Failed to kill thread agent %q: %s", agentName, err.Error()), false))
+			return
+		}
+		b.logger.Info("killed thread agent via button", "agent", agentName, "user", userID)
+		_, _ = b.api.PostEphemeral(channelID, userID,
+			slack.MsgOptionText(fmt.Sprintf(":skull: Thread agent *%s* terminated.", agentName), false))
+	}()
+}
+
+// handleRestartThreadAgent handles the "Restart Agent" button on thread spawn messages.
+// It kills the current agent then re-spawns a new one with the same name, project,
+// and thread metadata — preserving the session JSONL for coop --resume.
+func (b *Bot) handleRestartThreadAgent(ctx context.Context, agentName string, callback slack.InteractionCallback) {
+	agentName = extractAgentName(agentName)
+	channelID := callback.Channel.ID
+	threadTS := callback.Container.ThreadTs
+	userID := callback.User.ID
+
+	if threadTS == "" {
+		_, _ = b.api.PostEphemeral(channelID, userID,
+			slack.MsgOptionText(":x: Restart is only available in threads.", false))
+		return
+	}
+
+	_, _ = b.api.PostEphemeral(channelID, userID,
+		slack.MsgOptionText(fmt.Sprintf(":arrows_counterclockwise: Restarting thread agent *%s*…", agentName), false))
+
+	go func() {
+		bgCtx := context.Background()
+
+		// Look up the existing agent bead to capture project and metadata before killing.
+		bead, err := b.daemon.FindAgentBead(bgCtx, agentName)
+		if err != nil {
+			b.logger.Error("restart-thread-agent: agent bead not found", "agent", agentName, "error", err)
+			_, _ = b.api.PostEphemeral(channelID, userID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Agent %q not found: %s", agentName, err), false))
+			return
+		}
+		project := bead.Fields["project"]
+
+		// Kill the agent (graceful shutdown + close bead + clean up state).
+		if err := b.killAgent(bgCtx, agentName, false); err != nil {
+			b.logger.Error("restart-thread-agent: kill failed", "agent", agentName, "error", err)
+			_, _ = b.api.PostEphemeral(channelID, userID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Failed to kill agent %q: %s", agentName, err), false))
+			return
+		}
+
+		// Re-spawn with the SAME agent name so the entrypoint finds the existing
+		// session JSONL and PVC workspace for session continuity.
+		fields := map[string]string{
+			"agent":                agentName,
+			"mode":                 "job",
+			"role":                 "thread",
+			"project":              project,
+			"slack_thread_channel": channelID,
+			"slack_thread_ts":      threadTS,
+			"spawn_source":         "slack-thread",
+		}
+		fieldsJSON, err := json.Marshal(fields)
+		if err != nil {
+			b.logger.Error("restart-thread-agent: marshal fields", "error", err)
+			return
+		}
+
+		labels := []string{"slack-thread"}
+		if project != "" {
+			labels = append(labels, "project:"+project)
+		}
+
+		newBeadID, err := b.daemon.CreateBead(bgCtx, beadsapi.CreateBeadRequest{
+			Title:       agentName,
+			Type:        "agent",
+			Description: "Restarted thread agent (session resume).",
+			Fields:      json.RawMessage(fieldsJSON),
+			Labels:      labels,
+		})
+		if err != nil {
+			b.logger.Error("restart-thread-agent: failed to create new bead", "agent", agentName, "error", err)
+			_, _ = b.api.PostEphemeral(channelID, userID,
+				slack.MsgOptionText(fmt.Sprintf(":x: Killed agent but failed to re-spawn: %s", err), false))
+			return
+		}
+
+		// Re-establish thread→agent mapping.
+		if b.state != nil {
+			_ = b.state.SetThreadAgent(channelID, threadTS, agentName)
+		}
+
+		b.logger.Info("restarted thread agent", "agent", agentName, "new_bead", newBeadID,
+			"user", userID, "channel", channelID, "thread_ts", threadTS)
+
+		if b.api != nil {
+			msg := fmt.Sprintf(":arrows_counterclockwise: Agent *%s* restarted with session resume. (tracking: `%s`)", agentName, newBeadID)
+			_, _, _ = b.api.PostMessage(channelID,
+				slack.MsgOptionText(msg, false),
+				slack.MsgOptionBlocks(
+					slack.NewSectionBlock(slack.NewTextBlockObject("mrkdwn", msg, false, false), nil, nil),
+					slack.NewActionBlock("thread_agent_actions",
+						slack.NewButtonBlockElement("restart_thread_agent", agentName,
+							slack.NewTextBlockObject("plain_text", "Restart Agent", false, false)),
+						slack.NewButtonBlockElement("kill_thread_agent", agentName,
+							slack.NewTextBlockObject("plain_text", "Kill Agent", false, false)).
+							WithStyle(slack.StyleDanger),
+					),
+				),
+				slack.MsgOptionTS(threadTS),
+			)
+		}
+	}()
+}

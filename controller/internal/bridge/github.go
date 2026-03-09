@@ -274,8 +274,8 @@ type ghPackageVersion struct {
 // matching the digest, then extracts the commit from sha-<hex> convention tags
 // (set by docker/metadata-action during CI builds).
 //
-// imageRef is the image name (e.g., "ghcr.io/groblegark/gasboat" or
-// "ghcr.io/groblegark/gasboat:latest"). The tag/digest suffix is stripped.
+// imageRef is the image name (e.g., "ghcr.io/groblegark/gasboats" or
+// "ghcr.io/groblegark/gasboats:latest"). The tag/digest suffix is stripped.
 // digest is the registry content digest (e.g., "sha256:abc123...").
 func (c *GitHubClient) GetCommitForDigest(ctx context.Context, imageRef, digest string) (string, error) {
 	org, pkg, err := parseGHCRImageRef(imageRef)
@@ -316,7 +316,7 @@ func (c *GitHubClient) GetCommitForDigest(ctx context.Context, imageRef, digest 
 }
 
 // parseGHCRImageRef extracts the org and package name from a GHCR image
-// reference like "ghcr.io/groblegark/gasboat" or "ghcr.io/groblegark/gasboat:latest".
+// reference like "ghcr.io/groblegark/gasboats" or "ghcr.io/groblegark/gasboats:latest".
 func parseGHCRImageRef(imageRef string) (org, pkg string, err error) {
 	ref := imageRef
 	// Strip tag suffix (e.g., ":latest").
@@ -371,7 +371,7 @@ func (c *GitHubClient) CompareSHAs(ctx context.Context, repo RepoRef, base, head
 }
 
 // ImageToRepo maps a GHCR image reference to a GitHub RepoRef.
-// e.g., "ghcr.io/groblegark/gasboat/agent:latest" → RepoRef{Owner: "groblegark", Repo: "gasboat"}
+// e.g., "ghcr.io/groblegark/gasboats/agent:latest" → RepoRef{Owner: "groblegark", Repo: "gasboat"}
 // For images with sub-paths (gasboat/agent), uses the first path component as the repo.
 func ImageToRepo(image string) (RepoRef, bool) {
 	org, pkg, err := parseGHCRImageRef(image)

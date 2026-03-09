@@ -134,9 +134,13 @@ func runAgentStartK8s(cmd *cobra.Command, args []string) error {
 		cleanStalePipes(coopStateDir)
 		resumeLog := findResumeSession(claudeStateDir, cfg.sessionResume)
 
+		sessionBeadID := registerSessionBead(ctx, cfg, resumeLog)
+
 		start := time.Now()
 		exitCode, _ := runCoopOnce(ctx, cfg, coopStateDir, resumeLog)
 		elapsed := time.Since(start)
+
+		closeSessionBead(context.Background(), sessionBeadID, exitCode, resumeLog)
 
 		if ctx.Err() != nil {
 			return nil // clean SIGTERM exit

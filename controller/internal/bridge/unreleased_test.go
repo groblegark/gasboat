@@ -386,10 +386,10 @@ func TestExtractImageTag_Unreleased(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"ghcr.io/groblegark/gasboat/agent:2026.63.1", "2026.63.1"},
-		{"ghcr.io/groblegark/gasboat/agent:latest", "latest"},
-		{"ghcr.io/groblegark/gasboat/agent", ""},
-		{"ghcr.io/groblegark/gasboat/agent@sha256:abc123", ""},
+		{"ghcr.io/groblegark/gasboats/agent:2026.63.1", "2026.63.1"},
+		{"ghcr.io/groblegark/gasboats/agent:latest", "latest"},
+		{"ghcr.io/groblegark/gasboats/agent", ""},
+		{"ghcr.io/groblegark/gasboats/agent@sha256:abc123", ""},
 		{"", ""},
 	}
 	for _, tt := range tests {

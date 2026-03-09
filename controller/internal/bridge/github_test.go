@@ -293,7 +293,7 @@ func TestCalverKey(t *testing.T) {
 
 func TestGetCommitForDigest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/orgs/groblegark/packages/container/gasboat/versions" {
+		if r.URL.Path != "/orgs/groblegark/packages/container/gasboats/versions" {
 			http.NotFound(w, r)
 			return
 		}
@@ -307,7 +307,7 @@ func TestGetCommitForDigest(t *testing.T) {
 
 	client := newTestGitHubClient(srv.URL, "test-token")
 	sha, err := client.GetCommitForDigest(context.Background(),
-		"ghcr.io/groblegark/gasboat", "sha256:abc123def456789")
+		"ghcr.io/groblegark/gasboats", "sha256:abc123def456789")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -387,10 +387,10 @@ func TestParseGHCRImageRef(t *testing.T) {
 		wantPkg string
 		wantErr bool
 	}{
-		{"ghcr.io/groblegark/gasboat", "groblegark", "gasboat", false},
+		{"ghcr.io/groblegark/gasboats", "groblegark", "gasboats", false},
 		{"ghcr.io/groblegark/kbeads:latest", "groblegark", "kbeads", false},
 		{"ghcr.io/groblegark/coop:v1.0.0", "groblegark", "coop", false},
-		{"ghcr.io/groblegark/gasboat@sha256:abc", "groblegark", "gasboat", false},
+		{"ghcr.io/groblegark/gasboats@sha256:abc", "groblegark", "gasboats", false},
 		{"invalid", "", "", true},
 		{"ghcr.io/onlytwo", "", "", true},
 	}
@@ -600,8 +600,8 @@ func TestImageToRepo(t *testing.T) {
 		wantRef RepoRef
 		wantOK  bool
 	}{
-		{"ghcr.io/groblegark/gasboat/agent:latest", RepoRef{Owner: "groblegark", Repo: "gasboat"}, true},
-		{"ghcr.io/groblegark/gasboat:2026.63.1", RepoRef{Owner: "groblegark", Repo: "gasboat"}, true},
+		{"ghcr.io/groblegark/gasboats/agent:latest", RepoRef{Owner: "groblegark", Repo: "gasboats"}, true},
+		{"ghcr.io/groblegark/gasboats:2026.63.1", RepoRef{Owner: "groblegark", Repo: "gasboats"}, true},
 		{"ghcr.io/groblegark/kbeads:latest", RepoRef{Owner: "groblegark", Repo: "kbeads"}, true},
 		{"invalid", RepoRef{}, false},
 	}
