@@ -236,7 +236,6 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 				// agent-card threading (below) can find the correct card.
 				if agentBead.Fields["agent"] != "" {
 					agent = extractAgentName(agentBead.Fields["agent"])
-					agentDisplay = b.agentDisplayName(agent)
 				}
 				ch := agentBead.Fields["slack_thread_channel"]
 				ts := agentBead.Fields["slack_thread_ts"]
