@@ -107,7 +107,7 @@ The agent image is the container that runs Claude Code agents in K8s pods. It ha
 | **Dockerfile** | `images/agent/Dockerfile` | `docker build` / local dev | Multi-stage Docker build |
 | **RWX CI** | `.rwx/docker.yml` | Push to main / tag | `crane append` with parallel cached layers |
 
-**Both produce `ghcr.io/groblegark/gasboat/agent:<tag>`**. Production uses RWX CI. The Dockerfile is the reference spec; RWX CI mirrors it with a layer-based approach for speed.
+**Both produce `ghcr.io/groblegark/gasboats/agent:<tag>`**. Production uses RWX CI. The Dockerfile is the reference spec; RWX CI mirrors it with a layer-based approach for speed.
 
 ### RWX CI Architecture
 
@@ -153,10 +153,10 @@ After a build, check that tools are present:
 
 ```bash
 # Export and inspect (without pulling the full image)
-crane export ghcr.io/groblegark/gasboat/agent:<tag> - | tar -tf - | grep <binary-name>
+crane export ghcr.io/groblegark/gasboats/agent:<tag> - | tar -tf - | grep <binary-name>
 
 # Or run a container
-docker run --rm ghcr.io/groblegark/gasboat/agent:<tag> which <tool-name>
+docker run --rm ghcr.io/groblegark/gasboats/agent:<tag> which <tool-name>
 ```
 
 Key tools to verify: `claude`, `coop`, `kd`, `gb`, `playwright`, `npx`, `ffmpeg`, `tmux`, `whisper-cli`, `go`, `rustc`, `gh`, `glab`, `helm`, `terraform`, `kubectl`

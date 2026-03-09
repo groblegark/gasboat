@@ -72,7 +72,7 @@ agents:
   # --- Controller deployment ---
 
   image:
-    repository: ghcr.io/groblegark/gasboat
+    repository: ghcr.io/groblegark/gasboats
     tag: ""
     pullPolicy: Always
 
@@ -98,7 +98,7 @@ agents:
 
   # Image used for agent pods spawned by the controller (includes gb + kd CLIs)
   agentImage:
-    repository: ghcr.io/groblegark/gasboat/agent
+    repository: ghcr.io/groblegark/gasboats/agent
     tag: ""
 
   # ServiceAccount for spawned agent pods (not the controller itself).
@@ -529,7 +529,7 @@ slackBridge:
   enabled: false
 
   image:
-    repository: ghcr.io/groblegark/gasboat/slack-bridge
+    repository: ghcr.io/groblegark/gasboats/slack-bridge
     tag: ""
     pullPolicy: Always
 
@@ -634,7 +634,7 @@ adviceViewer:
   enabled: false
 
   image:
-    repository: ghcr.io/groblegark/gasboat/advice-viewer
+    repository: ghcr.io/groblegark/gasboats/advice-viewer
     tag: ""
     pullPolicy: Always
 
@@ -811,7 +811,7 @@ jiraBridge:
   enabled: false
 
   image:
-    repository: ghcr.io/groblegark/gasboat/jira-bridge
+    repository: ghcr.io/groblegark/gasboats/jira-bridge
     tag: ""
     pullPolicy: Always
 
@@ -890,7 +890,7 @@ wlBridge:
   enabled: false
 
   image:
-    repository: ghcr.io/groblegark/gasboat/wl-bridge
+    repository: ghcr.io/groblegark/gasboats/wl-bridge
     tag: ""
     pullPolicy: Always
 
@@ -944,7 +944,7 @@ gitlabBridge:
   enabled: false
 
   image:
-    repository: ghcr.io/groblegark/gasboat/gitlab-bridge
+    repository: ghcr.io/groblegark/gasboats/gitlab-bridge
     tag: ""
     pullPolicy: Always
 

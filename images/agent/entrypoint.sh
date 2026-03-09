@@ -146,14 +146,16 @@ _clone_repo() {
     fi
 }
 
-REPOS_DIR="${WORKSPACE}/repos"
-mkdir -p "${REPOS_DIR}"
-
 # Clone reference repos declared on the project bead.
-# Init container clones them first; this is a fallback for job mode (EmptyDir).
+# The init container clones them into /home/agent/bot/{project}/repos/ for
+# PVC-backed (crew) pods.  This block is the fallback for job mode (EmptyDir)
+# where no init container runs.  Skip if the init container already cloned.
 # Format: "name=https://host/path.git:branch,name2=https://host2/path2.git:branch2"
 # The branch suffix is always present (controller defaults empty to "main").
-if [ -n "${BOAT_REFERENCE_REPOS:-}" ]; then
+INIT_REPOS_DIR="/home/agent/bot/${PROJECT}/repos"
+if [ -n "${BOAT_REFERENCE_REPOS:-}" ] && [ ! -d "${INIT_REPOS_DIR}" ]; then
+    REPOS_DIR="${WORKSPACE}/repos"
+    mkdir -p "${REPOS_DIR}"
     IFS=',' read -ra REPO_ENTRIES <<< "${BOAT_REFERENCE_REPOS}"
     for entry in "${REPO_ENTRIES[@]}"; do
         repo_name="${entry%%=*}"
@@ -367,8 +369,33 @@ if [ -n "${PROJECT}" ] && [ -d "/home/agent/bot/${PROJECT}/work/.git" ]; then
     COOP_WORKDIR="/home/agent/bot/${PROJECT}/work"
     export KD_WORKSPACE="${COOP_WORKDIR}"
     echo "[entrypoint] Using project repo as cwd: ${COOP_WORKDIR}"
+
+    # Symlink repos/ into the working directory so that nudge-prompt hints
+    # ("ls repos/") work from the agent's cwd.  The init container clones
+    # reference repos to /home/agent/bot/{project}/repos/ which is a sibling
+    # of work/, not a child — without this symlink agents cannot find them.
+    REPOS_PARENT="/home/agent/bot/${PROJECT}/repos"
+    if [ -d "${REPOS_PARENT}" ] && [ ! -e "${COOP_WORKDIR}/repos" ]; then
+        ln -s "${REPOS_PARENT}" "${COOP_WORKDIR}/repos"
+        # Keep the symlink out of git status noise.
+        grep -qxF 'repos/' "${COOP_WORKDIR}/.gitignore" 2>/dev/null \
+            || echo 'repos/' >> "${COOP_WORKDIR}/.gitignore"
+        echo "[entrypoint] Symlinked repos/ → ${REPOS_PARENT}"
+    fi
 else
     echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
+fi
+
+# ── Re-materialize settings to final workspace ─────────────────────────────
+# gb setup claude was run above with --workspace="${WORKSPACE}", but if
+# COOP_WORKDIR differs (project repo exists), Claude starts in COOP_WORKDIR
+# and won't find the hooks/CLAUDE.md written to WORKSPACE. Re-run setup
+# targeting the final working directory so hooks fire correctly.
+if [ "${MOCK_MODE}" != "1" ] && [ "${COOP_WORKDIR}" != "${WORKSPACE}" ] && command -v gb &>/dev/null; then
+    echo "[entrypoint] Re-materializing settings to final workspace: ${COOP_WORKDIR}"
+    mkdir -p "${COOP_WORKDIR}/.claude"
+    gb setup claude --workspace="${COOP_WORKDIR}" --role="${ROLE}" 2>&1 || \
+        echo "[entrypoint] WARNING: re-materialization to ${COOP_WORKDIR} failed"
 fi
 
 # ── Start coop + Claude ──────────────────────────────────────────────────

@@ -14,7 +14,7 @@ tasks:
   - key: code
     call: git/clone 2.0.3
     with:
-      repository: https://github.com/groblegark/gasboat.git
+      repository: https://github.com/groblegark/gasboats.git
       ref: ${{ init.commit-sha }}
 
   # ── Go toolchain ──────────────────────────────────────────────────────

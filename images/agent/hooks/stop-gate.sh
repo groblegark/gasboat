@@ -113,4 +113,5 @@ rm -f "$COOLDOWN_FILE" "$BLOCK_COUNT_FILE"
 # Clear any remaining gate state so the next session must re-satisfy from scratch.
 gb gate clear decision 2>/dev/null || true
 
+echo "[stop-gate] Stop allowed" >&2
 exit 0
