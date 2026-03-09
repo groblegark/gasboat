@@ -48,7 +48,7 @@ agents:
   # Per-project secrets (Claude OAuth, git, GitHub, GitLab, RWX, etc.) are
   # declared on project beads and auto-reconciled by the controller.
   image:
-    repository: ghcr.io/groblegark/gasboat/controller
+    repository: ghcr.io/groblegark/gasboats/controller
   nodeSelector:
     kubernetes.io/arch: amd64
 beads:
@@ -127,7 +127,7 @@ jiraBridge:
   enabled: true
   image:
     pullPolicy: IfNotPresent
-    repository: ghcr.io/groblegark/gasboat/jira-bridge
+    repository: ghcr.io/groblegark/gasboats/jira-bridge
   jira:
     baseURL: https://pihealth.atlassian.net
     boatProjects: monorepo=placeholder:PE,monorepo=placeholder:DEVOPS
@@ -217,7 +217,7 @@ registrySecrets:
 slackBridge:
   enabled: true
   image:
-    repository: ghcr.io/groblegark/gasboat/slack-bridge
+    repository: ghcr.io/groblegark/gasboats/slack-bridge
   logLevel: debug
   nodeSelector:
     kubernetes.io/arch: amd64
@@ -246,7 +246,7 @@ gitlabBridge:
   enabled: true
   image:
     pullPolicy: Always
-    repository: ghcr.io/groblegark/gasboat/gitlab-bridge
+    repository: ghcr.io/groblegark/gasboats/gitlab-bridge
     tag: main
   gitlab:
     baseURL: https://gitlab.com

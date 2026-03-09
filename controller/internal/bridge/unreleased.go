@@ -197,7 +197,7 @@ func MonorepoImageConfigs(repo RepoRef, tag string) []ImageTrackConfig {
 }
 
 // ExtractImageTag extracts the tag from an image reference like
-// "ghcr.io/groblegark/gasboat/agent:2026.63.1" → "2026.63.1".
+// "ghcr.io/groblegark/gasboats/agent:2026.63.1" → "2026.63.1".
 // Returns empty string if no tag is present.
 func ExtractImageTag(imageRef string) string {
 	if imageRef == "" {

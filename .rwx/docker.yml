@@ -6,12 +6,12 @@
 #   push-*  tasks     -> crane-append layers to ubuntu:24.04, push to GHCR
 #
 # Images produced:
-#   push-controller     -> ghcr.io/groblegark/gasboat/controller
-#   push-agent          -> ghcr.io/groblegark/gasboat/agent
-#   push-slack-bridge   -> ghcr.io/groblegark/gasboat/slack-bridge
-#   push-jira-bridge    -> ghcr.io/groblegark/gasboat/jira-bridge
-#   push-gitlab-bridge  -> ghcr.io/groblegark/gasboat/gitlab-bridge
-#   push-advice-viewer  -> ghcr.io/groblegark/gasboat/advice-viewer
+#   push-controller     -> ghcr.io/groblegark/gasboats/controller
+#   push-agent          -> ghcr.io/groblegark/gasboats/agent
+#   push-slack-bridge   -> ghcr.io/groblegark/gasboats/slack-bridge
+#   push-jira-bridge    -> ghcr.io/groblegark/gasboats/jira-bridge
+#   push-gitlab-bridge  -> ghcr.io/groblegark/gasboats/gitlab-bridge
+#   push-advice-viewer  -> ghcr.io/groblegark/gasboats/advice-viewer
 #
 # For manual push of a single image:
 #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-agent
@@ -91,7 +91,7 @@ tasks:
   - key: code
     call: git/clone 2.0.3
     with:
-      repository: https://github.com/groblegark/gasboat.git
+      repository: https://github.com/groblegark/gasboats.git
       ref: ${{ init.commit-sha }}
 
   # ── Go toolchain ───────────────────────────────────────────────────
@@ -345,7 +345,7 @@ tasks:
       tar -cf /tmp/layer.tar -C /tmp/layer .
 
       # Push
-      REPO="ghcr.io/groblegark/gasboat/controller"
+      REPO="ghcr.io/groblegark/gasboats/controller"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /controller --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
@@ -378,7 +378,7 @@ tasks:
       cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
       tar -cf /tmp/layer.tar -C /tmp/layer .
 
-      REPO="ghcr.io/groblegark/gasboat/slack-bridge"
+      REPO="ghcr.io/groblegark/gasboats/slack-bridge"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /slack-bridge --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
@@ -408,7 +408,7 @@ tasks:
       cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
       tar -cf /tmp/layer.tar -C /tmp/layer .
 
-      REPO="ghcr.io/groblegark/gasboat/jira-bridge"
+      REPO="ghcr.io/groblegark/gasboats/jira-bridge"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /jira-bridge --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
@@ -438,7 +438,7 @@ tasks:
       cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
       tar -cf /tmp/layer.tar -C /tmp/layer .
 
-      REPO="ghcr.io/groblegark/gasboat/gitlab-bridge"
+      REPO="ghcr.io/groblegark/gasboats/gitlab-bridge"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /gitlab-bridge --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
@@ -468,7 +468,7 @@ tasks:
       cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
       tar -cf /tmp/layer.tar -C /tmp/layer .
 
-      REPO="ghcr.io/groblegark/gasboat/advice-viewer"
+      REPO="ghcr.io/groblegark/gasboats/advice-viewer"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" --entrypoint /advice-viewer --user nobody -t "${REPO}:${TAG}"
       crane tag "${REPO}:${TAG}" latest
@@ -944,7 +944,7 @@ tasks:
       echo "=== Pushing image ==="
       sudo tar -cf /tmp/layer.tar -C $LAYER .
 
-      REPO="ghcr.io/groblegark/gasboat/agent"
+      REPO="ghcr.io/groblegark/gasboats/agent"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${TAG}" --new_layer /tmp/layer.tar --platform linux/amd64
       crane mutate "${REPO}:${TAG}" \
         --entrypoint /entrypoint.sh \

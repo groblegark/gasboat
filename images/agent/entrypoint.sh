@@ -146,14 +146,16 @@ _clone_repo() {
     fi
 }
 
-REPOS_DIR="${WORKSPACE}/repos"
-mkdir -p "${REPOS_DIR}"
-
 # Clone reference repos declared on the project bead.
-# Init container clones them first; this is a fallback for job mode (EmptyDir).
+# The init container clones them into /home/agent/bot/{project}/repos/ for
+# PVC-backed (crew) pods.  This block is the fallback for job mode (EmptyDir)
+# where no init container runs.  Skip if the init container already cloned.
 # Format: "name=https://host/path.git:branch,name2=https://host2/path2.git:branch2"
 # The branch suffix is always present (controller defaults empty to "main").
-if [ -n "${BOAT_REFERENCE_REPOS:-}" ]; then
+INIT_REPOS_DIR="/home/agent/bot/${PROJECT}/repos"
+if [ -n "${BOAT_REFERENCE_REPOS:-}" ] && [ ! -d "${INIT_REPOS_DIR}" ]; then
+    REPOS_DIR="${WORKSPACE}/repos"
+    mkdir -p "${REPOS_DIR}"
     IFS=',' read -ra REPO_ENTRIES <<< "${BOAT_REFERENCE_REPOS}"
     for entry in "${REPO_ENTRIES[@]}"; do
         repo_name="${entry%%=*}"
@@ -367,6 +369,19 @@ if [ -n "${PROJECT}" ] && [ -d "/home/agent/bot/${PROJECT}/work/.git" ]; then
     COOP_WORKDIR="/home/agent/bot/${PROJECT}/work"
     export KD_WORKSPACE="${COOP_WORKDIR}"
     echo "[entrypoint] Using project repo as cwd: ${COOP_WORKDIR}"
+
+    # Symlink repos/ into the working directory so that nudge-prompt hints
+    # ("ls repos/") work from the agent's cwd.  The init container clones
+    # reference repos to /home/agent/bot/{project}/repos/ which is a sibling
+    # of work/, not a child — without this symlink agents cannot find them.
+    REPOS_PARENT="/home/agent/bot/${PROJECT}/repos"
+    if [ -d "${REPOS_PARENT}" ] && [ ! -e "${COOP_WORKDIR}/repos" ]; then
+        ln -s "${REPOS_PARENT}" "${COOP_WORKDIR}/repos"
+        # Keep the symlink out of git status noise.
+        grep -qxF 'repos/' "${COOP_WORKDIR}/.gitignore" 2>/dev/null \
+            || echo 'repos/' >> "${COOP_WORKDIR}/.gitignore"
+        echo "[entrypoint] Symlinked repos/ → ${REPOS_PARENT}"
+    fi
 else
     echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
 fi

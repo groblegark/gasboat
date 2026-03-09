@@ -133,7 +133,7 @@ func init() {
 	rootCmd.AddCommand(primeCmd)
 	rootCmd.AddCommand(nudgePromptCmd)
 	rootCmd.AddCommand(stopCmd)
-	rootCmd.AddCommand(workspaceCmd)
+	rootCmd.AddCommand(sessionCmd)
 }
 
 func main() {

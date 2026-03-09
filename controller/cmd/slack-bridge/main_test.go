@@ -30,9 +30,9 @@ func TestParseRepoList(t *testing.T) {
 		},
 		{
 			name:  "default config",
-			input: "groblegark/gasboat,groblegark/kbeads~ext,groblegark/coop~ext",
+			input: "groblegark/gasboats,groblegark/kbeads~ext,groblegark/coop~ext",
 			want: []bridge.RepoRef{
-				{Owner: "groblegark", Repo: "gasboat"},
+				{Owner: "groblegark", Repo: "gasboats"},
 				{Owner: "groblegark", Repo: "kbeads", External: true},
 				{Owner: "groblegark", Repo: "coop", External: true},
 			},
