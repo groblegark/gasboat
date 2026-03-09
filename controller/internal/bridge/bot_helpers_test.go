@@ -512,3 +512,209 @@ func TestPostThreadStateReply_WithWrapup(t *testing.T) {
 	}
 }
 
+// --- resolveChannel project-specific override tests ---
+
+func TestResolveChannel_RouterPatternMatch(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-default"
+	bot.router = NewRouter(RouterConfig{
+		DefaultChannel: "C-router-default",
+		Channels: map[string]string{
+			"gasboat/crew/*": "C-crew",
+		},
+	})
+
+	result := bot.resolveChannel("gasboat/crew/my-agent")
+	if result != "C-crew" {
+		t.Errorf("expected C-crew from pattern match, got %q", result)
+	}
+}
+
+func TestResolveChannel_RouterOverrideTakesPrecedence(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-default"
+	bot.router = NewRouter(RouterConfig{
+		DefaultChannel: "C-router-default",
+		Channels: map[string]string{
+			"gasboat/crew/*": "C-crew",
+		},
+		Overrides: map[string]string{
+			"gasboat/crew/special-bot": "C-special",
+		},
+	})
+
+	result := bot.resolveChannel("gasboat/crew/special-bot")
+	if result != "C-special" {
+		t.Errorf("expected C-special (override takes precedence), got %q", result)
+	}
+}
+
+func TestResolveChannel_RouterNoMatch_FallsBackToRouterDefault(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-default"
+	bot.router = NewRouter(RouterConfig{
+		DefaultChannel: "C-router-default",
+		Channels: map[string]string{
+			"other-project/crew/*": "C-other",
+		},
+	})
+
+	result := bot.resolveChannel("gasboat/crew/my-agent")
+	if result != "C-router-default" {
+		t.Errorf("expected C-router-default when no pattern matches, got %q", result)
+	}
+}
+
+func TestResolveChannel_NilRouter_UsesDefaultChannel(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-default"
+	bot.router = nil
+
+	result := bot.resolveChannel("gasboat/crew/my-agent")
+	if result != "C-default" {
+		t.Errorf("expected C-default with nil router, got %q", result)
+	}
+}
+
+func TestResolveChannel_RouterMultipleProjects(t *testing.T) {
+	daemon := newMockDaemon()
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-default"
+	bot.router = NewRouter(RouterConfig{
+		DefaultChannel: "C-router-default",
+		Channels: map[string]string{
+			"gasboat/crew/*": "C-gasboat",
+			"kbeads/crew/*":  "C-kbeads",
+		},
+	})
+
+	if got := bot.resolveChannel("gasboat/crew/bot-a"); got != "C-gasboat" {
+		t.Errorf("expected C-gasboat, got %q", got)
+	}
+	if got := bot.resolveChannel("kbeads/crew/bot-b"); got != "C-kbeads" {
+		t.Errorf("expected C-kbeads, got %q", got)
+	}
+}
+
+// --- replaceAgentCardWithWrapUp tests ---
+
+func TestReplaceAgentCardWithWrapUp_UpdatesExistingCard(t *testing.T) {
+	var updatedText string
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err == nil {
+			if text := r.FormValue("text"); text != "" {
+				updatedText = text
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": "1111.2222"})
+	}))
+	defer slackSrv.Close()
+
+	daemon := newMockDaemon()
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.mu.Lock()
+	bot.agentCards["my-agent"] = MessageRef{ChannelID: "C123", Timestamp: "1111.2222"}
+	bot.mu.Unlock()
+
+	wrapup := `{"accomplishments":"Fixed the bug","blockers":"","handoff_notes":"Ready for review"}`
+	bot.replaceAgentCardWithWrapUp(context.Background(), "my-agent", "done", wrapup)
+
+	if updatedText == "" {
+		t.Error("expected agent card to be updated")
+	}
+	if !strings.Contains(updatedText, "done") {
+		t.Errorf("expected 'done' in updated text, got %q", updatedText)
+	}
+}
+
+func TestReplaceAgentCardWithWrapUp_NoCard_FallsBackToUpdateAgentCard(t *testing.T) {
+	slackSrv := newFakeSlackServer(t)
+	defer slackSrv.Close()
+
+	daemon := newMockDaemon()
+	bot := newTestBot(daemon, slackSrv)
+
+	// No card exists — should not panic, falls back to updateAgentCard.
+	bot.replaceAgentCardWithWrapUp(context.Background(), "no-such-agent", "done", `{"accomplishments":"test"}`)
+}
+
+func TestReplaceAgentCardWithWrapUp_FailedState(t *testing.T) {
+	var updatedText string
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err == nil {
+			if text := r.FormValue("text"); text != "" {
+				updatedText = text
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": "1111.2222"})
+	}))
+	defer slackSrv.Close()
+
+	daemon := newMockDaemon()
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.mu.Lock()
+	bot.agentCards["fail-agent"] = MessageRef{ChannelID: "C123", Timestamp: "2222.3333"}
+	bot.mu.Unlock()
+
+	wrapup := `{"accomplishments":"","blockers":"OOM killed","handoff_notes":""}`
+	bot.replaceAgentCardWithWrapUp(context.Background(), "fail-agent", "failed", wrapup)
+
+	if updatedText == "" {
+		t.Error("expected agent card to be updated")
+	}
+	if !strings.Contains(updatedText, "failed") {
+		t.Errorf("expected 'failed' in updated text, got %q", updatedText)
+	}
+}
+
+func TestReplaceAgentCardWithWrapUp_EmptyWrapup(t *testing.T) {
+	var updatedText string
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err == nil {
+			if text := r.FormValue("text"); text != "" {
+				updatedText = text
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ts": "1111.2222"})
+	}))
+	defer slackSrv.Close()
+
+	daemon := newMockDaemon()
+	bot := newTestBot(daemon, slackSrv)
+
+	bot.mu.Lock()
+	bot.agentCards["my-agent"] = MessageRef{ChannelID: "C123", Timestamp: "1111.2222"}
+	bot.mu.Unlock()
+
+	// Empty wrapup JSON — should still update the card with just the header.
+	bot.replaceAgentCardWithWrapUp(context.Background(), "my-agent", "done", `{}`)
+
+	if updatedText == "" {
+		t.Error("expected agent card to be updated even with empty wrapup")
+	}
+}
+
