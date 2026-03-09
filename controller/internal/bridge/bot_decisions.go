@@ -227,6 +227,26 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 		}
 	}
 
+	// Fallback: if Assignee didn't resolve to a thread-bound agent, try the
+	// requesting_agent_bead_id field which gb decision create always sets.
+	if threadSource == "" {
+		if reqAgentBeadID := bead.Fields["requesting_agent_bead_id"]; reqAgentBeadID != "" {
+			if agentBead, err := b.daemon.GetBead(ctx, reqAgentBeadID); err == nil {
+				ch := agentBead.Fields["slack_thread_channel"]
+				ts := agentBead.Fields["slack_thread_ts"]
+				if isValidThreadBinding(ch, ts) {
+					targetChannel = ch
+					threadTS = ts
+					threadSource = "slack_thread"
+					if agentBead.Fields["agent"] != "" {
+						agent = agentBead.Fields["agent"]
+						agentDisplay = b.agentDisplayName(agent)
+					}
+				}
+			}
+		}
+	}
+
 	if threadSource == "" && b.agentThreadingEnabled() && agent != "" {
 		// Agent threading mode: thread under the agent's status card.
 		cardTS, err := b.ensureAgentCard(ctx, agent, targetChannel)
@@ -340,15 +360,32 @@ func (b *Bot) NotifyEscalation(ctx context.Context, bead BeadEvent) error {
 	}
 
 	// Thread-bound agents: post in the originating Slack thread.
+	threadResolved := false
 	if agent != "" {
 		if slackChannel, slackTS := b.resolveAgentThread(ctx, agent); slackChannel != "" && slackTS != "" {
 			targetChannel = slackChannel
 			msgOpts = append(msgOpts, slack.MsgOptionTS(slackTS))
-		} else if b.agentThreadingEnabled() {
-			// Agent threading mode: thread escalation under the agent's card.
-			if cardTS, err := b.ensureAgentCard(ctx, agent, targetChannel); err == nil {
-				msgOpts = append(msgOpts, slack.MsgOptionTS(cardTS))
+			threadResolved = true
+		}
+	}
+	// Fallback: try requesting_agent_bead_id if Assignee didn't resolve.
+	if !threadResolved {
+		if reqAgentBeadID := bead.Fields["requesting_agent_bead_id"]; reqAgentBeadID != "" {
+			if agentBead, err := b.daemon.GetBead(ctx, reqAgentBeadID); err == nil {
+				ch := agentBead.Fields["slack_thread_channel"]
+				ts := agentBead.Fields["slack_thread_ts"]
+				if isValidThreadBinding(ch, ts) {
+					targetChannel = ch
+					msgOpts = append(msgOpts, slack.MsgOptionTS(ts))
+					threadResolved = true
+				}
 			}
+		}
+	}
+	if !threadResolved && b.agentThreadingEnabled() && agent != "" {
+		// Agent threading mode: thread escalation under the agent's card.
+		if cardTS, err := b.ensureAgentCard(ctx, agent, targetChannel); err == nil {
+			msgOpts = append(msgOpts, slack.MsgOptionTS(cardTS))
 		}
 	}
 
