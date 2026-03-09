@@ -64,7 +64,7 @@ type Config struct {
 	CoopServiceAccount string
 
 	// CoopMaxPods is the maximum number of agent pods that can exist
-	// simultaneously (env: COOP_MAX_PODS). 0 means unlimited. Default: 30.
+	// simultaneously (env: COOP_MAX_PODS). 0 means unlimited. Default: 4.
 	// When the limit is reached, new pods are queued until existing ones finish.
 	CoopMaxPods int
 
@@ -284,7 +284,7 @@ func Parse() *Config {
 		CoopImage:          os.Getenv("COOP_IMAGE"),
 		ImagePullSecrets:   parseCommaSeparated(os.Getenv("IMAGE_PULL_SECRETS")),
 		CoopServiceAccount: os.Getenv("COOP_SERVICE_ACCOUNT"),
-		CoopMaxPods:         envIntOr("COOP_MAX_PODS", 30),
+		CoopMaxPods:         envIntOr("COOP_MAX_PODS", 4),
 		CoopBurstLimit:      envIntOr("COOP_BURST_LIMIT", 3),
 		CoopRateLimitWindow: envDurationOr("COOP_RATE_LIMIT_WINDOW", 5*time.Minute),
 		CoopRateLimitMax:    envIntOr("COOP_RATE_LIMIT_MAX", 20),
