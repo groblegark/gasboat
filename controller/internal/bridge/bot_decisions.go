@@ -232,16 +232,18 @@ func (b *Bot) NotifyDecision(ctx context.Context, bead BeadEvent) error {
 	if threadSource == "" {
 		if reqAgentBeadID := bead.Fields["requesting_agent_bead_id"]; reqAgentBeadID != "" {
 			if agentBead, err := b.daemon.GetBead(ctx, reqAgentBeadID); err == nil {
+				// Always update agent identity from requesting bead so that
+				// agent-card threading (below) can find the correct card.
+				if agentBead.Fields["agent"] != "" {
+					agent = extractAgentName(agentBead.Fields["agent"])
+					agentDisplay = b.agentDisplayName(agent)
+				}
 				ch := agentBead.Fields["slack_thread_channel"]
 				ts := agentBead.Fields["slack_thread_ts"]
 				if isValidThreadBinding(ch, ts) {
 					targetChannel = ch
 					threadTS = ts
 					threadSource = "slack_thread"
-					if agentBead.Fields["agent"] != "" {
-						agent = agentBead.Fields["agent"]
-						agentDisplay = b.agentDisplayName(agent)
-					}
 				}
 			}
 		}

@@ -285,6 +285,73 @@ func TestNotifyDecision_FallbackToRequestingAgentBeadID(t *testing.T) {
 	}
 }
 
+// Regression test: when requesting_agent_bead_id has no thread binding but
+// stores a full-path agent name (e.g., "gasboat/crew/my-agent"), agent
+// threading should still find the existing card keyed by short name.
+func TestNotifyDecision_FallbackAgentFullPath_ThreadsUnderCard(t *testing.T) {
+	daemon := newMockDaemon()
+	// The requesting agent bead has a full-path agent field and NO thread binding.
+	daemon.beads["bd-req-fullpath"] = &beadsapi.BeadDetail{
+		ID:    "bd-req-fullpath",
+		Type:  "agent",
+		Title: "my-agent",
+		Fields: map[string]string{
+			"agent": "gasboat/crew/my-agent",
+			// No slack_thread_channel / slack_thread_ts — forces agent_card fallback.
+		},
+	}
+
+	var mu sync.Mutex
+	var posts []struct{ channel, threadTS string }
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.postMessage" {
+			_ = r.ParseForm()
+			mu.Lock()
+			posts = append(posts, struct{ channel, threadTS string }{
+				r.FormValue("channel"), r.FormValue("thread_ts"),
+			})
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "channel": "C-DEFAULT", "ts": "9999.0002"})
+	}))
+	defer slackSrv.Close()
+
+	bot := newTestBot(daemon, slackSrv)
+	bot.channel = "C-DEFAULT"
+	bot.threadingMode = "agent"
+	// Pre-populate agent card with SHORT name key (as NotifyAgentSpawn does).
+	bot.agentCards["my-agent"] = MessageRef{ChannelID: "C-DEFAULT", Timestamp: "1111.0001"}
+
+	err := bot.NotifyDecision(context.Background(), BeadEvent{
+		ID:       "dec-fullpath",
+		Type:     "decision",
+		Assignee: "some-user",
+		Fields: map[string]string{
+			"prompt":                   "Full path agent test?",
+			"options":                  `["yes","no"]`,
+			"requesting_agent_bead_id": "bd-req-fullpath",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NotifyDecision: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// The decision should be threaded under the existing agent card.
+	found := false
+	for _, p := range posts {
+		if p.threadTS == "1111.0001" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected decision to thread under agent card ts=1111.0001, got posts: %+v", posts)
+	}
+}
+
 func TestNotifyDecision_AgentThreadingModeUpdatesCard(t *testing.T) {
 	daemon := newMockDaemon()
 
