@@ -371,6 +371,18 @@ else
     echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
 fi
 
+# ── Re-materialize settings to final workspace ─────────────────────────────
+# gb setup claude was run above with --workspace="${WORKSPACE}", but if
+# COOP_WORKDIR differs (project repo exists), Claude starts in COOP_WORKDIR
+# and won't find the hooks/CLAUDE.md written to WORKSPACE. Re-run setup
+# targeting the final working directory so hooks fire correctly.
+if [ "${MOCK_MODE}" != "1" ] && [ "${COOP_WORKDIR}" != "${WORKSPACE}" ] && command -v gb &>/dev/null; then
+    echo "[entrypoint] Re-materializing settings to final workspace: ${COOP_WORKDIR}"
+    mkdir -p "${COOP_WORKDIR}/.claude"
+    gb setup claude --workspace="${COOP_WORKDIR}" --role="${ROLE}" 2>&1 || \
+        echo "[entrypoint] WARNING: re-materialization to ${COOP_WORKDIR} failed"
+fi
+
 # ── Start coop + Claude ──────────────────────────────────────────────────
 #
 # We keep bash as PID 1 (no exec) so the pod survives if Claude/coop exit.
