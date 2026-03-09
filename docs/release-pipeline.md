@@ -35,7 +35,7 @@ This triggers the automated pipeline.
 
 | Step | System | Pipeline | What it does |
 |------|--------|----------|--------------|
-| Build + push images | RWX | `.rwx/docker.yml` | Builds all 6 images, pushes to `ghcr.io/groblegark/gasboat/*` |
+| Build + push images | RWX | `.rwx/docker.yml` | Builds all 6 images, pushes to `ghcr.io/groblegark/gasboats/*` |
 | Push helm chart | RWX | `.rwx/helm.yml` | Packages and pushes chart to `oci://ghcr.io/groblegark/charts` |
 | GitHub Release | GitHub Actions | `.github/workflows/release.yml` | Creates release with auto-generated notes |
 | Trigger deploy | GitHub Actions | `.github/workflows/release.yml` | Triggers fics-helm-chart GitLab pipeline |
@@ -80,7 +80,7 @@ Example: `2026.61.5` = 5th release on March 2, 2026.
 
 ## Images
 
-All pushed to `ghcr.io/groblegark/gasboat/`:
+All pushed to `ghcr.io/groblegark/gasboats/`:
 
 | Image | Description |
 |-------|-------------|

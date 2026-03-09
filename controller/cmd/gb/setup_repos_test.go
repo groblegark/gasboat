@@ -17,14 +17,14 @@ func TestParseBoatProjectsEnv(t *testing.T) {
 		},
 		{
 			name: "single entry with prefix",
-			raw:  "gasboat=https://github.com/groblegark/gasboat.git:kd",
-			want: []repoCloneEntry{{Name: "gasboat", URL: "https://github.com/groblegark/gasboat.git"}},
+			raw:  "gasboat=https://github.com/groblegark/gasboats.git:kd",
+			want: []repoCloneEntry{{Name: "gasboat", URL: "https://github.com/groblegark/gasboats.git"}},
 		},
 		{
 			name: "two entries",
-			raw:  "gasboat=https://github.com/groblegark/gasboat.git:kd,monorepo=https://gitlab.com/PiHealth/CoreFICS/monorepo:PE",
+			raw:  "gasboat=https://github.com/groblegark/gasboats.git:kd,monorepo=https://gitlab.com/PiHealth/CoreFICS/monorepo:PE",
 			want: []repoCloneEntry{
-				{Name: "gasboat", URL: "https://github.com/groblegark/gasboat.git"},
+				{Name: "gasboat", URL: "https://github.com/groblegark/gasboats.git"},
 				{Name: "monorepo", URL: "https://gitlab.com/PiHealth/CoreFICS/monorepo"},
 			},
 		},
