@@ -306,63 +306,18 @@ if [ -d "/ms-playwright" ] && [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
     echo "[entrypoint] Set PLAYWRIGHT_BROWSERS_PATH=/ms-playwright"
 fi
 
-# ── Claude settings ──────────────────────────────────────────────────────
-#
-# User-level settings (permissions, plugins, model) and workspace hooks are
-# both materialized from config beads via `gb setup claude`. The command
-# fetches claude-settings:* and claude-hooks:* config beads, merges them by
-# specificity (global → role), and writes:
-#   ~/.claude/settings.json           — user-level (permissions, plugins)
-#   {workspace}/.claude/settings.json — workspace-level (hooks)
-#
-# When config beads are unavailable, --defaults installs hardcoded fallbacks.
-# Mock mode: skip Claude settings entirely (claudeless doesn't use them).
-
-if [ "${MOCK_MODE}" = "1" ]; then
-    echo "[entrypoint] Mock mode — skipping Claude settings materialization"
-    # Write minimal workspace settings so hooks still work with claudeless.
-    mkdir -p "${WORKSPACE}/.claude"
-    echo '{}' > "${CLAUDE_DIR}/settings.json"
-else
-
-# Disable interactive features that interrupt autonomous agents.
-export CLAUDE_CODE_ENABLE_TASKS="${CLAUDE_CODE_ENABLE_TASKS:-false}"
-
-# Materialize settings + hooks from config beads.
-# gb setup claude writes both:
-#   ~/.claude/settings.json           (user-level: permissions, plugins, model)
-#   {workspace}/.claude/settings.json (workspace-level: hooks)
-mkdir -p "${WORKSPACE}/.claude"
-MATERIALIZED=0
-
-if command -v gb &>/dev/null; then
-    echo "[entrypoint] Materializing settings and hooks from config beads (role: ${ROLE})"
-    if gb setup claude --workspace="${WORKSPACE}" --role="${ROLE}" 2>&1; then
-        if grep -q '"hooks"' "${WORKSPACE}/.claude/settings.json" 2>/dev/null; then
-            MATERIALIZED=1
-            echo "[entrypoint] Settings and hooks materialized from config beads"
-        fi
-    fi
-fi
-
-if [ "${MATERIALIZED}" = "0" ]; then
-    echo "[entrypoint] No config beads found, installing defaults"
-    gb setup claude --defaults --workspace="${WORKSPACE}" 2>&1 || \
-        echo "[entrypoint] WARNING: gb setup --defaults failed"
-fi
-
-# ── Skip Claude onboarding wizard ─────────────────────────────────────────
-
-printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark","bypassPermissionsModeAccepted":true}\n' > "${HOME}/.claude.json"
-
-fi  # end of MOCK_MODE != 1 (Claude settings block)
-
 # ── Resolve coop working directory ────────────────────────────────────────
 #
 # If the init container cloned the primary project repo (at
 # /home/agent/bot/{project}/work), use that as the cwd so agents start
 # inside the actual codebase. Falls back to the scaffold workspace.
 # This mirrors resolveCoopWorkdir() in gb agent start --k8s.
+#
+# IMPORTANT: This must run BEFORE Claude settings materialization so that
+# workspace-level hooks (.claude/settings.json) are written to the directory
+# where Claude Code will actually start. Previously, hooks were written to
+# /home/agent/workspace but Claude started in /home/agent/bot/{project}/work,
+# so SessionStart hooks (gb hook prime) never fired.
 
 COOP_WORKDIR="${WORKSPACE}"
 if [ -n "${PROJECT}" ] && [ -d "/home/agent/bot/${PROJECT}/work/.git" ]; then
@@ -386,17 +341,56 @@ else
     echo "[entrypoint] No project repo found, using scaffold workspace: ${COOP_WORKDIR}"
 fi
 
-# ── Re-materialize settings to final workspace ─────────────────────────────
-# gb setup claude was run above with --workspace="${WORKSPACE}", but if
-# COOP_WORKDIR differs (project repo exists), Claude starts in COOP_WORKDIR
-# and won't find the hooks/CLAUDE.md written to WORKSPACE. Re-run setup
-# targeting the final working directory so hooks fire correctly.
-if [ "${MOCK_MODE}" != "1" ] && [ "${COOP_WORKDIR}" != "${WORKSPACE}" ] && command -v gb &>/dev/null; then
-    echo "[entrypoint] Re-materializing settings to final workspace: ${COOP_WORKDIR}"
+# ── Claude settings ──────────────────────────────────────────────────────
+#
+# User-level settings (permissions, plugins, model) and workspace hooks are
+# both materialized from config beads via `gb setup claude`. The command
+# fetches claude-settings:* and claude-hooks:* config beads, merges them by
+# specificity (global → role), and writes:
+#   ~/.claude/settings.json              — user-level (permissions, plugins)
+#   {COOP_WORKDIR}/.claude/settings.json — workspace-level (hooks)
+#
+# When config beads are unavailable, --defaults installs hardcoded fallbacks.
+# Mock mode: skip Claude settings entirely (claudeless doesn't use them).
+
+if [ "${MOCK_MODE}" = "1" ]; then
+    echo "[entrypoint] Mock mode — skipping Claude settings materialization"
+    # Write minimal workspace settings so hooks still work with claudeless.
     mkdir -p "${COOP_WORKDIR}/.claude"
-    gb setup claude --workspace="${COOP_WORKDIR}" --role="${ROLE}" 2>&1 || \
-        echo "[entrypoint] WARNING: re-materialization to ${COOP_WORKDIR} failed"
+    echo '{}' > "${CLAUDE_DIR}/settings.json"
+else
+
+# Disable interactive features that interrupt autonomous agents.
+export CLAUDE_CODE_ENABLE_TASKS="${CLAUDE_CODE_ENABLE_TASKS:-false}"
+
+# Materialize settings + hooks from config beads.
+# gb setup claude writes both:
+#   ~/.claude/settings.json              (user-level: permissions, plugins, model)
+#   {COOP_WORKDIR}/.claude/settings.json (workspace-level: hooks)
+mkdir -p "${COOP_WORKDIR}/.claude"
+MATERIALIZED=0
+
+if command -v gb &>/dev/null; then
+    echo "[entrypoint] Materializing settings and hooks from config beads (role: ${ROLE})"
+    if gb setup claude --workspace="${COOP_WORKDIR}" --role="${ROLE}" 2>&1; then
+        if grep -q '"hooks"' "${COOP_WORKDIR}/.claude/settings.json" 2>/dev/null; then
+            MATERIALIZED=1
+            echo "[entrypoint] Settings and hooks materialized from config beads"
+        fi
+    fi
 fi
+
+if [ "${MATERIALIZED}" = "0" ]; then
+    echo "[entrypoint] No config beads found, installing defaults"
+    gb setup claude --defaults --workspace="${COOP_WORKDIR}" 2>&1 || \
+        echo "[entrypoint] WARNING: gb setup --defaults failed"
+fi
+
+# ── Skip Claude onboarding wizard ─────────────────────────────────────────
+
+printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark","bypassPermissionsModeAccepted":true}\n' > "${HOME}/.claude.json"
+
+fi  # end of MOCK_MODE != 1 (Claude settings block)
 
 # ── Start coop + Claude ──────────────────────────────────────────────────
 #
